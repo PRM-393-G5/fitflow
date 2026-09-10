@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/stat_card.dart';
 import '../../../domain/models/workout_session.dart';
+import '../../../domain/personal_records.dart';
 import '../../../domain/workout_stats.dart';
 import '../../achievements/presentation/achievements_page.dart';
 import '../../metrics/presentation/body_metrics_page.dart';
@@ -107,6 +109,7 @@ class ProgressPage extends StatelessWidget {
                 ],
               ),
             ),
+            ..._exerciseRecords(context, controller),
           ],
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'Explore'),
@@ -193,6 +196,41 @@ class ProgressPage extends StatelessWidget {
 
   static String _date(DateTime date) =>
       '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+
+  static List<Widget> _exerciseRecords(
+    BuildContext context,
+    AppController controller,
+  ) {
+    final records = PersonalRecords.best(controller.sessions).values.toList()
+      ..sort((a, b) => a.exerciseName.compareTo(b.exerciseName));
+    if (records.isEmpty) return [];
+    final unit = controller.useMetric ? 'kg' : 'lb';
+    return [
+      const SizedBox(height: AppSpacing.sm),
+      Card(
+        child: Column(
+          children: [
+            for (final (index, record) in records.indexed) ...[
+              if (index > 0) const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.emoji_events_outlined),
+                title: Text(record.exerciseName),
+                subtitle: Text(_date(record.date)),
+                trailing: Text(
+                  record.isTimed
+                      ? '${record.value.round()}s'
+                      : '${(controller.useMetric ? record.value : record.value * 2.20462).round()} $unit',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ];
+  }
 }
 
 class _ActivityHeatmap extends StatelessWidget {
