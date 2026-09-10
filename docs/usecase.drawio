@@ -1,0 +1,132 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram name="FitFlow Use Case" id="fitflow-uc">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="actor-user" value="User" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="360" width="40" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="actor-camera" value="Camera + ML Kit Pose" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="160" width="40" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="boundary" value="FitFlow App" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;verticalAlign=top;align=center;fontSize=15;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="200" y="20" width="920" height="760" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pkg-training" value="  Training" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;verticalAlign=top;align=left;fontStyle=1;spacingLeft=6;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="60" width="430" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg-ai" value="  AI Form Check" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;verticalAlign=top;align=left;fontStyle=1;spacingLeft=6;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="670" y="60" width="430" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg-progress" value="  Progress Tracking" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;verticalAlign=top;align=left;fontStyle=1;spacingLeft=6;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="410" width="430" height="350" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg-settings" value="  Settings" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;verticalAlign=top;align=left;fontStyle=1;spacingLeft=6;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="670" y="410" width="430" height="350" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc0" value="Onboarding (goal, level)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="240" y="90" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc1" value="View today's workout" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="240" y="140" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc2" value="Browse / filter workouts" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="240" y="190" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc3" value="View workout details" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="240" y="240" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc4" value="Follow a workout&#10;(complete sets, rest)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="240" y="300" width="170" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="uc5" value="Build custom workout" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="450" y="140" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc6" value="Set weekly schedule" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="450" y="190" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc7" value="Save session to history" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="450" y="300" width="170" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc8" value="Select exercise&#10;Squat / Push-up / Plank" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="690" y="100" width="180" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="uc9" value="Analyze pose in real time" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="900" y="100" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc10" value="Count reps / hold time&#10;+ score form" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="900" y="190" width="180" height="46" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc11" value="View dashboard&#10;(heatmap, chart, PRs)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="240" y="450" width="170" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="uc12" value="View session detail" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="240" y="510" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc13" value="View achievements" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="240" y="570" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc14" value="Log body weight" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="450" y="450" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc15" value="View BMI / BMR / TDEE" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="450" y="510" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc16" value="Share summary" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="450" y="570" width="170" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc17" value="Set workout reminders" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="690" y="450" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc18" value="Theme / units" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="690" y="510" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc19" value="Export data (JSON)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="690" y="570" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="uc20" value="Sign in &amp; sync (optional)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+          <mxGeometry x="900" y="510" width="180" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-u0" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc0"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u1" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u2" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u3" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u4" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u5" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u6" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u8" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc8"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u11" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc11"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u12" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc12"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u13" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc13"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u14" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc14"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u15" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc15"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u16" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc16"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u17" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc17"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u18" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc18"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u19" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc19"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-u20" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="actor-user" target="uc20"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="e-inc1" value="&amp;laquo;include&amp;raquo;" style="endArrow=open;endFill=0;dashed=1;html=1;" edge="1" parent="1" source="uc4" target="uc7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-inc2" value="&amp;laquo;include&amp;raquo;" style="endArrow=open;endFill=0;dashed=1;html=1;" edge="1" parent="1" source="uc8" target="uc9"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-inc3" value="&amp;laquo;include&amp;raquo;" style="endArrow=open;endFill=0;dashed=1;html=1;" edge="1" parent="1" source="uc9" target="uc10"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-inc4" value="&amp;laquo;include&amp;raquo;" style="endArrow=open;endFill=0;dashed=1;html=1;" edge="1" parent="1" source="uc8" target="uc7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-inc5" value="&amp;laquo;include&amp;raquo;" style="endArrow=open;endFill=0;dashed=1;html=1;" edge="1" parent="1" source="uc15" target="uc14"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="e-ext1" value="&amp;laquo;extend&amp;raquo; suggested by goal" style="endArrow=open;endFill=0;dashed=1;html=1;" edge="1" parent="1" source="uc1" target="uc0"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-ext2" value="&amp;laquo;extend&amp;raquo;" style="endArrow=open;endFill=0;dashed=1;html=1;" edge="1" parent="1" source="uc1" target="uc6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-ext3" value="&amp;laquo;extend&amp;raquo; sync backups" style="endArrow=open;endFill=0;dashed=1;html=1;" edge="1" parent="1" source="uc20" target="uc19"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="e-cam" style="endArrow=open;endFill=0;html=1;" edge="1" parent="1" source="uc9" target="actor-camera"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

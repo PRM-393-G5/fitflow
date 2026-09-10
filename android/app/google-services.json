@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "578747595727",
+    "project_id": "fitflow-cbbcb",
+    "storage_bucket": "fitflow-cbbcb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:578747595727:android:745cbad0c615aed80170ba",
+        "android_client_info": {
+          "package_name": "com.zcode9211.prm"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAYRDVy7aN8RwhpQKkpC3gqimu6X_L9Y6s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,79 @@
+@startuml FitFlow - Use Case Diagram
+title FitFlow — Use Case Diagram
+left to right direction
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #EFEDFB
+  BorderColor #6558D3
+}
+skinparam actorStyle awesome
+
+actor "User" as user
+actor "Camera +\nML Kit Pose" as camera << secondary >>
+
+rectangle "FitFlow App" {
+
+  package "Training" {
+    usecase "Onboarding\n(goal, level)" as UC0
+    usecase "View today's workout" as UC1
+    usecase "Browse / filter workouts" as UC2
+    usecase "View workout details" as UC3
+    usecase "Follow a workout\n(complete sets, rest)" as UC4
+    usecase "Build custom workout" as UC5
+    usecase "Set weekly schedule" as UC6
+    usecase "Save session\nto history" as UC7
+  }
+
+  package "AI Form Check" {
+    usecase "Select exercise\nSquat / Push-up / Plank" as UC8
+    usecase "Analyze pose\nin real time" as UC9
+    usecase "Count reps / hold time\n+ score form" as UC10
+  }
+
+  package "Progress Tracking" {
+    usecase "View dashboard\n(heatmap, chart, PRs)" as UC11
+    usecase "View session detail" as UC12
+    usecase "View achievements" as UC13
+    usecase "Log body weight" as UC14
+    usecase "View BMI / BMR / TDEE" as UC15
+    usecase "Share summary" as UC16
+  }
+
+  package "Settings" {
+    usecase "Set workout reminders" as UC17
+    usecase "Theme / units" as UC18
+    usecase "Export data (JSON)" as UC19
+    usecase "Sign in & sync\n(optional)" as UC20
+  }
+}
+
+user --> UC0
+user --> UC1
+user --> UC2
+user --> UC3
+user --> UC4
+user --> UC5
+user --> UC6
+user --> UC8
+user --> UC11
+user --> UC12
+user --> UC13
+user --> UC14
+user --> UC15
+user --> UC16
+user --> UC17
+user --> UC18
+user --> UC19
+user --> UC20
+
+UC1 ..> UC0 : <<extend>>\nsuggested by goal
+UC1 ..> UC6 : <<extend>>
+UC4 ..> UC7 : <<include>>
+UC8 ..> UC9 : <<include>>
+UC9 ..> UC10 : <<include>>
+UC8 ..> UC7 : <<include>>
+UC15 ..> UC14 : <<include>>
+UC20 ..> UC19 : <<extend>>\nsync backups
+
+UC9 --> camera
+@enduml
