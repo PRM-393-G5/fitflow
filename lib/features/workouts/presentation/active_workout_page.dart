@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
+import '../../../domain/personal_records.dart';
 
 class ActiveWorkoutPage extends StatefulWidget {
   const ActiveWorkoutPage({
@@ -28,6 +29,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   int _setIndex = 0;
   int _completedSets = 0;
   int _restRemaining = 0;
+  final _performedIndexes = <int>{};
   Timer? _timer;
 
   Exercise get _exercise => widget.workout.exercises[_exerciseIndex];
@@ -42,6 +44,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   void _completeSet() {
     setState(() {
       _completedSets++;
+      _performedIndexes.add(_exerciseIndex);
       _restRemaining = _exercise.restSeconds;
     });
     _startRestTimer();
@@ -85,6 +88,14 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       0,
       (sum, item) => sum + item.weightKg * item.reps * item.sets,
     );
+    final performed = [
+      for (final index in _performedIndexes) widget.workout.exercises[index],
+    ];
+    final newRecords = PersonalRecords.newRecords(
+      widget.controller.sessions,
+      performed,
+    );
+    final messenger = ScaffoldMessenger.of(context);
     await widget.controller.addSession(
       WorkoutSession(
         id: completedAt.microsecondsSinceEpoch.toString(),
@@ -94,9 +105,21 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         completedAt: completedAt,
         completedSets: _completedSets,
         volumeKg: volume,
+        exercises: performed,
       ),
     );
-    if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+    if (mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      if (newRecords.isNotEmpty) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'New PR: ${newRecords.map((item) => item.name).join(', ')}',
+            ),
+          ),
+        );
+      }
+    }
   }
 
   Future<bool> _confirm(String title, String message, String action) async =>

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
@@ -112,6 +113,12 @@ class HomePage extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'This week'),
           const SizedBox(height: AppSpacing.sm),
+          _WeeklyGoalCard(
+            done: weekly,
+            goal: controller.weeklyGoal,
+            onTap: () => _pickWeeklyGoal(context, controller),
+          ),
+          const SizedBox(height: AppSpacing.sm),
           LayoutBuilder(
             builder: (context, constraints) => GridView.count(
               crossAxisCount: constraints.maxWidth < 500 ? 2 : 3,
@@ -129,15 +136,97 @@ class HomePage extends StatelessWidget {
                   value: '${weekMinutes}m',
                   label: 'active time',
                 ),
-                StatCard(
-                  icon: Icons.check_circle_outline,
-                  value: '$weekly',
-                  label: 'workouts',
-                ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _pickWeeklyGoal(BuildContext context, AppController controller) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Weekly goal'),
+        children: [
+          for (final value in List.generate(7, (index) => index + 1))
+            SimpleDialogOption(
+              onPressed: () {
+                controller.setWeeklyGoal(value);
+                Navigator.pop(context);
+              },
+              child: Text('$value workouts per week'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeeklyGoalCard extends StatelessWidget {
+  const _WeeklyGoalCard({
+    required this.done,
+    required this.goal,
+    required this.onTap,
+  });
+
+  final int done;
+  final int goal;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = (done / goal).clamp(0.0, 1.0);
+    final colors = Theme.of(context).colorScheme;
+    return Card(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 56,
+                height: 56,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 6,
+                      backgroundColor: colors.surfaceContainerHighest,
+                    ),
+                    Text(
+                      '$done/$goal',
+                      style: Theme.of(context).textTheme.labelLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Weekly goal',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      done >= goal
+                          ? 'Goal reached — nice work.'
+                          : '$done of $goal workouts done. Tap to change your goal.',
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.edit_outlined),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -1,3 +1,5 @@
+import 'exercise.dart';
+
 class WorkoutSession {
   const WorkoutSession({
     required this.id,
@@ -7,6 +9,7 @@ class WorkoutSession {
     required this.completedAt,
     required this.completedSets,
     required this.volumeKg,
+    this.exercises = const [],
   });
 
   final String id;
@@ -16,6 +19,10 @@ class WorkoutSession {
   final DateTime completedAt;
   final int completedSets;
   final double volumeKg;
+
+  /// The exercises actually performed, snapshotted from the plan.
+  /// Empty for sessions recorded before this field existed.
+  final List<Exercise> exercises;
 
   int get durationMinutes {
     final minutes = completedAt.difference(startedAt).inMinutes;
@@ -30,6 +37,7 @@ class WorkoutSession {
     'completedAt': completedAt.toIso8601String(),
     'completedSets': completedSets,
     'volumeKg': volumeKg,
+    'exercises': exercises.map((item) => item.toJson()).toList(),
   };
 
   factory WorkoutSession.fromJson(Map<String, dynamic> json) => WorkoutSession(
@@ -40,5 +48,10 @@ class WorkoutSession {
     completedAt: DateTime.parse(json['completedAt'] as String),
     completedSets: json['completedSets'] as int,
     volumeKg: (json['volumeKg'] as num).toDouble(),
+    exercises:
+        (json['exercises'] as List?)
+            ?.map((item) => Exercise.fromJson(item as Map<String, dynamic>))
+            .toList() ??
+        const [],
   );
 }

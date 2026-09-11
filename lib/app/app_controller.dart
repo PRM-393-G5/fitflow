@@ -3,13 +3,14 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/reminder_service.dart';
 import '../domain/models/body_weight_entry.dart';
 import '../domain/models/workout.dart';
 import '../domain/models/workout_session.dart';
 import '../domain/repositories/workout_repository.dart';
 
 class AppController extends ChangeNotifier {
-  AppController(this.repository, this.preferences);
+  AppController(this.repository, this.preferences, {this.reminders});
 
   static const _themeKey = 'theme_mode';
   static const _unitKey = 'unit_system';
@@ -18,8 +19,10 @@ class AppController extends ChangeNotifier {
   static const _profileKey = 'body_profile_v1';
   static const _scheduleKey = 'schedule_v1';
   static const _onboardingKey = 'onboarding_v1';
+  static const _weeklyGoalKey = 'weekly_goal_v1';
   final WorkoutRepository repository;
   final SharedPreferences preferences;
+  final ReminderService? reminders;
 
   List<Workout> workouts = [];
   List<WorkoutSession> sessions = [];
@@ -44,6 +47,8 @@ class AppController extends ChangeNotifier {
   String? goal;
   String? level;
 
+  int weeklyGoal = 3;
+
   Future<void> load() async {
     loading = true;
     error = null;
@@ -60,6 +65,7 @@ class AppController extends ChangeNotifier {
       _decodeProfile();
       _decodeSchedule();
       _decodeOnboarding();
+      weeklyGoal = preferences.getInt(_weeklyGoalKey) ?? 3;
     } catch (_) {
       error = 'Could not load your local data.';
     } finally {
@@ -137,8 +143,6 @@ class AppController extends ChangeNotifier {
     reminderDays = {for (final day in json['days'] as List? ?? []) day as int};
   }
 
-  // ponytail: stores the reminder preference only — actual OS notification
-  // scheduling needs flutter_local_notifications (roadmap item).
   Future<void> setReminder({
     bool? enabled,
     int? minutes,
@@ -147,6 +151,14 @@ class AppController extends ChangeNotifier {
     reminderEnabled = enabled ?? reminderEnabled;
     reminderMinutes = minutes ?? reminderMinutes;
     reminderDays = days ?? reminderDays;
+    if (reminderEnabled) {
+      reminderEnabled = await reminders?.requestPermission() ?? false;
+    }
+    await reminders?.reschedule(
+      enabled: reminderEnabled,
+      minutes: reminderMinutes,
+      days: reminderDays,
+    );
     await preferences.setString(
       _reminderKey,
       jsonEncode({
@@ -155,6 +167,12 @@ class AppController extends ChangeNotifier {
         'days': reminderDays.toList()..sort(),
       }),
     );
+    notifyListeners();
+  }
+
+  Future<void> setWeeklyGoal(int value) async {
+    weeklyGoal = value;
+    await preferences.setInt(_weeklyGoalKey, value);
     notifyListeners();
   }
 
