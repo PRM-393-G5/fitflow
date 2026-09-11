@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app/app_controller.dart';
 import 'app/workout_app.dart';
+import 'data/auth_service.dart';
 import 'data/firestore_workout_repository.dart';
 import 'data/local_workout_repository.dart';
 import 'data/reminder_service.dart';
@@ -42,6 +43,7 @@ Future<void> main() async {
         : local,
     preferences,
     reminders: reminders,
+    auth: firebaseReady ? AuthService() : null,
   );
   await controller.load();
   runApp(WorkoutApp(controller: controller));

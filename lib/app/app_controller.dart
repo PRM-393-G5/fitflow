@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/auth_service.dart';
 import '../data/reminder_service.dart';
 import '../domain/models/body_weight_entry.dart';
 import '../domain/models/workout.dart';
@@ -10,7 +11,7 @@ import '../domain/models/workout_session.dart';
 import '../domain/repositories/workout_repository.dart';
 
 class AppController extends ChangeNotifier {
-  AppController(this.repository, this.preferences, {this.reminders});
+  AppController(this.repository, this.preferences, {this.reminders, this.auth});
 
   static const _themeKey = 'theme_mode';
   static const _unitKey = 'unit_system';
@@ -23,6 +24,7 @@ class AppController extends ChangeNotifier {
   final WorkoutRepository repository;
   final SharedPreferences preferences;
   final ReminderService? reminders;
+  final AuthService? auth;
 
   List<Workout> workouts = [];
   List<WorkoutSession> sessions = [];
