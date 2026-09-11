@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/models/workout.dart';
 import '../domain/models/workout_session.dart';
 import '../domain/repositories/workout_repository.dart';
-import 'seed_workouts.dart';
 
 class LocalWorkoutRepository implements WorkoutRepository {
   LocalWorkoutRepository(this.preferences);
@@ -17,19 +16,13 @@ class LocalWorkoutRepository implements WorkoutRepository {
   @override
   Future<List<Workout>> getWorkouts() async {
     final raw = preferences.getString(_workoutsKey);
-    if (raw == null) {
-      await preferences.setString(
-        _workoutsKey,
-        jsonEncode(seedWorkouts.map((item) => item.toJson()).toList()),
-      );
-      return List.of(seedWorkouts);
-    }
+    if (raw == null) return [];
     try {
       return (jsonDecode(raw) as List)
           .map((item) => Workout.fromJson(item as Map<String, dynamic>))
           .toList();
     } on FormatException {
-      return List.of(seedWorkouts);
+      return [];
     }
   }
 
