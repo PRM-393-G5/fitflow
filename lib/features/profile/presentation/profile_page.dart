@@ -13,6 +13,7 @@ class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    final user = controller.auth?.currentUser;
     return ResponsiveContent(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -23,13 +24,21 @@ class ProfilePage extends StatelessWidget {
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: AppSpacing.lg),
-          const CircleAvatar(radius: 40, child: Icon(Icons.person, size: 40)),
+          CircleAvatar(
+            radius: 40,
+            backgroundImage: user?.photoURL == null
+                ? null
+                : NetworkImage(user!.photoURL!),
+            child: user?.photoURL == null
+                ? const Icon(Icons.person, size: 40)
+                : null,
+          ),
           const SizedBox(height: AppSpacing.md),
           Text(
-            'FitFlow Athlete',
+            user?.displayName ?? 'FitFlow Athlete',
             style: Theme.of(context).textTheme.titleLarge,
           ),
-          const Text('Your preferences stay on this device.'),
+          Text(user?.email ?? 'Your preferences stay on this device.'),
           const SizedBox(height: AppSpacing.lg),
           Card(
             child: Column(
@@ -115,11 +124,10 @@ class ProfilePage extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.lock_outline),
-              title: const Text('Private by design'),
-              subtitle: const Text(
-                'No account, backend, or cloud sync is used.',
-              ),
+              leading: const Icon(Icons.logout),
+              title: const Text('Sign out'),
+              subtitle: Text(user?.email ?? 'Not signed in'),
+              onTap: () => controller.auth?.signOut(),
             ),
           ),
         ],

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
-import '../features/navigation/presentation/app_shell.dart';
+import '../features/auth/presentation/auth_gate.dart';
 import 'app_controller.dart';
 import 'app_scope.dart';
 
@@ -21,7 +21,7 @@ class WorkoutApp extends StatelessWidget {
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: controller.themeMode,
-        home: const AppShell(),
+        home: const AuthGate(),
       ),
     ),
   );
