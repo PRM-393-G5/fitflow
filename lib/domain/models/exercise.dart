@@ -43,8 +43,9 @@ class Exercise {
       isTimed ? '$sets × ${durationSeconds}s' : '$sets × $reps reps';
 
   /// Actual lifted volume across logged sets (0 for timed/bodyweight sets).
-  double get performedVolumeKg =>
-      performedSets.fold(0, (sum, set) => sum + set.weightKg * set.amount);
+  double get performedVolumeKg => isTimed
+      ? 0
+      : performedSets.fold(0, (sum, set) => sum + set.weightKg * set.amount);
 
   Exercise copyWith({List<SetEntry>? performedSets}) => Exercise(
     id: id,

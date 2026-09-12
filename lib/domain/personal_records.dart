@@ -66,14 +66,16 @@ abstract final class PersonalRecords {
   /// hold seconds for timed. Falls back to the plan snapshot for sessions
   /// recorded before per-set logging existed.
   static double _valueOf(Exercise exercise) {
+    if (exercise.performedSets.isEmpty) {
+      return exercise.isTimed
+          ? exercise.durationSeconds.toDouble()
+          : exercise.weightKg;
+    }
     var best = 0.0;
     for (final set in exercise.performedSets) {
       final value = exercise.isTimed ? set.amount.toDouble() : set.weightKg;
       if (value > best) best = value;
     }
-    if (best > 0) return best;
-    return exercise.isTimed
-        ? exercise.durationSeconds.toDouble()
-        : exercise.weightKg;
+    return best;
   }
 }

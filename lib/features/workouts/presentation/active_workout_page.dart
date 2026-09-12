@@ -69,7 +69,9 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     final weight = double.tryParse(_weightCtrl.text.trim());
     final entry = SetEntry(
       amount: amount != null && amount >= 0 ? amount : fallback,
-      weightKg: weight != null && weight >= 0 ? weight : _exercise.weightKg,
+      weightKg: weight != null && weight >= 0 && weight.isFinite
+          ? weight
+          : _exercise.weightKg,
     );
     setState(() {
       _completedSets++;

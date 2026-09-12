@@ -66,6 +66,19 @@ void main() {
     expect(PersonalRecords.best(sessions)['Bench Press']!.value, 25);
   });
 
+  test('logged bodyweight sets do not fall back to plan weight', () {
+    final sessions = [
+      session(DateTime(2026, 4, 1), [
+        logged('Squat', 40, [
+          const SetEntry(amount: 10),
+          const SetEntry(amount: 10),
+        ]),
+      ]),
+    ];
+
+    expect(PersonalRecords.best(sessions), isNot(contains('Squat')));
+  });
+
   test('timed PRs use longest logged hold', () {
     final plank = Exercise(
       id: 'plank',
