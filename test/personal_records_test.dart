@@ -55,7 +55,9 @@ void main() {
   });
 
   test('flags only exercises that beat the previous best', () {
-    final past = [session(DateTime(2026, 4, 1), [weighted('Squat', 40)])];
+    final past = [
+      session(DateTime(2026, 4, 1), [weighted('Squat', 40)]),
+    ];
     final performed = [weighted('Squat', 40), weighted('Squat', 50)];
 
     final first = PersonalRecords.newRecords(past, [performed.first]);

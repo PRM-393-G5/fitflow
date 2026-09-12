@@ -8,11 +8,11 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 |---|---|---|
 | Onboarding | Lần đầu mở app: chọn mục tiêu (tăng cơ / giảm mỡ / vận động) + trình độ → cá nhân hoá gợi ý workout và filter mặc định | ✅ |
 | Thư viện workout | Browse, search, filter theo category/level; xem chi tiết exercise, sets, reps, rest | ✅ |
-| Màn tập (active workout) | Tick từng set, đếm ngược rest, xác nhận kết thúc; session hoàn thành tự lưu | ✅ |
+| Màn tập (active workout) | Tick từng set, nhập reps/kg thực tế từng set (prefill từ plan), đếm ngược rest, xác nhận kết thúc; session hoàn thành tự lưu | ✅ |
 | Today's workout | Home hiển thị workout theo lịch tuần hoặc theo goal onboarding | ✅ |
 | Workout builder | Tạo plan riêng: tên, category, level, danh sách exercise động (sets/reps/rest/tạ), tự estimate thời lượng | ✅ |
 | Weekly schedule | Gán plan cho từng thứ trong tuần | ✅ |
-| Session detail | Tap vào lịch sử → duration, sets, volume, breakdown theo exercise | ✅ |
+| Session detail | Tap vào lịch sử → duration, sets, volume, breakdown từng set (reps × kg) theo exercise | ✅ |
 
 ## 2. AI Form Check (kiểm tra tư thế on-device)
 

@@ -30,21 +30,49 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   int _completedSets = 0;
   int _restRemaining = 0;
   final _performedIndexes = <int>{};
+  final _entries = <int, List<SetEntry>>{};
+  final _amountCtrl = TextEditingController();
+  final _weightCtrl = TextEditingController();
   Timer? _timer;
 
   Exercise get _exercise => widget.workout.exercises[_exerciseIndex];
   double get _progress => _completedSets / widget.workout.totalSets;
 
   @override
+  void initState() {
+    super.initState();
+    _prefill();
+  }
+
+  @override
   void dispose() {
     _timer?.cancel();
+    _amountCtrl.dispose();
+    _weightCtrl.dispose();
     super.dispose();
   }
 
+  /// Prefill inputs from the last logged set of this exercise, else the plan.
+  void _prefill() {
+    final logged = _entries[_exerciseIndex];
+    final last = logged == null || logged.isEmpty ? null : logged.last;
+    _amountCtrl.text =
+        '${last?.amount ?? (_exercise.isTimed ? _exercise.durationSeconds : _exercise.reps)}';
+    _weightCtrl.text = '${last?.weightKg ?? _exercise.weightKg}';
+  }
+
   void _completeSet() {
+    final fallback = _exercise.isTimed
+        ? _exercise.durationSeconds
+        : _exercise.reps;
+    final entry = SetEntry(
+      amount: int.tryParse(_amountCtrl.text.trim()) ?? fallback,
+      weightKg: double.tryParse(_weightCtrl.text.trim()) ?? _exercise.weightKg,
+    );
     setState(() {
       _completedSets++;
       _performedIndexes.add(_exerciseIndex);
+      (_entries[_exerciseIndex] ??= []).add(entry);
       _restRemaining = _exercise.restSeconds;
     });
     _startRestTimer();
@@ -72,6 +100,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         _exerciseIndex++;
         _setIndex = 0;
       }
+      _prefill();
     });
     if (_completedSets >= widget.workout.totalSets) _finish();
   }
@@ -84,13 +113,16 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     );
     if (!confirmed || !mounted) return;
     final completedAt = DateTime.now();
-    final volume = widget.workout.exercises.fold<double>(
-      0,
-      (sum, item) => sum + item.weightKg * item.reps * item.sets,
-    );
     final performed = [
-      for (final index in _performedIndexes) widget.workout.exercises[index],
+      for (final index in _performedIndexes)
+        widget.workout.exercises[index].copyWith(
+          performedSets: _entries[index] ?? const [],
+        ),
     ];
+    final volume = performed.fold<double>(
+      0,
+      (sum, item) => sum + item.performedVolumeKg,
+    );
     final newRecords = PersonalRecords.newRecords(
       widget.controller.sessions,
       performed,
@@ -221,12 +253,33 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
-                Text(
-                  _exercise.isTimed
-                      ? '${_exercise.durationSeconds} seconds'
-                      : '${_exercise.reps} reps',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.displaySmall,
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        key: const Key('set-amount'),
+                        controller: _amountCtrl,
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        decoration: InputDecoration(
+                          labelText: _exercise.isTimed ? 'Seconds' : 'Reps',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: TextField(
+                        key: const Key('set-weight'),
+                        controller: _weightCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        textAlign: TextAlign.center,
+                        decoration: const InputDecoration(labelText: 'Kg'),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: AppSpacing.xl),
                 FilledButton.icon(

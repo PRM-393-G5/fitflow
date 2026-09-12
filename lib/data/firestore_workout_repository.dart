@@ -52,10 +52,7 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
     final remote = await _fetchRemote();
     final local = await _local.getWorkouts();
     if (remote == null || remote.isEmpty) return local;
-    return [
-      ...remote,
-      ...local.where((item) => item.id.startsWith('custom-')),
-    ];
+    return [...remote, ...local.where((item) => item.id.startsWith('custom-'))];
   }
 
   @override

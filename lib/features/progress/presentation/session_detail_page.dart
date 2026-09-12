@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../domain/models/workout.dart';
+import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout_session.dart';
 
 class SessionDetailPage extends StatelessWidget {
@@ -17,13 +17,6 @@ class SessionDetailPage extends StatelessWidget {
     final volume = controller.useMetric
         ? session.volumeKg
         : session.volumeKg * 2.20462;
-    Workout? workout;
-    for (final item in controller.workouts) {
-      if (item.id == session.workoutId) {
-        workout = item;
-        break;
-      }
-    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Session detail')),
@@ -64,22 +57,20 @@ class SessionDetailPage extends StatelessWidget {
             const SizedBox(height: AppSpacing.lg),
             Text('Exercises', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: AppSpacing.sm),
-            if (workout == null)
+            if (session.exercises.isEmpty)
               const Card(
                 child: Padding(
                   padding: EdgeInsets.all(AppSpacing.lg),
-                  child: Text('This session was not tied to a saved plan.'),
+                  child: Text('No exercises recorded for this session.'),
                 ),
               )
             else
-              ...workout.exercises.indexed.map(
+              ...session.exercises.indexed.map(
                 (entry) => Card(
                   child: ListTile(
                     leading: CircleAvatar(child: Text('${entry.$1 + 1}')),
                     title: Text(entry.$2.name),
-                    subtitle: Text(
-                      '${entry.$2.muscleGroup} • ${entry.$2.prescription} • ${entry.$2.restSeconds}s rest',
-                    ),
+                    subtitle: Text(_setsLine(entry.$2, controller.useMetric)),
                   ),
                 ),
               ),
@@ -88,6 +79,27 @@ class SessionDetailPage extends StatelessWidget {
       ),
     );
   }
+
+  /// 'Muscle • 10 × 20 kg · 8 × 22.5 kg' for logged sets, else the plan line.
+  static String _setsLine(Exercise exercise, bool metric) {
+    if (exercise.performedSets.isEmpty) {
+      return '${exercise.muscleGroup} • ${exercise.prescription} • ${exercise.restSeconds}s rest';
+    }
+    final unit = metric ? 'kg' : 'lb';
+    final sets = exercise.performedSets
+        .map((set) {
+          if (exercise.isTimed) return '${set.amount}s';
+          if (set.weightKg <= 0) return '${set.amount} reps';
+          final weight = metric ? set.weightKg : set.weightKg * 2.20462;
+          return '${set.amount} × ${_trim(weight)} $unit';
+        })
+        .join(' · ');
+    return '${exercise.muscleGroup} • $sets';
+  }
+
+  static String _trim(double value) => value == value.roundToDouble()
+      ? '${value.round()}'
+      : value.toStringAsFixed(1);
 
   static String _date(DateTime date) =>
       '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} '

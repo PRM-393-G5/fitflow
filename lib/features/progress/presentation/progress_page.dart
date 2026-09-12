@@ -220,9 +220,8 @@ class ProgressPage extends StatelessWidget {
                   record.isTimed
                       ? '${record.value.round()}s'
                       : '${(controller.useMetric ? record.value : record.value * 2.20462).round()} $unit',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
               ),
             ],
