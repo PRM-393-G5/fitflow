@@ -65,9 +65,11 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     final fallback = _exercise.isTimed
         ? _exercise.durationSeconds
         : _exercise.reps;
+    final amount = int.tryParse(_amountCtrl.text.trim());
+    final weight = double.tryParse(_weightCtrl.text.trim());
     final entry = SetEntry(
-      amount: int.tryParse(_amountCtrl.text.trim()) ?? fallback,
-      weightKg: double.tryParse(_weightCtrl.text.trim()) ?? _exercise.weightKg,
+      amount: amount != null && amount >= 0 ? amount : fallback,
+      weightKg: weight != null && weight >= 0 ? weight : _exercise.weightKg,
     );
     setState(() {
       _completedSets++;
@@ -200,97 +202,109 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         actions: [TextButton(onPressed: _finish, child: const Text('Finish'))],
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Semantics(
-                label: '${(_progress * 100).round()} percent complete',
-                child: LinearProgressIndicator(value: _progress),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text('$_completedSets of ${widget.workout.totalSets} sets'),
-              const Spacer(),
-              if (_restRemaining > 0) ...[
-                Icon(
-                  Icons.timer_outlined,
-                  size: 72,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                Text(
-                  'Rest',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                Text(
-                  '$_restRemaining',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.displayLarge
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                OutlinedButton(
-                  key: const Key('skip-rest'),
-                  onPressed: _advance,
-                  child: const Text('Skip rest'),
-                ),
-              ] else ...[
-                Text(
-                  'Exercise ${_exerciseIndex + 1} of ${widget.workout.exercises.length}',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  _exercise.name,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineLarge
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  'Set ${_setIndex + 1} of ${_exercise.sets}',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: IntrinsicHeight(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        key: const Key('set-amount'),
-                        controller: _amountCtrl,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        decoration: InputDecoration(
-                          labelText: _exercise.isTimed ? 'Seconds' : 'Reps',
-                        ),
-                      ),
+                    Semantics(
+                      label: '${(_progress * 100).round()} percent complete',
+                      child: LinearProgressIndicator(value: _progress),
                     ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: TextField(
-                        key: const Key('set-weight'),
-                        controller: _weightCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        textAlign: TextAlign.center,
-                        decoration: const InputDecoration(labelText: 'Kg'),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text('$_completedSets of ${widget.workout.totalSets} sets'),
+                    const Spacer(),
+                    if (_restRemaining > 0) ...[
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 72,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
-                    ),
+                      Text(
+                        'Rest',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineMedium,
+                      ),
+                      Text(
+                        '$_restRemaining',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.displayLarge
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      OutlinedButton(
+                        key: const Key('skip-rest'),
+                        onPressed: _advance,
+                        child: const Text('Skip rest'),
+                      ),
+                    ] else ...[
+                      Text(
+                        'Exercise ${_exerciseIndex + 1} of ${widget.workout.exercises.length}',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        _exercise.name,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineLarge
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        'Set ${_setIndex + 1} of ${_exercise.sets}',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              key: const Key('set-amount'),
+                              controller: _amountCtrl,
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              decoration: InputDecoration(
+                                labelText: _exercise.isTimed
+                                    ? 'Seconds'
+                                    : 'Reps',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: TextField(
+                              key: const Key('set-weight'),
+                              controller: _weightCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              textAlign: TextAlign.center,
+                              decoration: const InputDecoration(
+                                labelText: 'Kg',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      FilledButton.icon(
+                        key: const Key('complete-set'),
+                        onPressed: _completeSet,
+                        icon: const Icon(Icons.check),
+                        label: const Text('Complete set'),
+                      ),
+                    ],
+                    const Spacer(),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.xl),
-                FilledButton.icon(
-                  key: const Key('complete-set'),
-                  onPressed: _completeSet,
-                  icon: const Icon(Icons.check),
-                  label: const Text('Complete set'),
-                ),
-              ],
-              const Spacer(),
-            ],
+              ),
+            ),
           ),
         ),
       ),
