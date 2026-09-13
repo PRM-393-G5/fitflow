@@ -73,6 +73,7 @@ abstract final class PersonalRecords {
     }
     var best = 0.0;
     for (final set in exercise.performedSets) {
+      if (set.amount <= 0) continue;
       final value = exercise.isTimed ? set.amount.toDouble() : set.weightKg;
       if (value > best) best = value;
     }

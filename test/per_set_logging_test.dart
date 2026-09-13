@@ -79,6 +79,16 @@ void main() {
     expect(PersonalRecords.best(sessions), isNot(contains('Squat')));
   });
 
+  test('zero-rep sets do not credit a PR', () {
+    final sessions = [
+      session(DateTime(2026, 4, 1), [
+        logged('Bench Press', 100, [const SetEntry(amount: 0, weightKg: 100)]),
+      ]),
+    ];
+
+    expect(PersonalRecords.best(sessions), isNot(contains('Bench Press')));
+  });
+
   test('timed PRs use longest logged hold', () {
     final plank = Exercise(
       id: 'plank',
