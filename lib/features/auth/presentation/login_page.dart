@@ -30,9 +30,8 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Sign-in failed: $message')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Sign-in failed: $message')));
   }
 
   @override
@@ -46,11 +45,7 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.bolt,
-                  size: 72,
-                  color: theme.colorScheme.primary,
-                ),
+                Icon(Icons.bolt, size: 72, color: theme.colorScheme.primary),
                 const SizedBox(height: 16),
                 Text(
                   'FitFlow',

@@ -23,15 +23,11 @@ abstract final class PersonalRecords {
   /// Heaviest weight (or longest hold for timed exercises) ever recorded
   /// per exercise name. Bodyweight rep-based exercises (weightKg == 0)
   /// are skipped — they carry no load to beat.
-  static Map<String, PersonalRecord> best(
-    Iterable<WorkoutSession> sessions,
-  ) {
+  static Map<String, PersonalRecord> best(Iterable<WorkoutSession> sessions) {
     final records = <String, PersonalRecord>{};
     for (final session in sessions) {
       for (final exercise in session.exercises) {
-        final value = exercise.isTimed
-            ? exercise.durationSeconds.toDouble()
-            : exercise.weightKg;
+        final value = _valueOf(exercise);
         if (value <= 0) continue;
         final current = records[exercise.name];
         if (current == null || value > current.value) {
@@ -61,10 +57,26 @@ abstract final class PersonalRecords {
   }
 
   static bool _beats(PersonalRecord? record, Exercise exercise) {
-    final value = exercise.isTimed
-        ? exercise.durationSeconds.toDouble()
-        : exercise.weightKg;
+    final value = _valueOf(exercise);
     if (value <= 0) return false;
     return record == null || value > record.value;
+  }
+
+  /// Best single-set value: heaviest kg for rep-based exercises, longest
+  /// hold seconds for timed. Falls back to the plan snapshot for sessions
+  /// recorded before per-set logging existed.
+  static double _valueOf(Exercise exercise) {
+    if (exercise.performedSets.isEmpty) {
+      return exercise.isTimed
+          ? exercise.durationSeconds.toDouble()
+          : exercise.weightKg;
+    }
+    var best = 0.0;
+    for (final set in exercise.performedSets) {
+      if (set.amount <= 0) continue;
+      final value = exercise.isTimed ? set.amount.toDouble() : set.weightKg;
+      if (value > best) best = value;
+    }
+    return best;
   }
 }

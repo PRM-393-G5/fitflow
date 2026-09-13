@@ -1,15 +1,41 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prm/app/app_controller.dart';
-import 'package:prm/app/workout_app.dart';
+import 'package:prm/app/app_scope.dart';
+import 'package:prm/core/theme/app_theme.dart';
 import 'package:prm/data/local_workout_repository.dart';
+import 'package:prm/domain/models/exercise.dart';
+import 'package:prm/domain/models/workout.dart';
+import 'package:prm/features/navigation/presentation/app_shell.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('browses catalog and starts the main workout flow', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({'onboarding_v1': '{"done":true}'});
+    const workout = Workout(
+      id: 'w1',
+      name: 'Full Body Foundation',
+      duration: Duration(minutes: 30),
+      level: 'Beginner',
+      category: 'Strength',
+      description: '',
+      exercises: [
+        Exercise(
+          id: 'squat',
+          name: 'Bodyweight Squat',
+          muscleGroup: 'Legs',
+          sets: 3,
+          reps: 10,
+        ),
+      ],
+    );
+    SharedPreferences.setMockInitialValues({
+      'onboarding_v1': '{"done":true}',
+      'workouts_v1': jsonEncode([workout.toJson()]),
+    });
     final preferences = await SharedPreferences.getInstance();
     final controller = AppController(
       LocalWorkoutRepository(preferences),
@@ -17,7 +43,13 @@ void main() {
     );
     await controller.load();
 
-    await tester.pumpWidget(WorkoutApp(controller: controller));
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(theme: AppTheme.light, home: const AppShell()),
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Ready to move?'), findsOneWidget);
 
     await tester.tap(find.text('Workouts'));
