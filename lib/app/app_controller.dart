@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -70,7 +71,7 @@ class AppController extends ChangeNotifier {
       _decodeSchedule();
       _decodeOnboarding();
       weeklyGoal = preferences.getInt(_weeklyGoalKey) ?? 3;
-      await _syncMeta();
+      unawaited(_syncMeta());
     } catch (_) {
       error = 'Could not load your local data.';
     } finally {
@@ -80,8 +81,9 @@ class AppController extends ChangeNotifier {
   }
 
   /// Last-write-wins meta sync (weights, profile, schedule, onboarding,
-  /// weekly goal) against the `users/{uid}` doc. Skipped when signed out or
-  /// offline — local data stays and the next launch retries.
+  /// weekly goal) against the `users/{uid}` doc. Runs in the background —
+  /// the server-source pull must not stall startup when offline. Skipped
+  /// when signed out; local data stays and the next launch retries.
   Future<void> _syncMeta() async {
     final repo = repository;
     if (repo is! FirestoreWorkoutRepository || !repo.signedIn) return;
@@ -91,6 +93,7 @@ class AppController extends ChangeNotifier {
       final remoteTs = remote?['updatedAt'] as int? ?? 0;
       if (remote != null && remoteTs > localTs) {
         await _applyRemoteMeta(remote);
+        notifyListeners();
       } else if (remoteTs < localTs || remote == null) {
         await _pushMeta();
       }
