@@ -25,14 +25,15 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
   final LocalWorkoutRepository _local;
   final SharedPreferences _preferences;
 
-  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
+  /// Currently signed-in user id, or null when signed out.
+  String? get uid => FirebaseAuth.instance.currentUser?.uid;
 
-  bool get signedIn => _uid != null;
+  bool get signedIn => uid != null;
 
   CollectionReference<Map<String, dynamic>>? _userCollection(String name) {
-    final uid = _uid;
-    if (uid == null) return null;
-    return _firestore.collection('users').doc(uid).collection(name);
+    final currentUid = uid;
+    if (currentUid == null) return null;
+    return _firestore.collection('users').doc(currentUid).collection(name);
   }
 
   /// Union of two id-keyed lists; [remote] wins on id conflicts.
@@ -61,6 +62,8 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
   }
 
   /// Pushes merged docs that exist locally but not remotely.
+  // ponytail: one batch caps at 500 writes — a backlog that big never
+  // uploads; upgrade path is chunking docs into batches of 500.
   void _pushMissing(
     CollectionReference<Map<String, dynamic>> collection,
     Iterable<({String id, Map<String, Object> json})> docs,
@@ -71,7 +74,7 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
       batch.set(collection.doc(doc.id), doc.json);
       dirty = true;
     }
-    if (dirty) unawaited(batch.commit());
+    if (dirty) batch.commit().ignore();
   }
 
   Future<List<Workout>?> _fetchRemote() async {
@@ -129,11 +132,11 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
   /// Pulls the `users/{uid}` meta doc. Null when signed out or absent;
   /// callers must catch failures (offline) and skip syncing.
   Future<Map<String, dynamic>?> pullMeta() async {
-    final uid = _uid;
-    if (uid == null) return null;
+    final currentUid = uid;
+    if (currentUid == null) return null;
     final doc = await _firestore
         .collection('users')
-        .doc(uid)
+        .doc(currentUid)
         .get(const GetOptions(source: Source.server))
         .timeout(_timeout);
     return doc.data();
@@ -141,16 +144,19 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
 
   /// Pushes the meta blob; [updatedAt] drives last-write-wins merges.
   Future<void> pushMeta(Map<String, Object?> meta, int updatedAt) async {
-    final uid = _uid;
-    if (uid == null) return;
+    final currentUid = uid;
+    if (currentUid == null) return;
     try {
       await _firestore
           .collection('users')
-          .doc(uid)
-          .set({...meta, 'updatedAt': updatedAt})
+          .doc(currentUid)
+          .set({...meta, 'updatedAt': updatedAt}, SetOptions(merge: true))
           .timeout(_timeout);
     } catch (_) {}
   }
+
+  /// Drops all locally cached synced data (sessions + custom workouts).
+  Future<void> clearLocalData() => _local.clearAll();
 
   @override
   Future<List<Workout>> getWorkouts() async {

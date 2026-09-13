@@ -45,4 +45,16 @@ void main() {
       'new',
     ]);
   });
+
+  test('clearAll drops workouts and sessions', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final repository = LocalWorkoutRepository(preferences);
+
+    await repository.saveSession(session('s', 1));
+    await repository.clearAll();
+
+    expect(await repository.getRecentSessions(), isEmpty);
+    expect(await repository.getWorkouts(), isEmpty);
+  });
 }

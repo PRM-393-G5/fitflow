@@ -24,6 +24,7 @@ class AppController extends ChangeNotifier {
   static const _onboardingKey = 'onboarding_v1';
   static const _weeklyGoalKey = 'weekly_goal_v1';
   static const _metaTsKey = 'meta_updated_at';
+  static const _syncUidKey = 'sync_uid';
   final WorkoutRepository repository;
   final SharedPreferences preferences;
   final ReminderService? reminders;
@@ -58,6 +59,7 @@ class AppController extends ChangeNotifier {
     loading = true;
     error = null;
     try {
+      await _guardAccountSwitch();
       workouts = await repository.getWorkouts();
       sessions = await repository.getRecentSessions();
       themeMode = ThemeMode.values.firstWhere(
@@ -78,6 +80,35 @@ class AppController extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
+  }
+
+  /// When the signed-in account changes on this device, drop the previous
+  /// account's synced local data first — otherwise it would merge into and
+  /// upload to the new account's cloud. The previous account loses nothing:
+  /// its data already lives under `users/{oldUid}`.
+  Future<void> _guardAccountSwitch() async {
+    final repo = repository;
+    if (repo is! FirestoreWorkoutRepository) return;
+    final uid = repo.uid;
+    if (uid == null) return;
+    final lastUid = preferences.getString(_syncUidKey);
+    if (lastUid == uid) return;
+    if (lastUid != null) {
+      for (final key in [
+        _weightsKey,
+        _profileKey,
+        _scheduleKey,
+        _onboardingKey,
+        _weeklyGoalKey,
+        _metaTsKey,
+      ]) {
+        await preferences.remove(key);
+      }
+      await repo.clearLocalData();
+    }
+    // lastUid == null → first sync since the feature shipped: keep the
+    // existing local data so it uploads to this account.
+    await preferences.setString(_syncUidKey, uid);
   }
 
   /// Last-write-wins meta sync (weights, profile, schedule, onboarding,
