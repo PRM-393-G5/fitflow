@@ -33,6 +33,7 @@ Future<void> main() async {
   }
   final preferences = await SharedPreferences.getInstance();
   final local = LocalWorkoutRepository(preferences);
+  final auth = firebaseReady ? AuthService() : null;
   final controller = AppController(
     firebaseReady
         ? FirestoreWorkoutRepository(
@@ -43,8 +44,14 @@ Future<void> main() async {
         : local,
     preferences,
     reminders: reminders,
-    auth: firebaseReady ? AuthService() : null,
+    auth: auth,
   );
   await controller.load();
+  // Re-sync cloud data when the user signs in after startup.
+  var lastUid = auth?.currentUser?.uid;
+  auth?.userChanges.listen((user) {
+    if (user != null && user.uid != lastUid) controller.load();
+    lastUid = user?.uid;
+  });
   runApp(WorkoutApp(controller: controller));
 }

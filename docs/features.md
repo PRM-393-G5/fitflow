@@ -53,7 +53,7 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 |---|---|---|
 | Theme | Light / dark / system | ✅ |
 | Đơn vị | Metric / imperial | ✅ |
-| Reminders | Chọn giờ + thứ muốn tập | 🟡 (lưu preference, chưa bắn notification — cần `flutter_local_notifications`) |
+| Reminders | Chọn giờ + thứ muốn tập, bắn notification thật qua `flutter_local_notifications` | ✅ |
 
 ## 6. Dữ liệu & đồng bộ (Local-first + Cloud Sync)
 
@@ -61,13 +61,12 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 |---|---|---|
 | Local-first | Mọi dữ liệu (plans, sessions, cân nặng, profile, lịch, onboarding) lưu local — app dùng được hoàn toàn offline, không bắt account | ✅ |
 | Export JSON | Xuất toàn bộ dữ liệu, copy/share | ✅ |
-| Sign-in | Đăng nhập (Firebase Auth) — chỉ để mở khoá sync, không bắt buộc | 📋 |
-| Cloud sync | Backup + đồng bộ plans/sessions/metrics/schedule qua Cloud Firestore, merge last-write-wins | 📋 |
-| Multi-device | Nhiều thiết bị cùng account thấy cùng dữ liệu | 📋 |
+| Sign-in | Đăng nhập Google (Firebase Auth) — mở khoá cloud sync | ✅ |
+| Cloud sync | Backup + đồng bộ sessions/custom plans/metrics/schedule/onboarding qua Cloud Firestore (`users/{uid}`); merge by id cho sessions & plans, last-write-wins cho meta | ✅ |
+| Multi-device | Nhiều thiết bị cùng account thấy cùng dữ liệu (sync khi mở app + mỗi lần ghi) | ✅ |
 
 ## Ưu tiên triển khai tiếp
 
-1. **Sign-in + Cloud sync** — form đăng ký đã cam kết, gap lớn nhất
-2. **Notification thật** cho reminders — dễ demo, effort thấp
-3. **Share ảnh** summary card
-4. Bài tập form check mới / số đo cơ thể — nếu dư thời gian
+1. **Share ảnh** summary card — cần `share_plus`
+2. Bài tập form check mới / số đo cơ thể — nếu dư thời gian
+3. Nhật ký calo đơn giản (log kcal/ngày vs TDEE) — nếu muốn thêm dinh dưỡng
