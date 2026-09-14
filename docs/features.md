@@ -11,6 +11,7 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 | Màn tập (active workout) | Tick từng set, nhập reps/kg thực tế từng set (prefill từ plan), đếm ngược rest, xác nhận kết thúc; session hoàn thành tự lưu | ✅ |
 | Today's workout | Home hiển thị workout theo lịch tuần hoặc theo goal onboarding | ✅ |
 | Workout builder | Tạo plan riêng: tên, category, level, danh sách exercise động (sets/reps/rest/tạ), tự estimate thời lượng | ✅ |
+| AI workout generator | Nhập mô tả bằng text ("30 phút, tập chân, không dụng cụ") → GPT-4o-mini tạo plan hoàn chỉnh (strict JSON schema + sanitize) → preview → lưu thành custom plan, sync cloud như plan tay | ✅ (cần `--dart-define=OPENAI_API_KEY`) |
 | Weekly schedule | Gán plan cho từng thứ trong tuần | ✅ |
 | Session detail | Tap vào lịch sử → duration, sets, volume, breakdown từng set (reps × kg) theo exercise | ✅ |
 
