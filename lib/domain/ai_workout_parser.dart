@@ -132,8 +132,9 @@ abstract final class AiWorkoutParser {
   }
 
   static String _text(Object? value, String fallback) {
-    final text = (value as String?)?.trim();
-    return text == null || text.isEmpty ? fallback : text;
+    if (value is! String) return fallback;
+    final text = value.trim();
+    return text.isEmpty ? fallback : text;
   }
 
   static int _clampInt(Object? value, int min, int max, int fallback) {

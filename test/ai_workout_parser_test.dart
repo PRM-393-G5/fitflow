@@ -79,6 +79,17 @@ void main() {
     expect(workout.exercises.single.reps, 10);
   });
 
+  test('non-string fields fall back instead of crashing', () {
+    final workout = AiWorkoutParser.parse(
+      plan()
+        ..['name'] = 42
+        ..['description'] = null,
+    );
+
+    expect(workout.name, 'AI Workout');
+    expect(workout.description, '');
+  });
+
   test('timed exercise keeps zero reps', () {
     final workout = AiWorkoutParser.parse(
       plan(exercises: [exercise(reps: 0, durationSeconds: 30)]),

@@ -51,7 +51,10 @@ class OpenAiService {
         }),
       );
       final response = await request.close().timeout(_timeout);
-      final body = await response.transform(utf8.decoder).join();
+      final body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(_timeout);
       if (response.statusCode == 429) {
         throw const OpenAiException('rate-limited');
       }
@@ -59,7 +62,15 @@ class OpenAiService {
         throw OpenAiException('http-${response.statusCode}');
       }
       final decoded = jsonDecode(body) as Map<String, dynamic>;
-      final content = decoded['choices'][0]['message']['content'] as String;
+      final choices = decoded['choices'] as List?;
+      final message = choices == null || choices.isEmpty
+          ? null
+          : choices.first['message'] as Map<String, dynamic>?;
+      if (message?['refusal'] != null) {
+        throw const OpenAiException('refused');
+      }
+      final content = message?['content'] as String?;
+      if (content == null) throw const OpenAiException('invalid-response');
       return jsonDecode(content) as Map<String, dynamic>;
     } on OpenAiException {
       rethrow;
@@ -82,6 +93,7 @@ class OpenAiException implements Exception {
 
   String get message => switch (code) {
     'not-configured' => 'OpenAI API key is not configured.',
+    'refused' => 'The AI declined that request — try rephrasing it.',
     'rate-limited' => 'Rate limit reached — try again later.',
     'timeout' => 'Request timed out — try again.',
     'offline' => 'No network connection.',

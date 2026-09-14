@@ -38,7 +38,7 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
     super.dispose();
   }
 
-  Future<Workout> _generatePlan(String request) async {
+  Future<Workout> _generatePlan(String request, String? goal) async {
     FormatException? parseError;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
@@ -48,7 +48,7 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
             request: request,
             level: _level == 'Auto' ? null : _level,
             durationMinutes: _duration.round(),
-            goal: AppScope.of(context).goal,
+            goal: goal,
           ),
           schema: AiWorkoutPrompt.schema,
           schemaName: 'workout_plan',
@@ -64,9 +64,10 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
   Future<void> _generate() async {
     final request = _requestCtrl.text.trim();
     if (request.isEmpty || _generating) return;
+    final goal = AppScope.of(context).goal;
     setState(() => _generating = true);
     try {
-      final workout = await _generatePlan(request);
+      final workout = await _generatePlan(request, goal);
       if (mounted) setState(() => _preview = workout);
     } on OpenAiException catch (e) {
       _showError(e.message);
@@ -256,6 +257,11 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
             ),
           ),
         ],
+      ),
+      TextButton(
+        key: const Key('ai-edit-request'),
+        onPressed: () => setState(() => _preview = null),
+        child: const Text('Edit request'),
       ),
     ],
   );
