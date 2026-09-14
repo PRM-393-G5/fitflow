@@ -75,4 +75,19 @@ class LocalWorkoutRepository implements WorkoutRepository {
       jsonEncode(sessions.map((item) => item.toJson()).toList()),
     );
   }
+
+  /// Replaces all stored sessions — used by cloud sync merges.
+  Future<void> overwriteSessions(List<WorkoutSession> sessions) async {
+    await preferences.setString(
+      _sessionsKey,
+      jsonEncode(sessions.map((item) => item.toJson()).toList()),
+    );
+  }
+
+  /// Removes all stored workouts and sessions — used when the signed-in
+  /// account changes so the previous account's data can't leak across.
+  Future<void> clearAll() async {
+    await preferences.remove(_workoutsKey);
+    await preferences.remove(_sessionsKey);
+  }
 }

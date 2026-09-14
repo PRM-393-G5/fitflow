@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/auth_service.dart';
+import '../data/firestore_workout_repository.dart';
 import '../data/reminder_service.dart';
 import '../domain/models/body_weight_entry.dart';
 import '../domain/models/workout.dart';
@@ -21,6 +23,8 @@ class AppController extends ChangeNotifier {
   static const _scheduleKey = 'schedule_v1';
   static const _onboardingKey = 'onboarding_v1';
   static const _weeklyGoalKey = 'weekly_goal_v1';
+  static const _metaTsKey = 'meta_updated_at';
+  static const _syncUidKey = 'sync_uid';
   final WorkoutRepository repository;
   final SharedPreferences preferences;
   final ReminderService? reminders;
@@ -55,6 +59,7 @@ class AppController extends ChangeNotifier {
     loading = true;
     error = null;
     try {
+      await _guardAccountSwitch();
       workouts = await repository.getWorkouts();
       sessions = await repository.getRecentSessions();
       themeMode = ThemeMode.values.firstWhere(
@@ -68,11 +73,111 @@ class AppController extends ChangeNotifier {
       _decodeSchedule();
       _decodeOnboarding();
       weeklyGoal = preferences.getInt(_weeklyGoalKey) ?? 3;
+      unawaited(_syncMeta());
     } catch (_) {
       error = 'Could not load your local data.';
     } finally {
       loading = false;
       notifyListeners();
+    }
+  }
+
+  /// When the signed-in account changes on this device, drop the previous
+  /// account's synced local data first — otherwise it would merge into and
+  /// upload to the new account's cloud. The previous account loses nothing:
+  /// its data already lives under `users/{oldUid}`.
+  Future<void> _guardAccountSwitch() async {
+    final repo = repository;
+    if (repo is! FirestoreWorkoutRepository) return;
+    final uid = repo.uid;
+    if (uid == null) return;
+    final lastUid = preferences.getString(_syncUidKey);
+    if (lastUid == uid) return;
+    if (lastUid != null) {
+      for (final key in [
+        _weightsKey,
+        _profileKey,
+        _scheduleKey,
+        _onboardingKey,
+        _weeklyGoalKey,
+        _metaTsKey,
+      ]) {
+        await preferences.remove(key);
+      }
+      await repo.clearLocalData();
+    }
+    // lastUid == null → first sync since the feature shipped: keep the
+    // existing local data so it uploads to this account.
+    await preferences.setString(_syncUidKey, uid);
+  }
+
+  /// Last-write-wins meta sync (weights, profile, schedule, onboarding,
+  /// weekly goal) against the `users/{uid}` doc. Runs in the background —
+  /// the server-source pull must not stall startup when offline. Skipped
+  /// when signed out; local data stays and the next launch retries.
+  Future<void> _syncMeta() async {
+    final repo = repository;
+    if (repo is! FirestoreWorkoutRepository || !repo.signedIn) return;
+    try {
+      final remote = await repo.pullMeta();
+      final localTs = preferences.getInt(_metaTsKey) ?? 0;
+      final remoteTs = remote?['updatedAt'] as int? ?? 0;
+      if (remote != null && remoteTs > localTs) {
+        await _applyRemoteMeta(remote);
+        notifyListeners();
+      } else if (remoteTs < localTs || remote == null) {
+        await _pushMeta();
+      }
+    } catch (_) {}
+  }
+
+  Map<String, Object?> _metaSnapshot() => {
+    'weights': weightEntries.map((item) => item.toJson()).toList(),
+    'profile': {
+      'heightCm': heightCm,
+      'age': age,
+      'isMale': isMale,
+      'activityLevel': activityLevel,
+    },
+    'schedule': schedule.map((day, id) => MapEntry('$day', id)),
+    'onboarding': {'done': onboardingDone, 'goal': goal, 'level': level},
+    'weeklyGoal': weeklyGoal,
+  };
+
+  Future<void> _applyRemoteMeta(Map<String, dynamic> remote) async {
+    await preferences.setString(
+      _weightsKey,
+      jsonEncode(remote['weights'] ?? []),
+    );
+    await preferences.setString(
+      _profileKey,
+      jsonEncode(remote['profile'] ?? {}),
+    );
+    await preferences.setString(
+      _scheduleKey,
+      jsonEncode(remote['schedule'] ?? {}),
+    );
+    await preferences.setString(
+      _onboardingKey,
+      jsonEncode(remote['onboarding'] ?? {}),
+    );
+    final remoteTs = remote['updatedAt'] as int? ?? 0;
+    await preferences.setInt(_weeklyGoalKey, remote['weeklyGoal'] as int? ?? 3);
+    await preferences.setInt(_metaTsKey, remoteTs);
+    weightEntries = _decodeWeights();
+    _decodeProfile();
+    _decodeSchedule();
+    _decodeOnboarding();
+    weeklyGoal = remote['weeklyGoal'] as int? ?? 3;
+  }
+
+  /// Stamps the meta change and pushes it to the cloud (when signed in).
+  Future<void> _pushMeta() async {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    await preferences.setInt(_metaTsKey, ts);
+    final repo = repository;
+    if (repo is FirestoreWorkoutRepository && repo.signedIn) {
+      await repo.pushMeta(_metaSnapshot(), ts);
     }
   }
 
@@ -115,6 +220,7 @@ class AppController extends ChangeNotifier {
       _weightsKey,
       jsonEncode(weightEntries.map((item) => item.toJson()).toList()),
     );
+    await _pushMeta();
     notifyListeners();
   }
 
@@ -124,6 +230,7 @@ class AppController extends ChangeNotifier {
       _weightsKey,
       jsonEncode(weightEntries.map((item) => item.toJson()).toList()),
     );
+    await _pushMeta();
     notifyListeners();
   }
 
@@ -175,6 +282,7 @@ class AppController extends ChangeNotifier {
   Future<void> setWeeklyGoal(int value) async {
     weeklyGoal = value;
     await preferences.setInt(_weeklyGoalKey, value);
+    await _pushMeta();
     notifyListeners();
   }
 
@@ -206,6 +314,7 @@ class AppController extends ChangeNotifier {
         'activityLevel': activityLevel,
       }),
     );
+    await _pushMeta();
     notifyListeners();
   }
 
@@ -228,6 +337,7 @@ class AppController extends ChangeNotifier {
       _scheduleKey,
       jsonEncode(schedule.map((day, id) => MapEntry('$day', id))),
     );
+    await _pushMeta();
     notifyListeners();
   }
 
@@ -271,6 +381,7 @@ class AppController extends ChangeNotifier {
       _onboardingKey,
       jsonEncode({'done': true, 'goal': goal, 'level': level}),
     );
+    await _pushMeta();
     notifyListeners();
   }
 
