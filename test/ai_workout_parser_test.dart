@@ -1,5 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prm/domain/ai_workout_parser.dart';
+import 'package:prm/features/workouts/presentation/ai_workout_page.dart';
 
 Map<String, dynamic> plan({List<Map<String, dynamic>>? exercises}) => {
   'name': 'Lower Body Blast',
@@ -98,5 +100,14 @@ void main() {
 
     expect(parsed.isTimed, isTrue);
     expect(parsed.prescription, '3 × 30s');
+  });
+
+  testWidgets('shows config hint and hides generate without API key', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: AiWorkoutPage()));
+
+    expect(find.byKey(const Key('ai-generate')), findsNothing);
+    expect(find.textContaining('OPENAI_API_KEY'), findsOneWidget);
   });
 }
