@@ -195,10 +195,65 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
   }
 }
 
+/// Prompt contract for AI food-photo analysis.
+abstract final class AiFoodPhotoPrompt {
+  static const system = '''
+You are a nutritionist identifying dishes in a food photo. Rules:
+- List every distinct dish/food item you can see.
+- Estimate kcal and macros per item from visible portion size.
+- Be honest about uncertainty — note mentions portion assumptions.
+- Use common dish names in English.''';
+
+  static const schema = <String, dynamic>{
+    'type': 'object',
+    'properties': {
+      'dishes': {
+        'type': 'array',
+        'items': {
+          'type': 'object',
+          'properties': {
+            'name': {'type': 'string'},
+            'kcal': {'type': 'integer'},
+            'proteinG': {'type': 'number'},
+            'carbsG': {'type': 'number'},
+            'fatG': {'type': 'number'},
+          },
+          'required': ['name', 'kcal', 'proteinG', 'carbsG', 'fatG'],
+          'additionalProperties': false,
+        },
+      },
+      'note': {'type': 'string'},
+    },
+    'required': ['dishes', 'note'],
+    'additionalProperties': false,
+  };
+
+  static const user =
+      'Identify every dish in this photo and estimate kcal and macros '
+      'per item.';
+}
+
 /// Sanitizes AI meal-plan JSON into a [MealPlan] — numbers clamped,
 /// empty meals dropped. Throws [FormatException] when nothing usable
 /// remains.
 abstract final class AiMealParser {
+  /// Parses the photo-analysis response into detected dishes plus the
+  /// model's caveat note. Throws [FormatException] when nothing was
+  /// identified.
+  static ({Meal meal, String note}) parsePhoto(Map<String, dynamic> json) {
+    final items = [
+      for (final item in json['dishes'] as List? ?? const [])
+        if (item is Map<String, dynamic>) _item(item),
+    ];
+    if (items.isEmpty) {
+      throw const FormatException('No dishes identified');
+    }
+    return (
+      meal: Meal(label: 'Detected dishes', items: items),
+      note: _text(json['note'], ''),
+    );
+  }
+
   static MealPlan parse(Map<String, dynamic> json, {required int targetKcal}) {
     final meals = [
       for (final (index, item) in (json['meals'] as List? ?? const []).indexed)

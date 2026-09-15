@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
@@ -29,6 +31,10 @@ class _NutritionPageState extends State<NutritionPage> {
   int _mealCount = 3;
   bool _generating = false;
   bool _cacheLoaded = false;
+  Uint8List? _photoBytes;
+  Meal? _photoMeal;
+  String _photoNote = '';
+  bool _analyzing = false;
 
   @override
   void didChangeDependencies() {
@@ -119,6 +125,69 @@ class _NutritionPageState extends State<NutritionPage> {
       _showError('Could not generate a plan — try again.');
     } finally {
       if (mounted) setState(() => _generating = false);
+    }
+  }
+
+  Future<void> _analyzePhoto() async {
+    if (_analyzing) return;
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Take photo'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+    final photo = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 1024,
+      imageQuality: 85,
+    );
+    if (photo == null || !mounted) return;
+    final bytes = await photo.readAsBytes();
+    setState(() {
+      _analyzing = true;
+      _photoBytes = bytes;
+      _photoMeal = null;
+      _photoNote = '';
+    });
+    try {
+      final json = await _service.generateJson(
+        system: AiFoodPhotoPrompt.system,
+        user: AiFoodPhotoPrompt.user,
+        schema: AiFoodPhotoPrompt.schema,
+        schemaName: 'food_photo',
+        model: OpenAiService.visionModel,
+        temperature: null,
+        reasoningEffort: 'low',
+        imageBytes: bytes,
+      );
+      final parsed = AiMealParser.parsePhoto(json);
+      if (mounted) {
+        setState(() {
+          _photoMeal = parsed.meal;
+          _photoNote = parsed.note;
+        });
+      }
+    } on OpenAiException catch (e) {
+      _showError(e.message);
+    } on FormatException {
+      _showError('Could not analyze the photo — try again.');
+    } finally {
+      if (mounted) setState(() => _analyzing = false);
     }
   }
 
@@ -214,6 +283,47 @@ class _NutritionPageState extends State<NutritionPage> {
                 ),
               ),
             ),
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              key: const Key('nutrition-photo'),
+              onPressed: _analyzing ? null : _analyzePhoto,
+              icon: _analyzing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.photo_camera_outlined),
+              label: Text(
+                _analyzing ? 'Analyzing photo…' : 'Analyze a food photo',
+              ),
+            ),
+          ),
+          if (_photoBytes != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.memory(
+                _photoBytes!,
+                height: 160,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+            if (_photoMeal != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              _MealCard(meal: _photoMeal!),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                _photoNote.isEmpty
+                    ? 'Estimated from the photo — portions are approximate.'
+                    : _photoNote,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ],
           if (_plan != null) ...[
             const SizedBox(height: AppSpacing.lg),
             _PlanView(plan: _plan!),
@@ -337,57 +447,62 @@ class _PlanView extends StatelessWidget {
         Text(plan.note, style: Theme.of(context).textTheme.bodySmall),
       ],
       const SizedBox(height: AppSpacing.md),
-      ...plan.meals.map(
-        (meal) => Card(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        meal.label,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    Text('${meal.kcal} kcal'),
-                  ],
+      ...plan.meals.map((meal) => _MealCard(meal: meal)),
+    ],
+  );
+}
+
+class _MealCard extends StatelessWidget {
+  const _MealCard({required this.meal});
+
+  final Meal meal;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  meal.label,
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
-                const Divider(),
-                ...meal.items.map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppSpacing.xs,
-                    ),
-                    child: Row(
+              ),
+              Text('${meal.kcal} kcal'),
+            ],
+          ),
+          const Divider(),
+          ...meal.items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(item.name),
-                              Text(
-                                'P ${item.proteinG.round()}g · '
-                                'C ${item.carbsG.round()}g · '
-                                'F ${item.fatG.round()}g',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
+                        Text(item.name),
+                        Text(
+                          'P ${item.proteinG.round()}g · '
+                          'C ${item.carbsG.round()}g · '
+                          'F ${item.fatG.round()}g',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
-                        Text('${item.kcal} kcal'),
                       ],
                     ),
                   ),
-                ),
-              ],
+                  Text('${item.kcal} kcal'),
+                ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
-    ],
+    ),
   );
 }

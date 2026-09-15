@@ -92,6 +92,24 @@ void main() {
     expect(NutritionTargets.proteinG(weightKg: 80, goal: null), 96);
   });
 
+  test('photo analysis parses dishes into a meal', () {
+    final parsed = AiMealParser.parsePhoto({
+      'dishes': [item(kcal: 350)],
+      'note': 'Portions are approximate.',
+    });
+
+    expect(parsed.meal.label, 'Detected dishes');
+    expect(parsed.meal.items.single.kcal, 350);
+    expect(parsed.note, 'Portions are approximate.');
+  });
+
+  test('photo analysis with no dishes throws', () {
+    expect(
+      () => AiMealParser.parsePhoto({'dishes': [], 'note': ''}),
+      throwsFormatException,
+    );
+  });
+
   test('macro split stays inside the calorie target', () {
     const target = 2000;
     const protein = 150;
