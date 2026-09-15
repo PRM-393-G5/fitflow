@@ -4,6 +4,7 @@ import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../domain/body_metrics.dart';
 import '../../../domain/models/body_weight_entry.dart';
 
 class BodyMetricsPage extends StatelessWidget {
@@ -168,8 +169,6 @@ class _BodyProfileCard extends StatelessWidget {
   const _BodyProfileCard({required this.latestKg});
 
   final double? latestKg;
-
-  static const _activityFactors = [1.2, 1.375, 1.55, 1.725, 1.9];
   static const _activityLabels = [
     'Sedentary',
     'Light',
@@ -187,18 +186,23 @@ class _BodyProfileCard extends StatelessWidget {
 
     double? bmi;
     double? bmr;
+    double? tdee;
     if (hasProfile && latestKg != null) {
-      final meters = height / 100;
-      bmi = latestKg! / (meters * meters);
-      bmr =
-          10 * latestKg! +
-          6.25 * height -
-          5 * age +
-          (controller.isMale ? 5 : -161);
+      bmi = BodyMetrics.bmi(weightKg: latestKg!, heightCm: height);
+      bmr = BodyMetrics.bmr(
+        weightKg: latestKg!,
+        heightCm: height,
+        age: age,
+        isMale: controller.isMale,
+      );
+      tdee = BodyMetrics.tdee(
+        weightKg: latestKg!,
+        heightCm: height,
+        age: age,
+        isMale: controller.isMale,
+        activityLevel: controller.activityLevel,
+      );
     }
-    final tdee = bmr == null
-        ? null
-        : bmr * _activityFactors[controller.activityLevel.clamp(0, 4)];
 
     return Card(
       child: Padding(

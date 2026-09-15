@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_scope.dart';
 import '../../home/presentation/home_page.dart';
+import '../../nutrition/presentation/nutrition_page.dart';
 import '../../onboarding/presentation/onboarding_page.dart';
 import '../../profile/presentation/profile_page.dart';
 import '../../progress/presentation/progress_page.dart';
@@ -30,6 +31,7 @@ class _AppShellState extends State<AppShell> {
   static const _pages = [
     HomePage(),
     WorkoutsPage(),
+    NutritionPage(),
     ProgressPage(),
     ProfilePage(),
   ];
@@ -43,6 +45,11 @@ class _AppShellState extends State<AppShell> {
       icon: Icon(Icons.fitness_center_outlined),
       selectedIcon: Icon(Icons.fitness_center),
       label: 'Workouts',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.restaurant_outlined),
+      selectedIcon: Icon(Icons.restaurant),
+      label: 'Nutrition',
     ),
     NavigationDestination(
       icon: Icon(Icons.insights_outlined),
