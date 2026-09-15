@@ -4,6 +4,7 @@ import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/models/workout.dart';
+import 'ai_workout_page.dart';
 import 'workout_builder_page.dart';
 import 'workout_detail_page.dart';
 
@@ -64,6 +65,17 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
                     prefixIcon: Icon(Icons.search),
                   ),
                   onChanged: (value) => setState(() => _query = value),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              IconButton.filledTonal(
+                key: const Key('open-ai-workout'),
+                tooltip: 'AI workout',
+                icon: const Icon(Icons.auto_awesome),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AiWorkoutPage(),
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
