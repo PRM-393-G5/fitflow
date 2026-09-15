@@ -12,6 +12,7 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 | Today's workout | Home hiển thị workout theo lịch tuần hoặc theo goal onboarding | ✅ |
 | Workout builder | Tạo plan riêng: tên, category, level, danh sách exercise động (sets/reps/rest/tạ), tự estimate thời lượng | ✅ |
 | AI workout generator | Nhập mô tả bằng text ("30 phút, tập chân, không dụng cụ") → GPT-4o-mini tạo plan hoàn chỉnh (strict JSON schema + sanitize) → preview → lưu thành custom plan, sync cloud như plan tay | ✅ (cần `--dart-define=OPENAI_API_KEY`) |
+| Nutrition (AI meal plan) | Tab Nutrition: target calo từ TDEE + goal (Strength +300 / Cardio −400 / Mobility ±0), macros P/C/F; GPT-4o-mini gợi ý thực đơn ngày theo target + preferences (3 bữa / 3+phụ), cache theo ngày | ✅ (cần `--dart-define=OPENAI_API_KEY`) |
 | Weekly schedule | Gán plan cho từng thứ trong tuần | ✅ |
 | Session detail | Tap vào lịch sử → duration, sets, volume, breakdown từng set (reps × kg) theo exercise | ✅ |
 
