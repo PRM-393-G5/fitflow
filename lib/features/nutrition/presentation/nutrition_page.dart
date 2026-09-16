@@ -171,11 +171,8 @@ class _NutritionPageState extends State<NutritionPage> {
         user: AiFoodPhotoPrompt.user,
         schema: AiFoodPhotoPrompt.schema,
         schemaName: 'food_photo',
-        model: OpenAiService.visionModel,
-        temperature: null,
         reasoningEffort: 'low',
         imageBytes: bytes,
-        maxTokens: 3000,
       );
       final parsed = AiMealParser.parsePhoto(json);
       if (mounted) {

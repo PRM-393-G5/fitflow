@@ -15,30 +15,26 @@ class OpenAiService {
   static String get _apiKey => _dartDefineKey.isNotEmpty
       ? _dartDefineKey
       : (dotenv.isInitialized ? dotenv.maybeGet('OPENAI_API_KEY') ?? '' : '');
-  static const _model = 'gpt-4o-mini';
 
-  /// Vision + reasoning model used for photo analysis. Rejects
-  /// `temperature` — omit it when calling with this model.
-  static const visionModel = 'gpt-6-luna';
+  /// gpt-6-luna: reasoning model with vision + structured output — it
+  /// rejects `temperature`, and reasoning tokens share the completion
+  /// budget (hence the 3000 cap).
+  static const _model = 'gpt-6-luna';
   static const _timeout = Duration(seconds: 30);
 
   static bool get configured => _apiKey.isNotEmpty;
 
   /// Chat completions with strict JSON-schema output; returns the decoded
   /// response object. Throws [OpenAiException] on any failure.
-  /// [imageBytes] attaches a JPEG photo for vision-capable models.
-  /// Reasoning models (e.g. gpt-6-luna) reject `temperature` — pass
-  /// `null` to omit it, and [reasoningEffort] to control thinking cost.
+  /// [imageBytes] attaches a JPEG photo; [reasoningEffort] tunes the
+  /// model's thinking cost.
   Future<Map<String, dynamic>> generateJson({
     required String system,
     required String user,
     required Map<String, dynamic> schema,
     required String schemaName,
-    String? model,
-    double? temperature = 0.8,
     String? reasoningEffort,
     List<int>? imageBytes,
-    int maxTokens = 1500,
   }) async {
     if (!configured) throw const OpenAiException('not-configured');
     final client = HttpClient();
@@ -51,9 +47,8 @@ class OpenAiService {
         ..set(HttpHeaders.contentTypeHeader, 'application/json');
       request.write(
         jsonEncode({
-          'model': model ?? _model,
-          'max_completion_tokens': maxTokens,
-          'temperature': ?temperature,
+          'model': _model,
+          'max_completion_tokens': 3000,
           'reasoning_effort': ?reasoningEffort,
           'messages': [
             {'role': 'system', 'content': system},
