@@ -2,13 +2,19 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-/// Minimal OpenAI chat-completions client. The key comes from
-/// `--dart-define=OPENAI_API_KEY=...` and ships inside the app binary —
-/// pair it with a spending limit on the OpenAI dashboard.
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+/// Minimal OpenAI chat-completions client. The key comes from a bundled
+/// `.env` (`OPENAI_API_KEY=...`, gitignored) or `--dart-define` — either
+/// way it ships inside the app binary, so pair it with a spending limit
+/// on the OpenAI dashboard.
 class OpenAiService {
   const OpenAiService();
 
-  static const _apiKey = String.fromEnvironment('OPENAI_API_KEY');
+  static const _dartDefineKey = String.fromEnvironment('OPENAI_API_KEY');
+  static String get _apiKey => _dartDefineKey.isNotEmpty
+      ? _dartDefineKey
+      : (dotenv.isInitialized ? dotenv.maybeGet('OPENAI_API_KEY') ?? '' : '');
   static const _model = 'gpt-4o-mini';
 
   /// Vision + reasoning model used for photo analysis. Rejects

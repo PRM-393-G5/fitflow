@@ -261,7 +261,7 @@ class _NutritionPageState extends State<NutritionPage> {
                 padding: EdgeInsets.all(AppSpacing.md),
                 child: Text(
                   'AI suggestions need an OpenAI API key configured at '
-                  'build time (--dart-define=OPENAI_API_KEY=…).',
+                  'build time (.env or --dart-define=OPENAI_API_KEY=…).',
                 ),
               ),
             )

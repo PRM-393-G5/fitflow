@@ -20,10 +20,11 @@ flutter doctor -v
 ```sh
 flutter pub get
 flutter run
-
-# Optional — enables the AI workout generator
-flutter run --dart-define=OPENAI_API_KEY=sk-...
 ```
+
+Optional — AI features (workout generator, meal plans, food photo
+analysis) read `OPENAI_API_KEY` from a gitignored `.env` file (see
+`.env.example`), or from `--dart-define=OPENAI_API_KEY=sk-...`.
 
 Select a target explicitly when needed, for example `flutter run -d <device-id>`. Android and iOS currently use the existing `com.zcode9211.prm` application identifier.
 
