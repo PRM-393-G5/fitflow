@@ -49,7 +49,7 @@ class _NutritionPageState extends State<NutritionPage> {
           jsonDecode(raw) as Map<String, dynamic>,
         );
         if (cached.isToday) _plan = cached;
-      } on FormatException {
+      } catch (_) {
         // Corrupt cache — ignore, a new plan can be generated.
       }
     }
