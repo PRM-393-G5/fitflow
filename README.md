@@ -19,12 +19,13 @@ flutter doctor -v
 
 ```sh
 flutter pub get
+cp .env.example .env   # then put your OPENAI_API_KEY inside
 flutter run
 ```
 
-Optional — AI features (workout generator, meal plans, food photo
-analysis) read `OPENAI_API_KEY` from a gitignored `.env` file (see
-`.env.example`), or from `--dart-define=OPENAI_API_KEY=sk-...`.
+`.env` is gitignored and bundled as an asset — without it the build
+fails on the missing asset entry, so create it even if empty.
+`--dart-define=OPENAI_API_KEY=sk-...` also works.
 
 Select a target explicitly when needed, for example `flutter run -d <device-id>`. Android and iOS currently use the existing `com.zcode9211.prm` application identifier.
 

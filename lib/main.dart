@@ -14,12 +14,7 @@ import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await dotenv.load();
-  } catch (_) {
-    // No .env bundled — AI features stay unconfigured, app runs fine.
-    debugPrint('No .env found — AI features disabled.');
-  }
+  await dotenv.load(isOptional: true);
   var firebaseReady = false;
   try {
     await Firebase.initializeApp(
