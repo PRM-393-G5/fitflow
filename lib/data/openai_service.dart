@@ -32,6 +32,7 @@ class OpenAiService {
     double? temperature = 0.8,
     String? reasoningEffort,
     List<int>? imageBytes,
+    int maxTokens = 1500,
   }) async {
     if (!configured) throw const OpenAiException('not-configured');
     final client = HttpClient();
@@ -45,7 +46,7 @@ class OpenAiService {
       request.write(
         jsonEncode({
           'model': model ?? _model,
-          'max_completion_tokens': 1500,
+          'max_completion_tokens': maxTokens,
           'temperature': ?temperature,
           'reasoning_effort': ?reasoningEffort,
           'messages': [

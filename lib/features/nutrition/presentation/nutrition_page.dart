@@ -158,6 +158,7 @@ class _NutritionPageState extends State<NutritionPage> {
     );
     if (photo == null || !mounted) return;
     final bytes = await photo.readAsBytes();
+    if (!mounted) return;
     setState(() {
       _analyzing = true;
       _photoBytes = bytes;
@@ -174,6 +175,7 @@ class _NutritionPageState extends State<NutritionPage> {
         temperature: null,
         reasoningEffort: 'low',
         imageBytes: bytes,
+        maxTokens: 3000,
       );
       final parsed = AiMealParser.parsePhoto(json);
       if (mounted) {
