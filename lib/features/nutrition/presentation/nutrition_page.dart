@@ -19,6 +19,7 @@ class NutritionPage extends StatefulWidget {
   const NutritionPage({super.key});
 
   static const _cacheKey = 'meal_plan_v1';
+  static const _logKey = 'food_log_v1';
 
   @override
   State<NutritionPage> createState() => _NutritionPageState();
@@ -28,6 +29,7 @@ class _NutritionPageState extends State<NutritionPage> {
   final _service = const OpenAiService();
   final _prefsCtrl = TextEditingController();
   MealPlan? _plan;
+  final _logged = <Meal>[];
   int _mealCount = 3;
   bool _generating = false;
   bool _cacheLoaded = false;
@@ -51,6 +53,25 @@ class _NutritionPageState extends State<NutritionPage> {
         if (cached.isToday) _plan = cached;
       } catch (_) {
         // Corrupt cache — ignore, a new plan can be generated.
+      }
+    }
+    final rawLog = AppScope.of(context).preferences
+        .getString(NutritionPage._logKey);
+    if (rawLog != null) {
+      try {
+        final json = jsonDecode(rawLog) as Map<String, dynamic>;
+        final date = DateTime.parse(json['date'] as String);
+        final now = DateTime.now();
+        if (date.year == now.year &&
+            date.month == now.month &&
+            date.day == now.day) {
+          _logged.addAll([
+            for (final meal in json['meals'] as List)
+              Meal.fromJson(meal as Map<String, dynamic>),
+          ]);
+        }
+      } catch (_) {
+        // Corrupt log — drop it, food logs are throwaway.
       }
     }
   }
@@ -120,9 +141,9 @@ class _NutritionPageState extends State<NutritionPage> {
       );
       if (mounted) setState(() => _plan = plan);
     } on OpenAiException catch (e) {
-      _showError(e.message);
+      _showSnack(e.message);
     } on FormatException {
-      _showError('Could not generate a plan — try again.');
+      _showSnack('Could not generate a plan — try again.');
     } finally {
       if (mounted) setState(() => _generating = false);
     }
@@ -182,15 +203,102 @@ class _NutritionPageState extends State<NutritionPage> {
         });
       }
     } on OpenAiException catch (e) {
-      _showError(e.message);
+      _showSnack(e.message);
     } on FormatException {
-      _showError('Could not analyze the photo — try again.');
+      _showSnack('Could not analyze the photo — try again.');
     } finally {
       if (mounted) setState(() => _analyzing = false);
     }
   }
 
-  void _showError(String text) {
+  /// Appends [meal] to today's log and persists it (local only —
+  /// food logs are throwaway data, no cloud sync).
+  Future<void> _logMeal(Meal meal) async {
+    final preferences = AppScope.of(context).preferences;
+    setState(() => _logged.add(meal));
+    await preferences.setString(
+      NutritionPage._logKey,
+      jsonEncode({
+        'date': DateTime.now().toIso8601String(),
+        'meals': [for (final m in _logged) m.toJson()],
+      }),
+    );
+  }
+
+  Future<void> _removeLogged(int index) async {
+    final preferences = AppScope.of(context).preferences;
+    setState(() => _logged.removeAt(index));
+    await preferences.setString(
+      NutritionPage._logKey,
+      jsonEncode({
+        'date': DateTime.now().toIso8601String(),
+        'meals': [for (final m in _logged) m.toJson()],
+      }),
+    );
+  }
+
+  /// Logs a manually typed dish (name + kcal) — the fallback when the
+  /// photo path isn't available.
+  Future<void> _logManually() async {
+    final nameCtrl = TextEditingController();
+    final kcalCtrl = TextEditingController();
+    final meal = await showDialog<Meal>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final name = nameCtrl.text.trim();
+          final kcal = int.tryParse(kcalCtrl.text.trim());
+          final valid = name.isNotEmpty && kcal != null && kcal > 0;
+          return AlertDialog(
+            title: const Text('Log a meal'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'What did you eat?',
+                  ),
+                  onChanged: (_) => setDialogState(() {}),
+                ),
+                TextField(
+                  controller: kcalCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Calories (kcal)',
+                  ),
+                  keyboardType: TextInputType.number,
+                  onChanged: (_) => setDialogState(() {}),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: valid
+                    ? () => Navigator.pop(
+                        context,
+                        Meal(
+                          label: 'Manual entry',
+                          items: [MealItem(name: name, kcal: kcal)],
+                        ),
+                      )
+                    : null,
+                child: const Text('Log'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    nameCtrl.dispose();
+    kcalCtrl.dispose();
+    if (meal != null && mounted) await _logMeal(meal);
+  }
+
+  void _showSnack(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
@@ -231,6 +339,35 @@ class _NutritionPageState extends State<NutritionPage> {
               targetKcal: targetKcal!,
               proteinG: proteinG!,
             ),
+          if (targetKcal != null || _logged.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            Semantics(
+              label:
+                  '${_logged.fold(0, (sum, m) => sum + m.kcal)} of '
+                  '${targetKcal ?? 0} kilocalories eaten today',
+              child: LinearProgressIndicator(
+                value: targetKcal == null
+                    ? 0
+                    : (_logged.fold(0, (sum, m) => sum + m.kcal) / targetKcal)
+                          .clamp(0.0, 1.0),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              '${_logged.fold(0, (sum, m) => sum + m.kcal)} '
+              '/ ${targetKcal ?? '—'} kcal eaten today',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          ..._logged.indexed.map(
+            (entry) => Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.sm),
+              child: _MealCard(
+                meal: entry.$2,
+                onRemove: () => _removeLogged(entry.$1),
+              ),
+            ),
+          ),
           const SizedBox(height: AppSpacing.md),
           TextField(
             key: const Key('nutrition-preferences'),
@@ -302,6 +439,15 @@ class _NutritionPageState extends State<NutritionPage> {
               ),
             ),
           ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const Key('nutrition-log-manual'),
+              onPressed: _logManually,
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Log a meal manually'),
+            ),
+          ),
           if (_photoBytes != null) ...[
             const SizedBox(height: AppSpacing.md),
             ClipRRect(
@@ -316,6 +462,24 @@ class _NutritionPageState extends State<NutritionPage> {
             if (_photoMeal != null) ...[
               const SizedBox(height: AppSpacing.sm),
               _MealCard(meal: _photoMeal!),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.tonalIcon(
+                  key: const Key('nutrition-log-photo'),
+                  onPressed: () {
+                    final meal = _photoMeal!;
+                    _logMeal(meal);
+                    setState(() {
+                      _photoBytes = null;
+                      _photoMeal = null;
+                      _photoNote = '';
+                    });
+                    _showSnack('Logged to today.');
+                  },
+                  icon: const Icon(Icons.add_task),
+                  label: const Text('Log this meal'),
+                ),
+              ),
               const SizedBox(height: AppSpacing.xs),
               Text(
                 _photoNote.isEmpty
@@ -454,9 +618,10 @@ class _PlanView extends StatelessWidget {
 }
 
 class _MealCard extends StatelessWidget {
-  const _MealCard({required this.meal});
+  const _MealCard({required this.meal, this.onRemove});
 
   final Meal meal;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -475,6 +640,12 @@ class _MealCard extends StatelessWidget {
                 ),
               ),
               Text('${meal.kcal} kcal'),
+              if (onRemove != null)
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onRemove,
+                ),
             ],
           ),
           const Divider(),
