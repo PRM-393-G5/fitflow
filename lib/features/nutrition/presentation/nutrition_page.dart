@@ -30,6 +30,7 @@ class _NutritionPageState extends State<NutritionPage> {
   final _prefsCtrl = TextEditingController();
   MealPlan? _plan;
   final _logged = <Meal>[];
+  DateTime _logDate = DateTime.now();
   int _mealCount = 3;
   bool _generating = false;
   bool _cacheLoaded = false;
@@ -65,6 +66,7 @@ class _NutritionPageState extends State<NutritionPage> {
         if (date.year == now.year &&
             date.month == now.month &&
             date.day == now.day) {
+          _logDate = date;
           _logged.addAll([
             for (final meal in json['meals'] as List)
               Meal.fromJson(meal as Map<String, dynamic>),
@@ -213,25 +215,33 @@ class _NutritionPageState extends State<NutritionPage> {
 
   /// Appends [meal] to today's log and persists it (local only —
   /// food logs are throwaway data, no cloud sync).
-  Future<void> _logMeal(Meal meal) async {
-    final preferences = AppScope.of(context).preferences;
-    setState(() => _logged.add(meal));
-    await preferences.setString(
-      NutritionPage._logKey,
-      jsonEncode({
-        'date': DateTime.now().toIso8601String(),
-        'meals': [for (final m in _logged) m.toJson()],
-      }),
-    );
+  Future<void> _logMeal(Meal meal) {
+    final now = DateTime.now();
+    setState(() {
+      // App left open past midnight — don't carry yesterday's meals
+      // into the new day's log.
+      if (_logDate.year != now.year ||
+          _logDate.month != now.month ||
+          _logDate.day != now.day) {
+        _logged.clear();
+      }
+      _logDate = now;
+      _logged.add(meal);
+    });
+    return _persistLog();
   }
 
-  Future<void> _removeLogged(int index) async {
-    final preferences = AppScope.of(context).preferences;
+  Future<void> _removeLogged(int index) {
     setState(() => _logged.removeAt(index));
-    await preferences.setString(
+    return _persistLog();
+  }
+
+  Future<void> _persistLog() {
+    final preferences = AppScope.of(context).preferences;
+    return preferences.setString(
       NutritionPage._logKey,
       jsonEncode({
-        'date': DateTime.now().toIso8601String(),
+        'date': _logDate.toIso8601String(),
         'meals': [for (final m in _logged) m.toJson()],
       }),
     );
@@ -468,7 +478,7 @@ class _NutritionPageState extends State<NutritionPage> {
                   key: const Key('nutrition-log-photo'),
                   onPressed: () {
                     final meal = _photoMeal!;
-                    _logMeal(meal);
+                    _logMeal(meal).ignore();
                     setState(() {
                       _photoBytes = null;
                       _photoMeal = null;
