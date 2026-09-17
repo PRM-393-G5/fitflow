@@ -106,7 +106,9 @@ class OpenAiService {
       throw const OpenAiException('timeout');
     } on SocketException {
       throw const OpenAiException('offline');
-    } on FormatException {
+    } catch (_) {
+      // FormatException on bad JSON, TypeError on unexpected shapes —
+      // any other decode failure is an invalid response.
       throw const OpenAiException('invalid-response');
     } finally {
       client.close();

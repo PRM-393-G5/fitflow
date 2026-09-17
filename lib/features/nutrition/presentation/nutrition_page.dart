@@ -257,8 +257,8 @@ class _NutritionPageState extends State<NutritionPage> {
               child: Padding(
                 padding: EdgeInsets.all(AppSpacing.md),
                 child: Text(
-                  'AI suggestions need an OpenAI API key configured at '
-                  'build time (.env or --dart-define=OPENAI_API_KEY=…).',
+                  'AI suggestions need an OpenAI API key '
+                  '(.env file or --dart-define=OPENAI_API_KEY=…).',
                 ),
               ),
             )
@@ -287,7 +287,9 @@ class _NutritionPageState extends State<NutritionPage> {
             width: double.infinity,
             child: OutlinedButton.icon(
               key: const Key('nutrition-photo'),
-              onPressed: _analyzing ? null : _analyzePhoto,
+              onPressed: _analyzing || !OpenAiService.configured
+                  ? null
+                  : _analyzePhoto,
               icon: _analyzing
                   ? const SizedBox(
                       width: 18,

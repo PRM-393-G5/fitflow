@@ -173,8 +173,8 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
           child: Padding(
             padding: EdgeInsets.all(AppSpacing.md),
             child: Text(
-              'AI generation needs an OpenAI API key configured at build '
-              'time (.env or --dart-define=OPENAI_API_KEY=…).',
+              'AI generation needs an OpenAI API key '
+              '(.env file or --dart-define=OPENAI_API_KEY=…).',
             ),
           ),
         )
