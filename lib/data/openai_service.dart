@@ -2,25 +2,39 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-/// Minimal OpenAI chat-completions client. The key comes from
-/// `--dart-define=OPENAI_API_KEY=...` and ships inside the app binary —
-/// pair it with a spending limit on the OpenAI dashboard.
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+/// Minimal OpenAI chat-completions client. The key comes from a bundled
+/// `.env` (`OPENAI_API_KEY=...`, gitignored) or `--dart-define` — either
+/// way it ships inside the app binary, so pair it with a spending limit
+/// on the OpenAI dashboard.
 class OpenAiService {
   const OpenAiService();
 
-  static const _apiKey = String.fromEnvironment('OPENAI_API_KEY');
-  static const _model = 'gpt-4o-mini';
+  static const _dartDefineKey = String.fromEnvironment('OPENAI_API_KEY');
+  static String get _apiKey => _dartDefineKey.isNotEmpty
+      ? _dartDefineKey
+      : (dotenv.isInitialized ? dotenv.maybeGet('OPENAI_API_KEY') ?? '' : '');
+
+  /// gpt-6-luna: reasoning model with vision + structured output — it
+  /// rejects `temperature`, and reasoning tokens share the completion
+  /// budget (hence the 3000 cap).
+  static const _model = 'gpt-6-luna';
   static const _timeout = Duration(seconds: 30);
 
   static bool get configured => _apiKey.isNotEmpty;
 
   /// Chat completions with strict JSON-schema output; returns the decoded
   /// response object. Throws [OpenAiException] on any failure.
+  /// [imageBytes] attaches a JPEG photo; [reasoningEffort] tunes the
+  /// model's thinking cost.
   Future<Map<String, dynamic>> generateJson({
     required String system,
     required String user,
     required Map<String, dynamic> schema,
     required String schemaName,
+    String? reasoningEffort,
+    List<int>? imageBytes,
   }) async {
     if (!configured) throw const OpenAiException('not-configured');
     final client = HttpClient();
@@ -34,11 +48,25 @@ class OpenAiService {
       request.write(
         jsonEncode({
           'model': _model,
-          'temperature': 0.8,
-          'max_tokens': 1500,
+          'max_completion_tokens': 3000,
+          'reasoning_effort': ?reasoningEffort,
           'messages': [
             {'role': 'system', 'content': system},
-            {'role': 'user', 'content': user},
+            {
+              'role': 'user',
+              'content': imageBytes == null
+                  ? user
+                  : [
+                      {'type': 'text', 'text': user},
+                      {
+                        'type': 'image_url',
+                        'image_url': {
+                          'url':
+                              'data:image/jpeg;base64,${base64Encode(imageBytes)}',
+                        },
+                      },
+                    ],
+            },
           ],
           'response_format': {
             'type': 'json_schema',
@@ -78,7 +106,9 @@ class OpenAiService {
       throw const OpenAiException('timeout');
     } on SocketException {
       throw const OpenAiException('offline');
-    } on FormatException {
+    } catch (_) {
+      // FormatException on bad JSON, TypeError on unexpected shapes —
+      // any other decode failure is an invalid response.
       throw const OpenAiException('invalid-response');
     } finally {
       client.close();

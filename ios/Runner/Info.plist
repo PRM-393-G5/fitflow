@@ -6,6 +6,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>FitFlow sử dụng camera để phân tích tư thế squat ngay trên thiết bị.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>FitFlow reads food photos you pick to estimate their calories.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

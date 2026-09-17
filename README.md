@@ -19,11 +19,13 @@ flutter doctor -v
 
 ```sh
 flutter pub get
+cp .env.example .env   # then put your OPENAI_API_KEY inside
 flutter run
-
-# Optional — enables the AI workout generator
-flutter run --dart-define=OPENAI_API_KEY=sk-...
 ```
+
+`.env` is gitignored and bundled as an asset — without it the build
+fails on the missing asset entry, so create it even if empty.
+`--dart-define=OPENAI_API_KEY=sk-...` also works.
 
 Select a target explicitly when needed, for example `flutter run -d <device-id>`. Android and iOS currently use the existing `com.zcode9211.prm` application identifier.
 
@@ -58,6 +60,7 @@ For a distributable Android release, configure a production application ID and r
 - Achievements derived from streaks, volume, and session counts
 - Custom workout builder for user-created plans
 - AI workout generator that builds a plan from a text prompt (OpenAI, needs `OPENAI_API_KEY` via `--dart-define`)
+- Nutrition tab with a TDEE+goal calorie target and AI-suggested daily meal plans (same OpenAI key)
 - Body weight log with trend chart plus BMI/BMR/TDEE profile
 - Onboarding goal/level setup that personalizes suggested workouts
 - Weekly schedule that pins a plan to each day
