@@ -60,7 +60,7 @@ For a distributable Android release, configure a production application ID and r
 - Achievements derived from streaks, volume, and session counts
 - Custom workout builder for user-created plans
 - AI workout generator that builds a plan from a text prompt (OpenAI, needs `OPENAI_API_KEY` via `--dart-define`)
-- Nutrition tab with a TDEE+goal calorie target and AI-suggested daily meal plans (same OpenAI key)
+- Nutrition tab with a TDEE+goal calorie target, AI-suggested daily meal plans, food-photo analysis, and a local daily intake log vs target (same OpenAI key)
 - Body weight log with trend chart plus BMI/BMR/TDEE profile
 - Onboarding goal/level setup that personalizes suggested workouts
 - Weekly schedule that pins a plan to each day
