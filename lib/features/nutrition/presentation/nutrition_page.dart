@@ -280,6 +280,7 @@ class _NutritionPageState extends State<NutritionPage> {
         ? null
         : NutritionTargets.proteinG(weightKg: weight, goal: goal);
 
+    final eatenKcal = _logged.fold(0, (sum, m) => sum + m.kcal);
     return ResponsiveContent(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,20 +305,18 @@ class _NutritionPageState extends State<NutritionPage> {
           if (targetKcal != null || _logged.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.md),
             Semantics(
-              label:
-                  '${_logged.fold(0, (sum, m) => sum + m.kcal)} of '
-                  '${targetKcal ?? 0} kilocalories eaten today',
+              label: targetKcal == null
+                  ? '$eatenKcal kilocalories eaten today'
+                  : '$eatenKcal of $targetKcal kilocalories eaten today',
               child: LinearProgressIndicator(
                 value: targetKcal == null
                     ? 0
-                    : (_logged.fold(0, (sum, m) => sum + m.kcal) / targetKcal)
-                          .clamp(0.0, 1.0),
+                    : (eatenKcal / targetKcal).clamp(0.0, 1.0),
               ),
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              '${_logged.fold(0, (sum, m) => sum + m.kcal)} '
-              '/ ${targetKcal ?? '—'} kcal eaten today',
+              '$eatenKcal / ${targetKcal ?? '—'} kcal eaten today',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
