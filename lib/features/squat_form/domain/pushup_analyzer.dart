@@ -29,6 +29,9 @@ class PushupAnalyzer implements RepAnalyzer {
   String get countLabel => 'SỐ REP';
 
   @override
+  List<RepRecord> get repRecords => const [];
+
+  @override
   void reset() {
     _phase = SquatPhase.findingBody;
     _candidate = null;

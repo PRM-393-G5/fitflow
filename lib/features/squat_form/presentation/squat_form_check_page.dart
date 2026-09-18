@@ -8,6 +8,8 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../../app/app_controller.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../data/openai_service.dart';
 import '../../../domain/models/workout_session.dart';
 import '../domain/adaptive_inference_scheduler.dart';
 import '../domain/plank_analyzer.dart';
@@ -311,6 +313,16 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     if (started == null || _saving) {
       if (mounted && !_saving) Navigator.of(context).pop();
       return;
+    }
+    final records = _analyzer.repRecords;
+    if (records.isNotEmpty) {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (_) =>
+            _FormReviewSheet(exercise: _exercise.label, records: records),
+      );
+      if (!mounted) return;
     }
     setState(() => _saving = true);
     final completed = DateTime.now();
@@ -639,4 +651,166 @@ class _PermissionView extends StatelessWidget {
       ),
     ),
   );
+}
+
+String _faultLabel(String code) => switch (code) {
+  'shallowDepth' => 'Shallow depth',
+  'kneeValgus' => 'Knees caved in',
+  'forwardLean' => 'Leaning forward',
+  'heelsUp' => 'Heels lifted',
+  'asymmetry' => 'Uneven sides',
+  'fastEccentric' => 'Dropped too fast',
+  _ => code,
+};
+
+/// Post-set review: per-rep telemetry plus an optional AI coach verdict
+/// (gpt-6-luna on the recorded [RepRecord]s).
+class _FormReviewSheet extends StatefulWidget {
+  const _FormReviewSheet({required this.exercise, required this.records});
+
+  final String exercise;
+  final List<RepRecord> records;
+
+  @override
+  State<_FormReviewSheet> createState() => _FormReviewSheetState();
+}
+
+class _FormReviewSheetState extends State<_FormReviewSheet> {
+  final _service = const OpenAiService();
+  String? _summary;
+  List<String> _tips = const [];
+  bool _loading = false;
+
+  Future<void> _aiReview() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final json = await _service.generateJson(
+        system: AiFormReviewPrompt.system,
+        user: AiFormReviewPrompt.user(
+          exercise: widget.exercise,
+          reps: widget.records,
+        ),
+        schema: AiFormReviewPrompt.schema,
+        schemaName: 'form_review',
+      );
+      if (!mounted) return;
+      setState(() {
+        _summary = json['summary'] as String?;
+        _tips = [for (final tip in json['tips'] as List? ?? const []) '$tip'];
+        _loading = false;
+      });
+    } on OpenAiException catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final clean = widget.records.where((rep) => rep.faults.isEmpty).length;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${widget.exercise} — form review',
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Text('$clean/${widget.records.length} clean reps'),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              ...widget.records.map(
+                (rep) => Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Rep ${rep.number} · ${rep.minKneeAngle.round()}°'
+                        ' depth'
+                        '${rep.descentMs > 0 ? ' · ↓${rep.descentMs}ms ↑${rep.ascentMs}ms' : ''}',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      if (rep.faults.isEmpty)
+                        Text(
+                          'Clean rep',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        )
+                      else
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            for (final fault in rep.faults)
+                              Chip(
+                                label: Text(_faultLabel(fault)),
+                                visualDensity: VisualDensity.compact,
+                                backgroundColor: Theme.of(context)
+                                    .colorScheme
+                                    .errorContainer,
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              if (OpenAiService.configured) ...[
+                const SizedBox(height: AppSpacing.sm),
+                if (_summary == null)
+                  FilledButton.tonalIcon(
+                    key: const Key('form-review-ai'),
+                    onPressed: _aiReview,
+                    icon: _loading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.auto_awesome),
+                    label: Text(_loading ? 'Reviewing…' : 'AI coach review'),
+                  )
+                else ...[
+                  Text(
+                    _summary!,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  for (final tip in _tips)
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xs),
+                      child: Text('• $tip'),
+                    ),
+                ],
+              ],
+              const SizedBox(height: AppSpacing.md),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  key: const Key('form-review-done'),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

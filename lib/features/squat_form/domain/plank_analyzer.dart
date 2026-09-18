@@ -18,6 +18,9 @@ class PlankAnalyzer implements RepAnalyzer {
   String get countLabel => 'GIÂY GIỮ';
 
   @override
+  List<RepRecord> get repRecords => const [];
+
+  @override
   void reset() {
     _goodHoldUs = 0;
     _lastTimestampUs = null;
