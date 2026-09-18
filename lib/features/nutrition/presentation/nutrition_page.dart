@@ -253,61 +253,10 @@ class _NutritionPageState extends State<NutritionPage> {
   /// Logs a manually typed dish (name + kcal) — the fallback when the
   /// photo path isn't available.
   Future<void> _logManually() async {
-    final nameCtrl = TextEditingController();
-    final kcalCtrl = TextEditingController();
     final meal = await showDialog<Meal>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final name = nameCtrl.text.trim();
-          final kcal = int.tryParse(kcalCtrl.text.trim());
-          final valid = name.isNotEmpty && kcal != null && kcal > 0;
-          return AlertDialog(
-            title: const Text('Log a meal'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'What did you eat?',
-                  ),
-                  onChanged: (_) => setDialogState(() {}),
-                ),
-                TextField(
-                  controller: kcalCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Calories (kcal)',
-                  ),
-                  keyboardType: TextInputType.number,
-                  onChanged: (_) => setDialogState(() {}),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: valid
-                    ? () => Navigator.pop(
-                        context,
-                        Meal(
-                          label: 'Manual entry',
-                          items: [MealItem(name: name, kcal: kcal)],
-                        ),
-                      )
-                    : null,
-                child: const Text('Log'),
-              ),
-            ],
-          );
-        },
-      ),
+      builder: (_) => const _LogMealDialog(),
     );
-    nameCtrl.dispose();
-    kcalCtrl.dispose();
     if (meal != null && mounted) await _logMeal(meal);
   }
 
@@ -628,6 +577,72 @@ class _PlanView extends StatelessWidget {
       ...plan.meals.map((meal) => _MealCard(meal: meal)),
     ],
   );
+}
+
+/// Dialog owning its own controllers — disposing them in the caller
+/// would race the route's exit animation (the subtree still builds the
+/// TextFields while dismissing).
+class _LogMealDialog extends StatefulWidget {
+  const _LogMealDialog();
+
+  @override
+  State<_LogMealDialog> createState() => _LogMealDialogState();
+}
+
+class _LogMealDialogState extends State<_LogMealDialog> {
+  final _nameCtrl = TextEditingController();
+  final _kcalCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _kcalCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = _nameCtrl.text.trim();
+    final kcal = int.tryParse(_kcalCtrl.text.trim());
+    final valid = name.isNotEmpty && kcal != null && kcal > 0;
+    return AlertDialog(
+      title: const Text('Log a meal'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _nameCtrl,
+            decoration: const InputDecoration(labelText: 'What did you eat?'),
+            onChanged: (_) => setState(() {}),
+          ),
+          TextField(
+            controller: _kcalCtrl,
+            decoration: const InputDecoration(labelText: 'Calories (kcal)'),
+            keyboardType: TextInputType.number,
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: valid
+              ? () => Navigator.pop(
+                  context,
+                  Meal(
+                    label: 'Manual entry',
+                    items: [MealItem(name: name, kcal: kcal)],
+                  ),
+                )
+              : null,
+          child: const Text('Log'),
+        ),
+      ],
+    );
+  }
 }
 
 class _MealCard extends StatelessWidget {

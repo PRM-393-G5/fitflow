@@ -74,4 +74,46 @@ void main() {
     expect(find.text('Rest'), findsOneWidget);
     expect(find.byKey(const Key('skip-rest')), findsOneWidget);
   });
+
+  testWidgets('nutrition tab logs a manual meal for today', (tester) async {
+    SharedPreferences.setMockInitialValues({'onboarding_v1': '{"done":true}'});
+    final preferences = await SharedPreferences.getInstance();
+    final controller = AppController(
+      LocalWorkoutRepository(preferences),
+      preferences,
+    );
+    await controller.load();
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(theme: AppTheme.light, home: const AppShell()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Nutrition'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('nutrition-log-manual')));
+    await tester.tap(find.byKey(const Key('nutrition-log-manual')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'What did you eat?'),
+      'Phở bò',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Calories (kcal)'),
+      '450',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Log'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Phở bò'), findsOneWidget);
+    expect(find.textContaining('450'), findsWidgets);
+    expect(find.textContaining('eaten today'), findsOneWidget);
+    expect(preferences.getString('food_log_v1'), contains('Phở bò'));
+  });
 }
