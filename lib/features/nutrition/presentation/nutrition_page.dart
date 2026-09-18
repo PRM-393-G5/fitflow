@@ -236,15 +236,18 @@ class _NutritionPageState extends State<NutritionPage> {
     return _persistLog();
   }
 
-  Future<void> _persistLog() {
-    final preferences = AppScope.of(context).preferences;
-    return preferences.setString(
-      NutritionPage._logKey,
-      jsonEncode({
-        'date': _logDate.toIso8601String(),
-        'meals': [for (final m in _logged) m.toJson()],
-      }),
-    );
+  /// Shared write for all log mutations — callers are fire-and-forget,
+  /// so a prefs failure is swallowed here (throwaway data).
+  Future<void> _persistLog() async {
+    try {
+      await AppScope.of(context).preferences.setString(
+        NutritionPage._logKey,
+        jsonEncode({
+          'date': _logDate.toIso8601String(),
+          'meals': [for (final m in _logged) m.toJson()],
+        }),
+      );
+    } catch (_) {}
   }
 
   /// Logs a manually typed dish (name + kcal) — the fallback when the
