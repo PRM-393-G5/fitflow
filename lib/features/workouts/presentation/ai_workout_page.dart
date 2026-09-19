@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
@@ -29,12 +30,29 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
   final _service = const OpenAiService();
   String _level = 'Auto';
   double _duration = 30;
+  // Track fraction 0..1 mapped onto 10..90 minutes in 5-minute steps.
+  late final FContinuousSliderController _durationControl;
   bool _generating = false;
   Workout? _preview;
 
   @override
+  void initState() {
+    super.initState();
+    _durationControl =
+        FContinuousSliderController(
+          value: FSliderValue(max: (_duration - 10) / 80),
+        )..addListener(
+          () => setState(
+            () => _duration =
+                10.0 + (_durationControl.value.max * 80 / 5).round() * 5,
+          ),
+        );
+  }
+
+  @override
   void dispose() {
     _requestCtrl.dispose();
+    _durationControl.dispose();
     super.dispose();
   }
 
@@ -80,7 +98,7 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
 
   void _showError(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    showFToast(context: context, title: Text(text));
   }
 
   Future<void> _save() async {
@@ -91,12 +109,15 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('AI workout')),
-    body: SafeArea(
-      child: ResponsiveContent(
-        child: _preview != null ? _buildPreview(_preview!) : _buildInput(),
-      ),
+  Widget build(BuildContext context) => FScaffold(
+    header: FHeader.nested(
+      title: const Text('AI workout'),
+      prefixes: [
+        FHeaderAction.back(onPress: () => Navigator.of(context).pop()),
+      ],
+    ),
+    child: ResponsiveContent(
+      child: _preview != null ? _buildPreview(_preview!) : _buildInput(),
     ),
   );
 
@@ -111,41 +132,41 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
       const SizedBox(height: AppSpacing.sm),
       const Text('e.g. "30 minutes, legs, no equipment, beginner friendly"'),
       const SizedBox(height: AppSpacing.md),
-      TextField(
+      FTextField(
         key: const Key('ai-request'),
-        controller: _requestCtrl,
+        control: .managed(controller: _requestCtrl),
         minLines: 3,
         maxLines: 5,
         textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(
-          hintText: 'Type your request…',
-          border: OutlineInputBorder(),
-        ),
+        hint: 'Type your request…',
       ),
       const SizedBox(height: AppSpacing.sm),
       Wrap(
         spacing: AppSpacing.sm,
         children: [
           for (final suggestion in _suggestions)
-            ActionChip(
-              label: Text(suggestion),
-              onPressed: () => _requestCtrl.text = suggestion,
+            FButton(
+              variant: .outline,
+              size: .sm,
+              mainAxisSize: .min,
+              onPress: () => _requestCtrl.text = suggestion,
+              child: Text(suggestion),
             ),
         ],
       ),
       const SizedBox(height: AppSpacing.md),
       Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: DropdownButtonFormField<String>(
+            child: FSelect<String>(
               key: const Key('ai-level'),
-              initialValue: _level,
-              decoration: const InputDecoration(labelText: 'Level'),
-              items: [
-                for (final level in _levels)
-                  DropdownMenuItem(value: level, child: Text(level)),
-              ],
-              onChanged: (value) => setState(() => _level = value ?? 'Auto'),
+              items: {for (final level in _levels) level: level},
+              control: .managed(
+                initial: _level,
+                onChange: (value) => setState(() => _level = value ?? 'Auto'),
+              ),
+              label: const Text('Level'),
             ),
           ),
           const SizedBox(width: AppSpacing.md),
@@ -153,14 +174,11 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const SizedBox(height: AppSpacing.sm),
                 Text('${_duration.round()} min'),
-                Slider(
+                FSlider(
                   key: const Key('ai-duration'),
-                  value: _duration,
-                  min: 10,
-                  max: 90,
-                  divisions: 16,
-                  onChanged: (value) => setState(() => _duration = value),
+                  control: .managedContinuous(controller: _durationControl),
                 ),
               ],
             ),
@@ -169,27 +187,20 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
       ),
       const SizedBox(height: AppSpacing.lg),
       if (!OpenAiService.configured)
-        const Card(
-          child: Padding(
-            padding: EdgeInsets.all(AppSpacing.md),
-            child: Text(
-              'AI generation needs an OpenAI API key '
-              '(.env file or --dart-define=OPENAI_API_KEY=…).',
-            ),
+        const FCard(
+          child: Text(
+            'AI generation needs an OpenAI API key '
+            '(.env file or --dart-define=OPENAI_API_KEY=…).',
           ),
         )
       else
-        FilledButton.icon(
+        FButton(
           key: const Key('ai-generate'),
-          onPressed: _generating ? null : _generate,
-          icon: _generating
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.auto_awesome),
-          label: Text(_generating ? 'Generating…' : 'Generate workout'),
+          onPress: _generating ? null : _generate,
+          prefix: _generating
+              ? const FCircularProgress()
+              : const Icon(FLucideIcons.sparkles),
+          child: Text(_generating ? 'Generating…' : 'Generate workout'),
         ),
     ],
   );
@@ -208,9 +219,12 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
       Wrap(
         spacing: AppSpacing.sm,
         children: [
-          Chip(label: Text(workout.category)),
-          Chip(label: Text(workout.level)),
-          Chip(label: Text('${workout.duration.inMinutes} min')),
+          FBadge(variant: .secondary, child: Text(workout.category)),
+          FBadge(variant: .secondary, child: Text(workout.level)),
+          FBadge(
+            variant: .secondary,
+            child: Text('${workout.duration.inMinutes} min'),
+          ),
         ],
       ),
       const SizedBox(height: AppSpacing.lg),
@@ -219,49 +233,50 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
         style: Theme.of(context).textTheme.titleLarge,
       ),
       const SizedBox(height: AppSpacing.sm),
-      ...workout.exercises.indexed.map(
-        (entry) => Card(
-          child: ListTile(
-            leading: CircleAvatar(child: Text('${entry.$1 + 1}')),
-            title: Text(entry.$2.name),
-            subtitle: Text(
-              '${entry.$2.muscleGroup} • ${entry.$2.prescription} • ${entry.$2.restSeconds}s rest',
+      FTileGroup(
+        children: [
+          for (final (index, exercise) in workout.exercises.indexed)
+            FTile(
+              prefix: FAvatar.raw(child: Text('${index + 1}')),
+              title: Text(exercise.name),
+              subtitle: Text(
+                '${exercise.muscleGroup} • ${exercise.prescription} • ${exercise.restSeconds}s rest',
+              ),
             ),
-          ),
-        ),
+        ],
       ),
       const SizedBox(height: AppSpacing.lg),
       Row(
         children: [
           Expanded(
-            child: OutlinedButton.icon(
+            child: FButton(
               key: const Key('ai-regenerate'),
-              onPressed: _generating ? null : _generate,
-              icon: _generating
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh),
-              label: const Text('Try again'),
+              variant: .outline,
+              onPress: _generating ? null : _generate,
+              prefix: _generating
+                  ? const FCircularProgress()
+                  : const Icon(FLucideIcons.rotateCcw),
+              child: const Text('Try again'),
             ),
           ),
           const SizedBox(width: AppSpacing.md),
           Expanded(
-            child: FilledButton.icon(
+            child: FButton(
               key: const Key('ai-save'),
-              onPressed: _generating ? null : _save,
-              icon: const Icon(Icons.check),
-              label: const Text('Save plan'),
+              onPress: _generating ? null : _save,
+              prefix: const Icon(FLucideIcons.check),
+              child: const Text('Save plan'),
             ),
           ),
         ],
       ),
-      TextButton(
-        key: const Key('ai-edit-request'),
-        onPressed: () => setState(() => _preview = null),
-        child: const Text('Edit request'),
+      Center(
+        child: FButton(
+          key: const Key('ai-edit-request'),
+          variant: .ghost,
+          onPress: () => setState(() => _preview = null),
+          child: const Text('Edit request'),
+        ),
       ),
     ],
   );

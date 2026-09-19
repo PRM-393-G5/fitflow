@@ -47,6 +47,8 @@ dependencies:
   google_sign_in: ^7.2.0
   image_picker: ^1.2.3
   flutter_dotenv: ^6.0.1
+  forui: ^0.27.0
+  material_ui: ^1.5.0
 
 dev_dependencies:
   flutter_test:

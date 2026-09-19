@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../app/app_scope.dart';
 import '../../home/presentation/home_page.dart';
@@ -36,77 +37,57 @@ class _AppShellState extends State<AppShell> {
     ProfilePage(),
   ];
   static const _destinations = [
-    NavigationDestination(
-      icon: Icon(Icons.home_outlined),
-      selectedIcon: Icon(Icons.home),
-      label: 'Home',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.fitness_center_outlined),
-      selectedIcon: Icon(Icons.fitness_center),
-      label: 'Workouts',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.restaurant_outlined),
-      selectedIcon: Icon(Icons.restaurant),
-      label: 'Nutrition',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.insights_outlined),
-      selectedIcon: Icon(Icons.insights),
-      label: 'Progress',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.person_outline),
-      selectedIcon: Icon(Icons.person),
-      label: 'Profile',
-    ),
+    (icon: FLucideIcons.house, label: 'Home'),
+    (icon: FLucideIcons.dumbbell, label: 'Workouts'),
+    (icon: FLucideIcons.utensils, label: 'Nutrition'),
+    (icon: FLucideIcons.chartNoAxesColumnIncreasing, label: 'Progress'),
+    (icon: FLucideIcons.circleUser, label: 'Profile'),
   ];
 
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 840;
     final body = IndexedStack(index: _index, children: _pages);
-    return Scaffold(
-      body: SafeArea(
-        child: wide
-            ? Row(
-                children: [
-                  NavigationRail(
-                    extended: MediaQuery.sizeOf(context).width >= 1100,
-                    selectedIndex: _index,
-                    onDestinationSelected: (value) =>
-                        setState(() => _index = value),
-                    leading: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Icon(
-                        Icons.bolt,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    destinations: _destinations
-                        .map(
-                          (item) => NavigationRailDestination(
-                            icon: item.icon,
-                            selectedIcon: item.selectedIcon,
-                            label: Text(item.label),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: body),
-                ],
-              )
-            : body,
-      ),
-      bottomNavigationBar: wide
-          ? null
-          : NavigationBar(
+    return FScaffold(
+      childPad: false,
+      sidebar: wide
+          ? NavigationRail(
+              extended: MediaQuery.sizeOf(context).width >= 1100,
               selectedIndex: _index,
               onDestinationSelected: (value) => setState(() => _index = value),
-              destinations: _destinations,
+              leading: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Icon(
+                  FLucideIcons.zap,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              destinations: _destinations
+                  .map(
+                    (item) => NavigationRailDestination(
+                      icon: Icon(item.icon),
+                      selectedIcon: Icon(item.icon),
+                      label: Text(item.label),
+                    ),
+                  )
+                  .toList(),
+            )
+          : null,
+      footer: wide
+          ? null
+          : FBottomNavigationBar(
+              safeAreaBottom: true,
+              index: _index,
+              onChange: (value) => setState(() => _index = value),
+              children: [
+                for (final item in _destinations)
+                  FBottomNavigationBarItem(
+                    icon: Icon(item.icon),
+                    label: Text(item.label),
+                  ),
+              ],
             ),
+      child: SafeArea(child: body),
     );
   }
 }

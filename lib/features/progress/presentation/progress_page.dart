@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 
 import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
@@ -44,17 +45,17 @@ class ProgressPage extends StatelessWidget {
               childAspectRatio: 1.1,
               children: [
                 StatCard(
-                  icon: Icons.check_circle,
+                  icon: FLucideIcons.calendarCheck,
                   value: '${sessions.length}',
                   label: 'sessions',
                 ),
                 StatCard(
-                  icon: Icons.timer,
+                  icon: FLucideIcons.timer,
                   value: '${WorkoutStats.totalMinutes(sessions)}',
                   label: 'minutes',
                 ),
                 StatCard(
-                  icon: Icons.monitor_weight_outlined,
+                  icon: FLucideIcons.weight,
                   value: '${displayVolume.round()} $unit',
                   label: 'volume',
                 ),
@@ -64,21 +65,11 @@ class ProgressPage extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'Activity'),
           const SizedBox(height: AppSpacing.sm),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: _ActivityHeatmap(sessions: sessions),
-            ),
-          ),
+          FCard(child: _ActivityHeatmap(sessions: sessions)),
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'This week'),
           const SizedBox(height: AppSpacing.sm),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: _WeekChart(sessions: sessions),
-            ),
-          ),
+          FCard(child: _WeekChart(sessions: sessions)),
           if (sessions.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.lg),
             const SectionHeader(title: 'Personal records'),
@@ -91,17 +82,17 @@ class ProgressPage extends StatelessWidget {
                 childAspectRatio: 1.1,
                 children: [
                   StatCard(
-                    icon: Icons.local_fire_department,
+                    icon: FLucideIcons.flame,
                     value: '${WorkoutStats.longestStreak(sessions)}',
                     label: 'longest streak',
                   ),
                   StatCard(
-                    icon: Icons.fitness_center,
+                    icon: FLucideIcons.dumbbell,
                     value: _bestVolume(sessions, controller.useMetric),
                     label: 'best session',
                   ),
                   StatCard(
-                    icon: Icons.schedule,
+                    icon: FLucideIcons.clock,
                     value:
                         '${sessions.map((item) => item.durationMinutes).reduce((a, b) => a > b ? a : b)} min',
                     label: 'longest session',
@@ -114,69 +105,82 @@ class ProgressPage extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'Explore'),
           const SizedBox(height: AppSpacing.sm),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.emoji_events_outlined),
-                  title: const Text('Achievements'),
-                  subtitle: const Text('Badges earned from your training'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const AchievementsPage(),
-                    ),
+          FTileGroup(
+            children: [
+              FTile(
+                prefix: const Icon(FLucideIcons.trophy),
+                title: const Text('Achievements'),
+                subtitle: const Text('Badges earned from your training'),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AchievementsPage(),
                   ),
                 ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.monitor_weight_outlined),
-                  title: const Text('Body metrics'),
-                  subtitle: const Text('Log and track your weight'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const BodyMetricsPage(),
-                    ),
+              ),
+              FTile(
+                prefix: const Icon(FLucideIcons.weight),
+                title: const Text('Body metrics'),
+                subtitle: const Text('Log and track your weight'),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const BodyMetricsPage(),
                   ),
                 ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.ios_share_outlined),
-                  title: const Text('Share summary'),
-                  subtitle: const Text('A card with your latest stats'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => showShareSummaryDialog(context),
-                ),
-              ],
-            ),
+              ),
+              FTile(
+                prefix: const Icon(FLucideIcons.share),
+                title: const Text('Share summary'),
+                subtitle: const Text('A card with your latest stats'),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: () => showShareSummaryDialog(context),
+              ),
+            ],
           ),
           const SizedBox(height: AppSpacing.lg),
           Text('History', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: AppSpacing.sm),
           if (sessions.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(AppSpacing.xl),
-                child: Center(
-                  child: Text('Complete a workout to begin tracking.'),
-                ),
+            const FCard(
+              child: Center(
+                child: Text('Complete a workout to begin tracking.'),
               ),
             )
           else
             ...sessions.map(
-              (session) => Card(
-                child: ListTile(
-                  leading: const CircleAvatar(child: Icon(Icons.check)),
-                  title: Text(session.workoutName),
-                  subtitle: Text(
-                    '${_date(session.completedAt)} • ${session.durationMinutes} min • ${session.completedSets} sets',
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
+              (session) => FCard(
+                child: FTappable(
+                  onPress: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => SessionDetailPage(session: session),
                     ),
+                  ),
+                  child: Row(
+                    children: [
+                      FAvatar.raw(child: const Icon(FLucideIcons.check)),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              session.workoutName,
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                            Text(
+                              '${_date(session.completedAt)} • ${session.durationMinutes} min • ${session.completedSets} sets',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        FLucideIcons.chevronRight,
+                        color: context.theme.colors.mutedForeground,
+                        size: 18,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -207,26 +211,22 @@ class ProgressPage extends StatelessWidget {
     final unit = controller.useMetric ? 'kg' : 'lb';
     return [
       const SizedBox(height: AppSpacing.sm),
-      Card(
-        child: Column(
-          children: [
-            for (final (index, record) in records.indexed) ...[
-              if (index > 0) const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.emoji_events_outlined),
-                title: Text(record.exerciseName),
-                subtitle: Text(_date(record.date)),
-                trailing: Text(
-                  record.isTimed
-                      ? '${record.value.round()}s'
-                      : '${(controller.useMetric ? record.value : record.value * 2.20462).round()} $unit',
-                  style: Theme.of(context).textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
+      FTileGroup(
+        children: [
+          for (final record in records)
+            FTile(
+              prefix: const Icon(FLucideIcons.trophy),
+              title: Text(record.exerciseName),
+              subtitle: Text(_date(record.date)),
+              suffix: Text(
+                record.isTimed
+                    ? '${record.value.round()}s'
+                    : '${(controller.useMetric ? record.value : record.value * 2.20462).round()} $unit',
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
-            ],
-          ],
-        ),
+            ),
+        ],
       ),
     ];
   }
@@ -257,7 +257,7 @@ class _ActivityHeatmap extends StatelessWidget {
       today.month,
       today.day - (today.weekday - 1) - 7 * (_weeks - 1),
     );
-    final colors = Theme.of(context).colorScheme;
+    final colors = context.theme.colors;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -274,7 +274,7 @@ class _ActivityHeatmap extends StatelessWidget {
             final color = day.isAfter(today)
                 ? Colors.transparent
                 : count == 0
-                ? colors.surfaceContainerHighest
+                ? colors.muted
                 : colors.primary.withValues(
                     alpha: (0.25 + 0.25 * count).clamp(0.0, 1.0),
                   );
@@ -322,7 +322,7 @@ class _WeekChart extends StatelessWidget {
       if (index >= 0 && index < 7) minutes[index] += session.durationMinutes;
     }
     final peak = minutes.reduce((a, b) => a > b ? a : b);
-    final colors = Theme.of(context).colorScheme;
+    final colors = context.theme.colors;
 
     return SizedBox(
       height: 120,

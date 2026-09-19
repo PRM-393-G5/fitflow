@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prm/core/theme/app_theme.dart';
 import 'package:prm/domain/ai_workout_parser.dart';
 import 'package:prm/features/workouts/presentation/ai_workout_page.dart';
 
@@ -105,7 +107,16 @@ void main() {
   testWidgets('shows config hint and hides generate without API key', (
     tester,
   ) async {
-    await tester.pumpWidget(const MaterialApp(home: AiWorkoutPage()));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light.toApproximateMaterialTheme(),
+        builder: (context, child) => FTheme(
+          data: AppTheme.light,
+          child: FToaster(child: child!),
+        ),
+        home: const AiWorkoutPage(),
+      ),
+    );
 
     expect(find.byKey(const Key('ai-generate')), findsNothing);
     expect(find.textContaining('OPENAI_API_KEY'), findsOneWidget);

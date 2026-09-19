@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
@@ -20,49 +21,42 @@ class SchedulePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Weekly schedule')),
-      body: SafeArea(
-        child: ResponsiveContent(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Assign a plan to each day. Home shows today\u2019s pick.',
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Card(
-                child: Column(
-                  children: [
-                    for (var weekday = 1; weekday <= 7; weekday++) ...[
-                      if (weekday > 1) const Divider(height: 1),
-                      ListTile(
-                        title: Text(_dayNames[weekday - 1]),
-                        trailing: DropdownButton<String?>(
-                          value: controller.schedule[weekday],
-                          hint: const Text('Rest'),
-                          underline: const SizedBox.shrink(),
-                          items: [
-                            const DropdownMenuItem<String?>(
-                              child: Text('Rest'),
-                            ),
-                            ...controller.workouts.map(
-                              (workout) => DropdownMenuItem<String?>(
-                                value: workout.id,
-                                child: Text(workout.name),
-                              ),
-                            ),
-                          ],
-                          onChanged: (value) =>
-                              controller.setScheduleDay(weekday, value),
-                        ),
+    return FScaffold(
+      header: FHeader.nested(
+        title: const Text('Weekly schedule'),
+        prefixes: [
+          FHeaderAction.back(onPress: () => Navigator.of(context).pop()),
+        ],
+      ),
+      child: ResponsiveContent(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Assign a plan to each day. Home shows today\u2019s pick.',
+            ),
+            const SizedBox(height: AppSpacing.md),
+            FTileGroup(
+              children: [
+                for (var weekday = 1; weekday <= 7; weekday++)
+                  FSelectMenuTile<String?>.fromMap(
+                    {
+                      'Rest': null,
+                      for (final workout in controller.workouts)
+                        workout.name: workout.id,
+                    },
+                    title: Text(_dayNames[weekday - 1]),
+                    selectControl: .managedRadio(
+                      initial: controller.schedule[weekday],
+                      onChange: (values) => controller.setScheduleDay(
+                        weekday,
+                        values.isEmpty ? null : values.first,
                       ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ),
       ),
     );

@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../../app/app_scope.dart';
@@ -30,48 +31,45 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Sign-in failed: $message')));
+    showFToast(context: context, title: Text('Sign-in failed: $message'));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.bolt, size: 72, color: theme.colorScheme.primary),
-                const SizedBox(height: 16),
-                Text(
-                  'FitFlow',
-                  style: theme.textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+    return FScaffold(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                FLucideIcons.zap,
+                size: 72,
+                color: context.theme.colors.primary,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'FitFlow',
+                style: theme.textTheme.headlineLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Sign in to start training.',
-                  style: theme.textTheme.bodyLarge,
-                ),
-                const SizedBox(height: 32),
-                FilledButton.icon(
-                  onPressed: _busy ? null : _signIn,
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.login),
-                  label: const Text('Continue with Google'),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Sign in to start training.',
+                style: theme.textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 32),
+              FButton(
+                onPress: _busy ? null : _signIn,
+                prefix: _busy
+                    ? const FCircularProgress()
+                    : const Icon(FLucideIcons.logIn),
+                child: const Text('Continue with Google'),
+              ),
+            ],
           ),
         ),
       ),

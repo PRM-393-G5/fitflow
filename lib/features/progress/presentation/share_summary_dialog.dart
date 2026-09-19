@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter/services.dart';
 
 import '../../../app/app_controller.dart';
@@ -11,31 +12,43 @@ import '../../../domain/workout_stats.dart';
 /// needs share_plus (roadmap item).
 Future<void> showShareSummaryDialog(BuildContext context) {
   final controller = AppScope.of(context);
-  return showDialog<void>(
+  return showFDialog<void>(
     context: context,
-    builder: (context) => AlertDialog(
-      contentPadding: EdgeInsets.zero,
-      content: SizedBox(width: 320, child: _ShareCard(controller: controller)),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
+    builder: (context, style, animation) => FDialog(
+      style: style,
+      animation: animation,
+      builder: (context, style) => Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          mainAxisSize: .min,
+          crossAxisAlignment: .stretch,
+          children: [
+            _ShareCard(controller: controller),
+            const SizedBox(height: AppSpacing.md),
+            FButton(
+              variant: .ghost,
+              onPress: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            FButton(
+              onPress: () async {
+                await Clipboard.setData(
+                  ClipboardData(text: _summaryText(controller)),
+                );
+                if (context.mounted) {
+                  showFToast(
+                    context: context,
+                    title: const Text('Summary copied.'),
+                  );
+                }
+              },
+              prefix: const Icon(FLucideIcons.copy),
+              child: const Text('Copy summary'),
+            ),
+          ],
         ),
-        FilledButton.icon(
-          onPressed: () async {
-            await Clipboard.setData(
-              ClipboardData(text: _summaryText(controller)),
-            );
-            if (context.mounted) {
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('Summary copied.')));
-            }
-          },
-          icon: const Icon(Icons.copy),
-          label: const Text('Copy summary'),
-        ),
-      ],
+      ),
     ),
   );
 }
@@ -69,7 +82,7 @@ class _ShareCard extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF6558D3), Color(0xFF2B2457)],
+          colors: [Color(0xFF2563EB), Color(0xFF1E3A8A)],
         ),
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -79,7 +92,7 @@ class _ShareCard extends StatelessWidget {
         children: [
           const Row(
             children: [
-              Icon(Icons.bolt, color: Colors.white),
+              Icon(FLucideIcons.zap, color: Colors.white),
               SizedBox(width: AppSpacing.sm),
               Text(
                 'FITFLOW',

@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 
 import '../../../app/app_scope.dart';
 import '../../navigation/presentation/app_shell.dart';
@@ -13,8 +14,8 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = AppScope.of(context).auth;
     if (auth == null) {
-      return const Scaffold(
-        body: Center(child: Text('Sign-in is unavailable.')),
+      return const FScaffold(
+        child: Center(child: Text('Sign-in is unavailable.')),
       );
     }
     return StreamBuilder<User?>(
@@ -22,9 +23,7 @@ class AuthGate extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             auth.currentUser == null) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const FScaffold(child: Center(child: FCircularProgress()));
         }
         return snapshot.data == null ? const LoginPage() : const AppShell();
       },

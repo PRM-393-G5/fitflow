@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -319,9 +320,10 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     setState(() => _saving = true);
     final records = List.of(_analyzer.repRecords);
     if (records.isNotEmpty) {
-      await showModalBottomSheet<void>(
+      await showFSheet<void>(
         context: context,
-        isScrollControlled: true,
+        side: .btt,
+        mainAxisMaxRatio: .infinity,
         builder: (_) =>
             _FormReviewSheet(exercise: _exercise.label, records: records),
       );
@@ -373,15 +375,14 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     onPopInvokedWithResult: (didPop, _) {
       if (!didPop) _saveAndClose();
     },
-    child: Scaffold(
-      backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      body: _buildBody(),
+    child: FScaffold(
+      childPad: false,
+      child: ColoredBox(color: Colors.black, child: _buildBody()),
     ),
   );
 
   Widget _buildBody() {
-    if (_initializing) return const Center(child: CircularProgressIndicator());
+    if (_initializing) return const Center(child: FCircularProgress.loader());
     final permission = _permission;
     if (permission != null && !permission.isGranted) {
       return _PermissionView(
@@ -399,7 +400,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     }
     final camera = _camera;
     if (camera == null || !camera.value.isInitialized) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: FCircularProgress.loader());
     }
     final analysis = _analysis;
     final mirrored = _description?.lensDirection == CameraLensDirection.front;
@@ -430,49 +431,56 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                 top: 4,
                 child: Row(
                   children: [
-                    IconButton(
-                      onPressed: _saveAndClose,
-                      color: Colors.white,
-                      icon: const Icon(Icons.close),
+                    _CamButton(
+                      icon: FLucideIcons.x,
+                      tooltip: 'Close',
+                      onPress: _saveAndClose,
                     ),
                     const Spacer(),
-                    PopupMenuButton<SquatPerformanceMode>(
-                      initialValue: _scheduler.mode,
-                      tooltip: 'Chế độ hiệu năng',
-                      iconColor: Colors.white,
-                      onSelected: (mode) => setState(() {
-                        _scheduler.mode = mode;
-                        _scheduler.reset();
-                      }),
-                      itemBuilder: (_) => SquatPerformanceMode.values
-                          .map(
-                            (mode) => PopupMenuItem(
-                              value: mode,
-                              child: Text(mode.name),
-                            ),
-                          )
-                          .toList(),
+                    FPopoverMenu.tiles(
+                      menuBuilder: (context, controller, menu) => [
+                        FTileGroup(
+                          children: [
+                            for (final mode in SquatPerformanceMode.values)
+                              FTile(
+                                title: Text(mode.name),
+                                onPress: () {
+                                  setState(() {
+                                    _scheduler.mode = mode;
+                                    _scheduler.reset();
+                                  });
+                                  controller.hide();
+                                },
+                              ),
+                          ],
+                        ),
+                      ],
+                      child: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Icon(
+                          FLucideIcons.ellipsisVertical,
+                          color: Colors.white,
+                          semanticLabel: 'Chế độ hiệu năng',
+                        ),
+                      ),
                     ),
                     if (kDebugMode)
-                      IconButton(
+                      _CamButton(
+                        icon: FLucideIcons.gauge,
                         tooltip: 'Telemetry',
-                        onPressed: () =>
+                        onPress: () =>
                             setState(() => _showTelemetry = !_showTelemetry),
-                        color: Colors.white,
-                        icon: const Icon(Icons.speed),
                       ),
-                    IconButton(
+                    _CamButton(
+                      icon: _paused ? FLucideIcons.play : FLucideIcons.pause,
                       tooltip: _paused ? 'Tiếp tục' : 'Tạm dừng',
-                      onPressed: _togglePause,
-                      color: Colors.white,
-                      icon: Icon(_paused ? Icons.play_arrow : Icons.pause),
+                      onPress: _togglePause,
                     ),
                     if (_cameras.length > 1)
-                      IconButton(
+                      _CamButton(
+                        icon: FLucideIcons.switchCamera,
                         tooltip: 'Đổi camera',
-                        onPressed: _switchCamera,
-                        color: Colors.white,
-                        icon: const Icon(Icons.cameraswitch),
+                        onPress: _switchCamera,
                       ),
                   ],
                 ),
@@ -512,17 +520,21 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
                     child: Column(
                       children: [
-                        PopupMenuButton<FormExercise>(
-                          initialValue: _exercise,
-                          onSelected: _selectExercise,
-                          itemBuilder: (_) => FormExercise.values
-                              .map(
-                                (item) => PopupMenuItem(
-                                  value: item,
-                                  child: Text(item.label),
-                                ),
-                              )
-                              .toList(),
+                        FPopoverMenu.tiles(
+                          menuBuilder: (context, controller, menu) => [
+                            FTileGroup(
+                              children: [
+                                for (final item in FormExercise.values)
+                                  FTile(
+                                    title: Text(item.label),
+                                    onPress: () {
+                                      _selectExercise(item);
+                                      controller.hide();
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ],
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -534,7 +546,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                                 ),
                               ),
                               const Icon(
-                                Icons.arrow_drop_down,
+                                FLucideIcons.chevronDown,
                                 color: Colors.white,
                               ),
                             ],
@@ -633,11 +645,7 @@ class _PermissionView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.no_photography_outlined,
-            color: Colors.white,
-            size: 64,
-          ),
+          const Icon(FLucideIcons.cameraOff, color: Colors.white, size: 64),
           const SizedBox(height: 16),
           const Text(
             'FitFlow cần quyền camera để phân tích tư thế ngay trên thiết bị.',
@@ -645,8 +653,8 @@ class _PermissionView extends StatelessWidget {
             style: TextStyle(color: Colors.white, fontSize: 17),
           ),
           const SizedBox(height: 20),
-          FilledButton(
-            onPressed: permanent ? openAppSettings : retry,
+          FButton(
+            onPress: permanent ? openAppSettings : retry,
             child: Text(permanent ? 'Mở cài đặt' : 'Cho phép camera'),
           ),
         ],
@@ -705,14 +713,14 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
     } on OpenAiException catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message)));
+      showFToast(context: context, title: Text(e.message));
     } catch (_) {
       // Unexpected response shape — strict schema should prevent this.
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not review — try again.')),
+      showFToast(
+        context: context,
+        title: const Text('Could not review — try again.'),
       );
     }
   }
@@ -767,12 +775,9 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
                           runSpacing: 4,
                           children: [
                             for (final fault in rep.faults)
-                              Chip(
-                                label: Text(_faultLabel(fault)),
-                                visualDensity: VisualDensity.compact,
-                                backgroundColor: Theme.of(context)
-                                    .colorScheme
-                                    .errorContainer,
+                              FBadge(
+                                variant: .destructive,
+                                child: Text(_faultLabel(fault)),
                               ),
                           ],
                         ),
@@ -783,17 +788,14 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
               if (OpenAiService.configured) ...[
                 const SizedBox(height: AppSpacing.sm),
                 if (_summary == null)
-                  FilledButton.tonalIcon(
+                  FButton(
                     key: const Key('form-review-ai'),
-                    onPressed: _aiReview,
-                    icon: _loading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.auto_awesome),
-                    label: Text(_loading ? 'Reviewing…' : 'AI coach review'),
+                    variant: .secondary,
+                    onPress: _aiReview,
+                    prefix: _loading
+                        ? const FCircularProgress()
+                        : const Icon(FLucideIcons.sparkles),
+                    child: Text(_loading ? 'Reviewing…' : 'AI coach review'),
                   )
                 else ...[
                   Text(
@@ -810,9 +812,9 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
               const SizedBox(height: AppSpacing.md),
               SizedBox(
                 width: double.infinity,
-                child: FilledButton(
+                child: FButton(
                   key: const Key('form-review-done'),
-                  onPressed: () => Navigator.pop(context),
+                  onPress: () => Navigator.pop(context),
                   child: const Text('Done'),
                 ),
               ),
@@ -822,4 +824,27 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
       ),
     );
   }
+}
+
+/// White icon button for the camera overlay — Forui ghost buttons would
+/// render with theme foreground, which is unreadable on the black preview.
+class _CamButton extends StatelessWidget {
+  const _CamButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPress,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPress;
+
+  @override
+  Widget build(BuildContext context) => FTappable(
+    onPress: onPress,
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Icon(icon, color: Colors.white, semanticLabel: tooltip),
+    ),
+  );
 }

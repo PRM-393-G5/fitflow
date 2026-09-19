@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prm/app/app_controller.dart';
+import 'package:prm/core/theme/app_theme.dart';
 import 'package:prm/data/local_workout_repository.dart';
 import 'package:prm/domain/models/exercise.dart';
 import 'package:prm/domain/models/workout.dart';
@@ -140,6 +142,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.light.toApproximateMaterialTheme(),
+        builder: (context, child) => FTheme(
+          data: AppTheme.light,
+          child: FToaster(child: child!),
+        ),
         home: ActiveWorkoutPage(workout: workout, controller: controller),
       ),
     );
@@ -158,7 +165,7 @@ void main() {
     await tester.tap(find.byKey(const Key('skip-rest')));
     await tester.pump();
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Finish'));
+    await tester.tap(find.text('Finish').last);
     await tester.pumpAndSettle();
 
     final saved = controller.sessions.single;

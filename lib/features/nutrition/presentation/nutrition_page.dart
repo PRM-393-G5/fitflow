@@ -1,13 +1,15 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../../../data/openai_service.dart';
 import '../../../domain/body_metrics.dart';
 import '../../../domain/meal_plan.dart';
@@ -153,24 +155,22 @@ class _NutritionPageState extends State<NutritionPage> {
 
   Future<void> _analyzePhoto() async {
     if (_analyzing) return;
-    final source = await showModalBottomSheet<ImageSource>(
+    final source = await showFSheet<ImageSource>(
       context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('Take photo'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Choose from gallery'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
-          ],
-        ),
+      side: .btt,
+      builder: (context) => FTileGroup(
+        children: [
+          FTile(
+            prefix: const Icon(FLucideIcons.camera),
+            title: const Text('Take photo'),
+            onPress: () => Navigator.pop(context, ImageSource.camera),
+          ),
+          FTile(
+            prefix: const Icon(FLucideIcons.images),
+            title: const Text('Choose from gallery'),
+            onPress: () => Navigator.pop(context, ImageSource.gallery),
+          ),
+        ],
       ),
     );
     if (source == null || !mounted) return;
@@ -253,16 +253,17 @@ class _NutritionPageState extends State<NutritionPage> {
   /// Logs a manually typed dish (name + kcal) — the fallback when the
   /// photo path isn't available.
   Future<void> _logManually() async {
-    final meal = await showDialog<Meal>(
+    final meal = await showFDialog<Meal>(
       context: context,
-      builder: (_) => const _LogMealDialog(),
+      builder: (context, style, animation) =>
+          _LogMealDialog(animation: animation),
     );
     if (meal != null && mounted) await _logMeal(meal);
   }
 
   void _showSnack(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    showFToast(context: context, title: Text(text));
   }
 
   @override
@@ -308,7 +309,7 @@ class _NutritionPageState extends State<NutritionPage> {
               label: targetKcal == null
                   ? '$eatenKcal kilocalories eaten today'
                   : '$eatenKcal of $targetKcal kilocalories eaten today',
-              child: LinearProgressIndicator(
+              child: FDeterminateProgress(
                 value: targetKcal == null
                     ? 0
                     : (eatenKcal / targetKcal).clamp(0.0, 1.0),
@@ -330,52 +331,51 @@ class _NutritionPageState extends State<NutritionPage> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          TextField(
+          FTextField(
             key: const Key('nutrition-preferences'),
-            controller: _prefsCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Preferences (optional)',
-              hintText: 'e.g. vegetarian, no seafood, lactose free',
-              border: OutlineInputBorder(),
-            ),
+            control: .managed(controller: _prefsCtrl),
+            label: const Text('Preferences (optional)'),
+            hint: 'e.g. vegetarian, no seafood, lactose free',
           ),
           const SizedBox(height: AppSpacing.md),
-          SegmentedButton<int>(
-            segments: const [
-              ButtonSegment(value: 3, label: Text('3 meals')),
-              ButtonSegment(value: 4, label: Text('3 + snack')),
+          Row(
+            children: [
+              for (final (value, label) in [(3, '3 meals'), (4, '3 + snack')])
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      right: value == 3 ? AppSpacing.sm : 0,
+                    ),
+                    child: FButton(
+                      variant: _mealCount == value ? .primary : .outline,
+                      size: .sm,
+                      onPress: () => setState(() => _mealCount = value),
+                      child: Text(label),
+                    ),
+                  ),
+                ),
             ],
-            selected: {_mealCount},
-            onSelectionChanged: (value) =>
-                setState(() => _mealCount = value.first),
           ),
           const SizedBox(height: AppSpacing.lg),
           if (!OpenAiService.configured)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(AppSpacing.md),
-                child: Text(
-                  'AI suggestions need an OpenAI API key '
-                  '(.env file or --dart-define=OPENAI_API_KEY=…).',
-                ),
+            const FCard(
+              child: Text(
+                'AI suggestions need an OpenAI API key '
+                '(.env file or --dart-define=OPENAI_API_KEY=…).',
               ),
             )
           else if (targetKcal != null)
             SizedBox(
               width: double.infinity,
-              child: FilledButton.icon(
+              child: FButton(
                 key: const Key('nutrition-generate'),
-                onPressed: _generating
+                onPress: _generating
                     ? null
                     : () => _generate(targetKcal, proteinG!),
-                icon: _generating
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.auto_awesome),
-                label: Text(
+                prefix: _generating
+                    ? const FCircularProgress()
+                    : const Icon(FLucideIcons.sparkles),
+                child: Text(
                   _generating ? 'Generating…' : "Suggest today's menu",
                 ),
               ),
@@ -383,30 +383,29 @@ class _NutritionPageState extends State<NutritionPage> {
           const SizedBox(height: AppSpacing.md),
           SizedBox(
             width: double.infinity,
-            child: OutlinedButton.icon(
+            child: FButton(
               key: const Key('nutrition-photo'),
-              onPressed: _analyzing || !OpenAiService.configured
+              variant: .outline,
+              onPress: _analyzing || !OpenAiService.configured
                   ? null
                   : _analyzePhoto,
-              icon: _analyzing
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.photo_camera_outlined),
-              label: Text(
+              prefix: _analyzing
+                  ? const FCircularProgress()
+                  : const Icon(FLucideIcons.camera),
+              child: Text(
                 _analyzing ? 'Analyzing photo…' : 'Analyze a food photo',
               ),
             ),
           ),
           Align(
             alignment: Alignment.centerLeft,
-            child: TextButton.icon(
+            child: FButton(
               key: const Key('nutrition-log-manual'),
-              onPressed: _logManually,
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: const Text('Log a meal manually'),
+              variant: .ghost,
+              size: .sm,
+              onPress: _logManually,
+              prefix: const Icon(FLucideIcons.pencil),
+              child: const Text('Log a meal manually'),
             ),
           ),
           if (_photoBytes != null) ...[
@@ -425,9 +424,11 @@ class _NutritionPageState extends State<NutritionPage> {
               _MealCard(meal: _photoMeal!),
               Align(
                 alignment: Alignment.centerRight,
-                child: FilledButton.tonalIcon(
+                child: FButton(
                   key: const Key('nutrition-log-photo'),
-                  onPressed: () {
+                  variant: .secondary,
+                  size: .sm,
+                  onPress: () {
                     final meal = _photoMeal!;
                     _logMeal(meal).ignore();
                     setState(() {
@@ -437,8 +438,8 @@ class _NutritionPageState extends State<NutritionPage> {
                     });
                     _showSnack('Logged to today.');
                   },
-                  icon: const Icon(Icons.add_task),
-                  label: const Text('Log this meal'),
+                  prefix: const Icon(FLucideIcons.check),
+                  child: const Text('Log this meal'),
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
@@ -463,26 +464,25 @@ class _NutritionPageState extends State<NutritionPage> {
 class _ProfileNeededCard extends StatelessWidget {
   const _ProfileNeededCard();
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Set up your body profile and log a weight first — your '
-            'calorie target comes from TDEE.',
+  Widget build(BuildContext context) => FCard(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Set up your body profile and log a weight first — your '
+          'calorie target comes from TDEE.',
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        FButton(
+          key: const Key('nutrition-open-metrics'),
+          variant: .ghost,
+          size: .sm,
+          onPress: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const BodyMetricsPage()),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          TextButton(
-            key: const Key('nutrition-open-metrics'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const BodyMetricsPage()),
-            ),
-            child: const Text('Open body metrics'),
-          ),
-        ],
-      ),
+          child: const Text('Open body metrics'),
+        ),
+      ],
     ),
   );
 }
@@ -507,33 +507,33 @@ class _TargetCard extends StatelessWidget {
       targetKcal: targetKcal,
       proteinG: proteinG,
     );
-    return Card(
-      color: Theme.of(context).colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Daily target${goal != null ? ' — $goal' : ''}',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                Expanded(
-                  child: _value(context, 'TDEE', '${tdee.round()} kcal'),
-                ),
-                Expanded(child: _value(context, 'Target', '$targetKcal kcal')),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              'P ${proteinG}g · C ${carbs}g · F ${fat}g',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-          ],
+    return FCard(
+      style: .delta(
+        decoration: .boxDelta(
+          color: context.theme.colors.secondary,
+          border: Border.all(width: 0, color: Colors.transparent),
         ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Daily target${goal != null ? ' — $goal' : ''}',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(child: _value(context, 'TDEE', '${tdee.round()} kcal')),
+              Expanded(child: _value(context, 'Target', '$targetKcal kcal')),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'P ${proteinG}g · C ${carbs}g · F ${fat}g',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        ],
       ),
     );
   }
@@ -562,7 +562,7 @@ class _PlanView extends StatelessWidget {
     children: [
       Semantics(
         label: '${plan.totalKcal} of ${plan.targetKcal} kilocalories',
-        child: LinearProgressIndicator(
+        child: FDeterminateProgress(
           value: (plan.totalKcal / plan.targetKcal).clamp(0.0, 1.0),
         ),
       ),
@@ -582,7 +582,9 @@ class _PlanView extends StatelessWidget {
 /// would race the route's exit animation (the subtree still builds the
 /// TextFields while dismissing).
 class _LogMealDialog extends StatefulWidget {
-  const _LogMealDialog();
+  const _LogMealDialog({this.animation});
+
+  final Animation<double>? animation;
 
   @override
   State<_LogMealDialog> createState() => _LogMealDialogState();
@@ -604,42 +606,53 @@ class _LogMealDialogState extends State<_LogMealDialog> {
     final name = _nameCtrl.text.trim();
     final kcal = int.tryParse(_kcalCtrl.text.trim());
     final valid = name.isNotEmpty && kcal != null && kcal > 0;
-    return AlertDialog(
-      title: const Text('Log a meal'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameCtrl,
-            decoration: const InputDecoration(labelText: 'What did you eat?'),
-            onChanged: (_) => setState(() {}),
+    return FDialog(
+      style: .context(),
+      animation: widget.animation,
+      builder: (context, style) => AppDialogContent(
+        title: 'Log a meal',
+        style: style,
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FTextField(
+              control: .managed(
+                controller: _nameCtrl,
+                onChange: (_) => setState(() {}),
+              ),
+              label: const Text('What did you eat?'),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            FTextField(
+              control: .managed(
+                controller: _kcalCtrl,
+                onChange: (_) => setState(() {}),
+              ),
+              label: const Text('Calories (kcal)'),
+              keyboardType: TextInputType.number,
+            ),
+          ],
+        ),
+        actions: [
+          FButton(
+            variant: .ghost,
+            onPress: () => Navigator.pop(context),
+            child: const Text('Cancel'),
           ),
-          TextField(
-            controller: _kcalCtrl,
-            decoration: const InputDecoration(labelText: 'Calories (kcal)'),
-            keyboardType: TextInputType.number,
-            onChanged: (_) => setState(() {}),
+          FButton(
+            onPress: valid
+                ? () => Navigator.pop(
+                    context,
+                    Meal(
+                      label: 'Manual entry',
+                      items: [MealItem(name: name, kcal: kcal)],
+                    ),
+                  )
+                : null,
+            child: const Text('Log'),
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: valid
-              ? () => Navigator.pop(
-                  context,
-                  Meal(
-                    label: 'Manual entry',
-                    items: [MealItem(name: name, kcal: kcal)],
-                  ),
-                )
-              : null,
-          child: const Text('Log'),
-        ),
-      ],
     );
   }
 }
@@ -651,57 +664,55 @@ class _MealCard extends StatelessWidget {
   final VoidCallback? onRemove;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  meal.label,
-                  style: Theme.of(context).textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              ),
-              Text('${meal.kcal} kcal'),
-              if (onRemove != null)
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onRemove,
-                ),
-            ],
-          ),
-          const Divider(),
-          ...meal.items.map(
-            (item) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(item.name),
-                        Text(
-                          'P ${item.proteinG.round()}g · '
-                          'C ${item.carbsG.round()}g · '
-                          'F ${item.fatG.round()}g',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text('${item.kcal} kcal'),
-                ],
+  Widget build(BuildContext context) => FCard(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                meal.label,
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
+            Text('${meal.kcal} kcal'),
+            if (onRemove != null)
+              FButton.icon(
+                variant: .ghost,
+                size: .sm,
+                onPress: onRemove,
+                child: const Icon(FLucideIcons.x),
+              ),
+          ],
+        ),
+        const FDivider(),
+        ...meal.items.map(
+          (item) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(item.name),
+                      Text(
+                        'P ${item.proteinG.round()}g · '
+                        'C ${item.carbsG.round()}g · '
+                        'F ${item.fatG.round()}g',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                Text('${item.kcal} kcal'),
+              ],
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     ),
   );
 }

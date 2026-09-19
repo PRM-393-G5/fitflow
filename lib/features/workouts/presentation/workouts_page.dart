@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
@@ -32,6 +33,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    final textTheme = Theme.of(context).textTheme;
     final workouts = controller.workouts.where((workout) {
       final queryMatches = workout.name.toLowerCase().contains(
         _query.toLowerCase(),
@@ -48,46 +50,47 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Workouts',
-            style: Theme.of(context).textTheme.headlineMedium
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
+          Text('Workouts', style: textTheme.headlineMedium),
           const SizedBox(height: AppSpacing.sm),
           const Text('Choose a plan that fits your time and energy.'),
           const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Expanded(
-                child: TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Search workouts',
-                    prefixIcon: Icon(Icons.search),
+                child: FTextField(
+                  hint: 'Search workouts',
+                  control: .managed(
+                    onChange: (value) => setState(() => _query = value.text),
                   ),
-                  onChanged: (value) => setState(() => _query = value),
+                  prefixBuilder: (context, style, variants) =>
+                      FTextField.prefixIconBuilder(
+                        context,
+                        style,
+                        variants,
+                        const Icon(FLucideIcons.search),
+                      ),
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
-              IconButton.filledTonal(
+              FButton.icon(
                 key: const Key('open-ai-workout'),
-                tooltip: 'AI workout',
-                icon: const Icon(Icons.auto_awesome),
-                onPressed: () => Navigator.of(context).push(
+                variant: .secondary,
+                onPress: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const AiWorkoutPage(),
                   ),
                 ),
+                child: const Icon(FLucideIcons.sparkles),
               ),
               const SizedBox(width: AppSpacing.sm),
-              IconButton.filled(
+              FButton.icon(
                 key: const Key('open-workout-builder'),
-                tooltip: 'Create workout',
-                icon: const Icon(Icons.add),
-                onPressed: () => Navigator.of(context).push(
+                onPress: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const WorkoutBuilderPage(),
                   ),
                 ),
+                child: const Icon(FLucideIcons.plus),
               ),
             ],
           ),
@@ -99,10 +102,11 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
                   .map(
                     (category) => Padding(
                       padding: const EdgeInsets.only(right: AppSpacing.sm),
-                      child: FilterChip(
-                        label: Text(category),
-                        selected: _category == category,
-                        onSelected: (_) => setState(() => _category = category),
+                      child: FButton(
+                        variant: _category == category ? .primary : .outline,
+                        size: .sm,
+                        onPress: () => setState(() => _category = category),
+                        child: Text(category),
                       ),
                     ),
                   )
@@ -111,10 +115,10 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
           ),
           const SizedBox(height: AppSpacing.md),
           if (controller.error != null)
-            _Message(icon: Icons.error_outline, text: controller.error!)
+            _Message(icon: FLucideIcons.circleAlert, text: controller.error!)
           else if (workouts.isEmpty)
             const _Message(
-              icon: Icons.search_off,
+              icon: FLucideIcons.searchX,
               text: 'No workouts match your filters.',
             )
           else
@@ -129,7 +133,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
                     crossAxisCount: columns,
                     crossAxisSpacing: AppSpacing.md,
                     mainAxisSpacing: AppSpacing.md,
-                    mainAxisExtent: 190,
+                    mainAxisExtent: 150,
                   ),
                   itemBuilder: (_, index) =>
                       _WorkoutCard(workout: workouts[index]),
@@ -147,44 +151,67 @@ class _WorkoutCard extends StatelessWidget {
   final Workout workout;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => WorkoutDetailPage(workout: workout),
+  Widget build(BuildContext context) {
+    final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
+    final muted = textTheme.bodyMedium?.copyWith(color: colors.mutedForeground);
+    return FCard(
+      clipBehavior: Clip.antiAlias,
+      child: FTappable(
+        onPress: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => WorkoutDetailPage(workout: workout),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: colors.secondary,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      FLucideIcons.dumbbell,
+                      size: 20,
+                      color: colors.primary,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${workout.duration.inMinutes} min',
+                    style: textTheme.labelLarge?.copyWith(
+                      color: colors.mutedForeground,
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                workout.name,
+                style: textTheme.titleMedium,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                '${workout.category} • ${workout.level} • '
+                '${workout.exercises.length} exercises • '
+                '${workout.totalSets} sets',
+                style: muted,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.fitness_center,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const Spacer(),
-                Text('${workout.duration.inMinutes} min'),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              workout.name,
-              style: Theme.of(context).textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            Text('${workout.category} • ${workout.level}'),
-            Text(
-              '${workout.exercises.length} exercises • ${workout.totalSets} sets',
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
+    );
+  }
 }
 
 class _Message extends StatelessWidget {

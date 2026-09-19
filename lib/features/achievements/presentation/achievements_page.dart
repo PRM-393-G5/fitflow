@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
@@ -35,73 +36,73 @@ class AchievementsPage extends StatelessWidget {
 
     final badges = [
       _Badge(
-        icon: Icons.directions_walk,
+        icon: FLucideIcons.footprints,
         title: 'First steps',
         detail: 'Finish your first workout',
         unlocked: count >= 1,
       ),
       _Badge(
-        icon: Icons.repeat,
+        icon: FLucideIcons.repeat,
         title: 'Regular',
         detail: 'Complete 5 workouts',
         unlocked: count >= 5,
       ),
       _Badge(
-        icon: Icons.fitness_center,
+        icon: FLucideIcons.dumbbell,
         title: 'Committed',
         detail: 'Complete 10 workouts',
         unlocked: count >= 10,
       ),
       _Badge(
-        icon: Icons.military_tech,
+        icon: FLucideIcons.medal,
         title: 'Dedicated',
         detail: 'Complete 25 workouts',
         unlocked: count >= 25,
       ),
       _Badge(
-        icon: Icons.workspace_premium,
+        icon: FLucideIcons.award,
         title: 'Unstoppable',
         detail: 'Complete 50 workouts',
         unlocked: count >= 50,
       ),
       _Badge(
-        icon: Icons.whatshot,
+        icon: FLucideIcons.flame,
         title: 'Warming up',
         detail: 'Reach a 3-day streak',
         unlocked: streak >= 3,
       ),
       _Badge(
-        icon: Icons.local_fire_department,
+        icon: FLucideIcons.flame,
         title: 'On fire',
         detail: 'Reach a 7-day streak',
         unlocked: streak >= 7,
       ),
       _Badge(
-        icon: Icons.auto_awesome,
+        icon: FLucideIcons.sparkles,
         title: 'Monthly beast',
         detail: 'Reach a 30-day streak',
         unlocked: streak >= 30,
       ),
       _Badge(
-        icon: Icons.timer_outlined,
+        icon: FLucideIcons.timer,
         title: 'Five hours',
         detail: 'Train for 300 total minutes',
         unlocked: minutes >= 300,
       ),
       _Badge(
-        icon: Icons.hourglass_full,
+        icon: FLucideIcons.hourglass,
         title: 'Endurance',
         detail: 'Train for 1,000 total minutes',
         unlocked: minutes >= 1000,
       ),
       _Badge(
-        icon: Icons.monitor_weight_outlined,
+        icon: FLucideIcons.weight,
         title: 'One tonne club',
         detail: 'Lift 1,000 kg of total volume',
         unlocked: volume >= 1000,
       ),
       _Badge(
-        icon: Icons.weekend,
+        icon: FLucideIcons.sofa,
         title: 'Weekend warrior',
         detail: 'Work out on a Saturday or Sunday',
         unlocked: weekend,
@@ -109,38 +110,41 @@ class AchievementsPage extends StatelessWidget {
     ];
     final unlockedCount = badges.where((item) => item.unlocked).length;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Achievements')),
-      body: SafeArea(
-        child: ResponsiveContent(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$unlockedCount of ${badges.length} unlocked',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              LayoutBuilder(
-                builder: (context, constraints) => GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: constraints.maxWidth < 500
-                        ? 2
-                        : constraints.maxWidth < 800
-                        ? 3
-                        : 4,
-                    crossAxisSpacing: AppSpacing.md,
-                    mainAxisSpacing: AppSpacing.md,
-                    mainAxisExtent: 170,
-                  ),
-                  itemCount: badges.length,
-                  itemBuilder: (_, index) => _BadgeCard(badge: badges[index]),
+    return FScaffold(
+      header: FHeader.nested(
+        title: const Text('Achievements'),
+        prefixes: [
+          FHeaderAction.back(onPress: () => Navigator.of(context).pop()),
+        ],
+      ),
+      child: ResponsiveContent(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$unlockedCount of ${badges.length} unlocked',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            LayoutBuilder(
+              builder: (context, constraints) => GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: constraints.maxWidth < 500
+                      ? 2
+                      : constraints.maxWidth < 800
+                      ? 3
+                      : 4,
+                  crossAxisSpacing: AppSpacing.md,
+                  mainAxisSpacing: AppSpacing.md,
+                  mainAxisExtent: 170,
                 ),
+                itemCount: badges.length,
+                itemBuilder: (_, index) => _BadgeCard(badge: badges[index]),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -154,31 +158,26 @@ class _BadgeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Opacity(
-          opacity: badge.unlocked ? 1 : 0.45,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                badge.unlocked ? badge.icon : Icons.lock_outline,
-                size: 32,
-                color: badge.unlocked
-                    ? colors.primary
-                    : colors.onSurfaceVariant,
-              ),
-              const Spacer(),
-              Text(
-                badge.title,
-                style: Theme.of(context).textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              Text(badge.detail, style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ),
+    final colors = context.theme.colors;
+    return FCard(
+      child: Opacity(
+        opacity: badge.unlocked ? 1 : 0.45,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              badge.unlocked ? badge.icon : FLucideIcons.lock,
+              size: 32,
+              color: badge.unlocked ? colors.primary : colors.mutedForeground,
+            ),
+            const Spacer(),
+            Text(
+              badge.title,
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            Text(badge.detail, style: Theme.of(context).textTheme.bodySmall),
+          ],
         ),
       ),
     );

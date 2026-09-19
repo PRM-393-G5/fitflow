@@ -1,7 +1,8 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forui/forui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:prm/app/app_controller.dart';
 import 'package:prm/app/app_scope.dart';
 import 'package:prm/core/theme/app_theme.dart';
@@ -46,7 +47,14 @@ void main() {
     await tester.pumpWidget(
       AppScope(
         controller: controller,
-        child: MaterialApp(theme: AppTheme.light, home: const AppShell()),
+        child: MaterialApp(
+          theme: AppTheme.light.toApproximateMaterialTheme(),
+          builder: (context, child) => FTheme(
+            data: AppTheme.light,
+            child: FToaster(child: child!),
+          ),
+          home: const AppShell(),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -73,6 +81,8 @@ void main() {
     await tester.pump();
     expect(find.text('Rest'), findsOneWidget);
     expect(find.byKey(const Key('skip-rest')), findsOneWidget);
+    // Flush the short FTappable press timers (100 ms) left after the tap.
+    await tester.pump(const Duration(milliseconds: 200));
   });
 
   testWidgets('nutrition tab logs a manual meal for today', (tester) async {
@@ -87,7 +97,14 @@ void main() {
     await tester.pumpWidget(
       AppScope(
         controller: controller,
-        child: MaterialApp(theme: AppTheme.light, home: const AppShell()),
+        child: MaterialApp(
+          theme: AppTheme.light.toApproximateMaterialTheme(),
+          builder: (context, child) => FTheme(
+            data: AppTheme.light,
+            child: FToaster(child: child!),
+          ),
+          home: const AppShell(),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -100,11 +117,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.widgetWithText(TextField, 'What did you eat?'),
+      find.widgetWithText(FTextField, 'What did you eat?'),
       'Phở bò',
     );
     await tester.enterText(
-      find.widgetWithText(TextField, 'Calories (kcal)'),
+      find.widgetWithText(FTextField, 'Calories (kcal)'),
       '450',
     );
     await tester.pumpAndSettle();

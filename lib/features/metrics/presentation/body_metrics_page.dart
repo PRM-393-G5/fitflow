@@ -1,9 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 
 import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/body_metrics.dart';
 import '../../../domain/models/body_weight_entry.dart';
 
@@ -24,94 +26,108 @@ class BodyMetricsPage extends StatelessWidget {
         ? null
         : entries.last.weightKg - entries[entries.length - 2].weightKg;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Body metrics')),
-      body: SafeArea(
-        child: ResponsiveContent(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Card(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
+    return FScaffold(
+      header: FHeader.nested(
+        title: const Text('Body metrics'),
+        prefixes: [
+          FHeaderAction.back(onPress: () => Navigator.of(context).pop()),
+        ],
+      ),
+      child: ResponsiveContent(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            FCard(
+              style: .delta(
+                decoration: .boxDelta(
+                  color: context.theme.colors.secondary,
+                  border: Border.all(width: 0, color: Colors.transparent),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Current weight'),
+                        Text(
+                          latest == null
+                              ? '—'
+                              : '${display(latest.weightKg).toStringAsFixed(1)} $unit',
+                          style: Theme.of(context).textTheme.displaySmall
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        if (delta != null)
+                          Text(
+                            '${delta >= 0 ? '+' : ''}${display(delta).toStringAsFixed(1)} $unit vs last entry',
+                          ),
+                      ],
+                    ),
+                  ),
+                  const Icon(FLucideIcons.weight, size: 56),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _BodyProfileCard(latestKg: latest?.weightKg),
+            const SizedBox(height: AppSpacing.lg),
+            if (entries.length >= 2) ...[
+              Text('Trend', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: AppSpacing.sm),
+              FCard(child: _WeightChart(entries: entries)),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+            Text('Log', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: AppSpacing.sm),
+            if (entries.isEmpty)
+              const FCard(
+                child: Center(child: Text('Log your first weigh-in.')),
+              )
+            else
+              ...entries.reversed.map(
+                (entry) => FCard(
                   child: Row(
                     children: [
+                      FAvatar.raw(child: const Icon(FLucideIcons.weight)),
+                      const SizedBox(width: AppSpacing.sm),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Current weight'),
                             Text(
-                              latest == null
-                                  ? '—'
-                                  : '${display(latest.weightKg).toStringAsFixed(1)} $unit',
-                              style: Theme.of(context).textTheme.displaySmall
-                                  ?.copyWith(fontWeight: FontWeight.bold),
+                              '${display(entry.weightKg).toStringAsFixed(1)} $unit',
+                              style: Theme.of(context).textTheme.titleSmall,
                             ),
-                            if (delta != null)
-                              Text(
-                                '${delta >= 0 ? '+' : ''}${display(delta).toStringAsFixed(1)} $unit vs last entry',
-                              ),
+                            Text(
+                              _date(entry.date),
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
                           ],
                         ),
                       ),
-                      const Icon(Icons.monitor_weight_outlined, size: 56),
+                      FButton.icon(
+                        variant: .ghost,
+                        size: .sm,
+                        onPress: () => controller.removeWeightEntry(entry),
+                        child: const Icon(FLucideIcons.trash2),
+                      ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.md),
-              _BodyProfileCard(latestKg: latest?.weightKg),
-              const SizedBox(height: AppSpacing.lg),
-              if (entries.length >= 2) ...[
-                Text('Trend', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: AppSpacing.sm),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    child: _WeightChart(entries: entries),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-              ],
-              Text('Log', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: AppSpacing.sm),
-              if (entries.isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(AppSpacing.xl),
-                    child: Center(child: Text('Log your first weigh-in.')),
-                  ),
-                )
-              else
-                ...entries.reversed.map(
-                  (entry) => Card(
-                    child: ListTile(
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.monitor_weight_outlined),
-                      ),
-                      title: Text(
-                        '${display(entry.weightKg).toStringAsFixed(1)} $unit',
-                      ),
-                      subtitle: Text(_date(entry.date)),
-                      trailing: IconButton(
-                        tooltip: 'Delete entry',
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () => controller.removeWeightEntry(entry),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+            const SizedBox(height: AppSpacing.lg),
+            SizedBox(
+              width: double.infinity,
+              child: FButton(
+                key: const Key('log-weight'),
+                onPress: () => _logWeight(context, controller),
+                prefix: const Icon(FLucideIcons.plus),
+                child: const Text('Log weight'),
+              ),
+            ),
+          ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        key: const Key('log-weight'),
-        onPressed: () => _logWeight(context, controller),
-        icon: const Icon(Icons.add),
-        label: const Text('Log weight'),
       ),
     );
   }
@@ -120,38 +136,53 @@ class BodyMetricsPage extends StatelessWidget {
     BuildContext context,
     AppController controller,
   ) async {
-    final date = await showDatePicker(
+    var picked = DateTime.now();
+    final date = await showAppDialog<DateTime>(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
+      title: 'Pick a date',
+      body: FCalendar.grid(
+        selectionControl: .managedSingle(
+          initial: picked,
+          onChange: (value) => picked = value ?? picked,
+        ),
+      ),
+      actions: [
+        FButton(
+          variant: .ghost,
+          onPress: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FButton(
+          onPress: () => Navigator.pop(context, picked),
+          child: const Text('Select'),
+        ),
+      ],
     );
     if (date == null || !context.mounted) return;
 
     final unit = controller.useMetric ? 'kg' : 'lb';
     final input = TextEditingController();
-    final weight = await showDialog<double>(
+    final weight = await showAppDialog<double>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Log weight'),
-        content: TextField(
-          controller: input,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(labelText: 'Weight ($unit)'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(context, double.tryParse(input.text.trim())),
-            child: const Text('Save'),
-          ),
-        ],
+      title: 'Log weight',
+      body: FTextField(
+        control: .managed(controller: input),
+        autofocus: true,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        label: Text('Weight ($unit)'),
       ),
+      actions: [
+        FButton(
+          variant: .ghost,
+          onPress: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FButton(
+          onPress: () =>
+              Navigator.pop(context, double.tryParse(input.text.trim())),
+          child: const Text('Save'),
+        ),
+      ],
     );
     input.dispose();
     if (weight == null || weight <= 0) return;
@@ -204,46 +235,45 @@ class _BodyProfileCard extends StatelessWidget {
       );
     }
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return FCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Body profile',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              FButton(
+                variant: .ghost,
+                size: .sm,
+                onPress: () => _edit(context),
+                child: Text(hasProfile ? 'Edit' : 'Set up'),
+              ),
+            ],
+          ),
+          if (!hasProfile)
+            const Text('Add height, age, and sex to compute BMI and TDEE.')
+          else
             Row(
               children: [
-                Expanded(
-                  child: Text(
-                    'Body profile',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+                _value(context, 'BMI', bmi?.toStringAsFixed(1) ?? '—'),
+                _value(
+                  context,
+                  'BMR',
+                  bmr == null ? '—' : '${bmr.round()} kcal',
                 ),
-                TextButton(
-                  onPressed: () => _edit(context),
-                  child: Text(hasProfile ? 'Edit' : 'Set up'),
+                _value(
+                  context,
+                  'TDEE',
+                  tdee == null ? '—' : '${tdee.round()} kcal',
                 ),
               ],
             ),
-            if (!hasProfile)
-              const Text('Add height, age, and sex to compute BMI and TDEE.')
-            else
-              Row(
-                children: [
-                  _value(context, 'BMI', bmi?.toStringAsFixed(1) ?? '—'),
-                  _value(
-                    context,
-                    'BMR',
-                    bmr == null ? '—' : '${bmr.round()} kcal',
-                  ),
-                  _value(
-                    context,
-                    'TDEE',
-                    tdee == null ? '—' : '${tdee.round()} kcal',
-                  ),
-                ],
-              ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -264,17 +294,19 @@ class _BodyProfileCard extends StatelessWidget {
 
   Future<void> _edit(BuildContext context) {
     final controller = AppScope.of(context);
-    return showDialog<void>(
+    return showFDialog<void>(
       context: context,
-      builder: (_) => _ProfileDialog(controller: controller),
+      builder: (context, style, animation) =>
+          _ProfileDialog(controller: controller, animation: animation),
     );
   }
 }
 
 class _ProfileDialog extends StatefulWidget {
-  const _ProfileDialog({required this.controller});
+  const _ProfileDialog({required this.controller, this.animation});
 
   final AppController controller;
+  final Animation<double>? animation;
 
   @override
   State<_ProfileDialog> createState() => _ProfileDialogState();
@@ -298,69 +330,79 @@ class _ProfileDialogState extends State<_ProfileDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Body profile'),
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        TextField(
-          controller: _height,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'Height (cm)'),
+  Widget build(BuildContext context) => FDialog(
+    style: .context(),
+    animation: widget.animation,
+    builder: (context, style) => AppDialogContent(
+      title: 'Body profile',
+      style: style,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FTextField(
+            control: .managed(controller: _height),
+            keyboardType: TextInputType.number,
+            label: const Text('Height (cm)'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          FTextField(
+            control: .managed(controller: _age),
+            keyboardType: TextInputType.number,
+            label: const Text('Age'),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            children: [
+              for (final (value, label) in [(true, 'Male'), (false, 'Female')])
+                FButton(
+                  variant: _isMale == value ? .primary : .outline,
+                  size: .sm,
+                  mainAxisSize: .min,
+                  onPress: () => setState(() => _isMale = value),
+                  child: Text(label),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          FSelect<int>(
+            items: {
+              for (var i = 0; i < _BodyProfileCard._activityLabels.length; i++)
+                _BodyProfileCard._activityLabels[i]: i,
+            },
+            control: .managed(
+              initial: _activity,
+              onChange: (value) => setState(() => _activity = value ?? 1),
+            ),
+            label: const Text('Activity level'),
+          ),
+        ],
+      ),
+      actions: [
+        FButton(
+          variant: .ghost,
+          onPress: () => Navigator.pop(context),
+          child: const Text('Cancel'),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        TextField(
-          controller: _age,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'Age'),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        SegmentedButton<bool>(
-          segments: const [
-            ButtonSegment(value: true, label: Text('Male')),
-            ButtonSegment(value: false, label: Text('Female')),
-          ],
-          selected: {_isMale},
-          onSelectionChanged: (value) => setState(() => _isMale = value.first),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        DropdownButtonFormField<int>(
-          initialValue: _activity,
-          decoration: const InputDecoration(labelText: 'Activity level'),
-          items: [
-            for (var i = 0; i < _BodyProfileCard._activityLabels.length; i++)
-              DropdownMenuItem(
-                value: i,
-                child: Text(_BodyProfileCard._activityLabels[i]),
-              ),
-          ],
-          onChanged: (value) => setState(() => _activity = value ?? 1),
+        FButton(
+          onPress: () {
+            final height = double.tryParse(_height.text.trim());
+            final age = int.tryParse(_age.text.trim());
+            if (height == null || height <= 0 || age == null || age <= 0) {
+              return;
+            }
+            widget.controller.saveBodyProfile(
+              heightCm: height,
+              age: age,
+              isMale: _isMale,
+              activityLevel: _activity,
+            );
+            Navigator.pop(context);
+          },
+          child: const Text('Save'),
         ),
       ],
     ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: () {
-          final height = double.tryParse(_height.text.trim());
-          final age = int.tryParse(_age.text.trim());
-          if (height == null || height <= 0 || age == null || age <= 0) {
-            return;
-          }
-          widget.controller.saveBodyProfile(
-            heightCm: height,
-            age: age,
-            isMale: _isMale,
-            activityLevel: _activity,
-          );
-          Navigator.pop(context);
-        },
-        child: const Text('Save'),
-      ),
-    ],
   );
 }
 
@@ -376,8 +418,8 @@ class _WeightChart extends StatelessWidget {
     child: CustomPaint(
       painter: _WeightPainter(
         entries: entries,
-        color: Theme.of(context).colorScheme.primary,
-        dotColor: Theme.of(context).colorScheme.onSurface,
+        color: context.theme.colors.primary,
+        dotColor: context.theme.colors.foreground,
       ),
     ),
   );

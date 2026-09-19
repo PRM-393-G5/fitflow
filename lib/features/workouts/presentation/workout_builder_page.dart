@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
@@ -70,10 +71,9 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
         .toList();
 
     if (name.isEmpty || exercises.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Add a workout name and at least one exercise.'),
-        ),
+      showFToast(
+        context: context,
+        title: const Text('Add a workout name and at least one exercise.'),
       );
       return;
     }
@@ -98,114 +98,112 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('New workout')),
-    body: SafeArea(
-      child: ResponsiveContent(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _name,
-              decoration: const InputDecoration(
-                labelText: 'Workout name',
-                prefixIcon: Icon(Icons.edit_outlined),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text('Category', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: AppSpacing.sm),
-            Wrap(
-              spacing: AppSpacing.sm,
-              children: _categories
-                  .map(
-                    (category) => ChoiceChip(
-                      label: Text(category),
-                      selected: _category == category,
-                      onSelected: (_) => setState(() => _category = category),
-                    ),
-                  )
-                  .toList(),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text('Level', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: AppSpacing.sm),
-            Wrap(
-              spacing: AppSpacing.sm,
-              children: _levels
-                  .map(
-                    (level) => ChoiceChip(
-                      label: Text(level),
-                      selected: _level == level,
-                      onSelected: (_) => setState(() => _level = level),
-                    ),
-                  )
-                  .toList(),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Text('Exercises', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: AppSpacing.sm),
-            ..._exercises.indexed.map(
-              (entry) => Card(
-                key: ValueKey(entry.$2),
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: Column(
+  Widget build(BuildContext context) => FScaffold(
+    header: FHeader.nested(
+      title: const Text('New workout'),
+      prefixes: [
+        FHeaderAction.back(onPress: () => Navigator.of(context).pop()),
+      ],
+    ),
+    child: ResponsiveContent(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FTextField(
+            control: .managed(controller: _name),
+            label: const Text('Workout name'),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text('Category', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.sm,
+            children: [
+              for (final category in _categories)
+                FButton(
+                  variant: _category == category ? .primary : .outline,
+                  size: .sm,
+                  mainAxisSize: .min,
+                  onPress: () => setState(() => _category = category),
+                  child: Text(category),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text('Level', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.sm,
+            children: [
+              for (final level in _levels)
+                FButton(
+                  variant: _level == level ? .primary : .outline,
+                  size: .sm,
+                  mainAxisSize: .min,
+                  onPress: () => setState(() => _level = level),
+                  child: Text(level),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Text('Exercises', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: AppSpacing.sm),
+          ..._exercises.indexed.map(
+            (entry) => FCard(
+              key: ValueKey(entry.$2),
+              child: Column(
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: entry.$2.name,
-                              decoration: InputDecoration(
-                                labelText: 'Exercise ${entry.$1 + 1}',
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'Remove exercise',
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: _exercises.length == 1
-                                ? null
-                                : () => setState(() {
-                                    _exercises.remove(entry.$2);
-                                    entry.$2.dispose();
-                                  }),
-                          ),
-                        ],
+                      Expanded(
+                        child: FTextField(
+                          control: .managed(controller: entry.$2.name),
+                          label: Text('Exercise ${entry.$1 + 1}'),
+                        ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        children: [
-                          _number(entry.$2.sets, 'Sets'),
-                          _number(entry.$2.reps, 'Reps'),
-                          _number(entry.$2.rest, 'Rest (s)'),
-                          _number(entry.$2.weight, 'Kg'),
-                        ],
+                      FButton.icon(
+                        variant: .ghost,
+                        onPress: _exercises.length == 1
+                            ? null
+                            : () => setState(() {
+                                _exercises.remove(entry.$2);
+                                entry.$2.dispose();
+                              }),
+                        child: const Icon(FLucideIcons.trash2),
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Row(
+                    children: [
+                      _number(entry.$2.sets, 'Sets'),
+                      _number(entry.$2.reps, 'Reps'),
+                      _number(entry.$2.rest, 'Rest (s)'),
+                      _number(entry.$2.weight, 'Kg'),
+                    ],
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: AppSpacing.sm),
-            OutlinedButton.icon(
-              onPressed: () => setState(() => _exercises.add(_ExerciseDraft())),
-              icon: const Icon(Icons.add),
-              label: const Text('Add exercise'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          FButton(
+            variant: .outline,
+            onPress: () => setState(() => _exercises.add(_ExerciseDraft())),
+            prefix: const Icon(FLucideIcons.plus),
+            child: const Text('Add exercise'),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          SizedBox(
+            width: double.infinity,
+            child: FButton(
+              key: const Key('save-custom-workout'),
+              onPress: _saving ? null : _save,
+              prefix: const Icon(FLucideIcons.check),
+              child: const Text('Save workout'),
             ),
-            const SizedBox(height: AppSpacing.lg),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                key: const Key('save-custom-workout'),
-                onPressed: _saving ? null : _save,
-                icon: const Icon(Icons.check),
-                label: const Text('Save workout'),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     ),
   );
@@ -213,10 +211,10 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   Widget _number(TextEditingController controller, String label) => Expanded(
     child: Padding(
       padding: const EdgeInsets.only(right: AppSpacing.sm),
-      child: TextField(
-        controller: controller,
+      child: FTextField(
+        control: .managed(controller: controller),
         keyboardType: TextInputType.number,
-        decoration: InputDecoration(labelText: label),
+        label: Text(label),
       ),
     ),
   );

@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../core/theme/app_theme.dart';
 import '../features/auth/presentation/auth_gate.dart';
@@ -18,9 +19,19 @@ class WorkoutApp extends StatelessWidget {
       child: MaterialApp(
         title: 'FitFlow',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.light,
-        darkTheme: AppTheme.dark,
+        theme: AppTheme.light.toApproximateMaterialTheme(),
+        darkTheme: AppTheme.dark.toApproximateMaterialTheme(),
         themeMode: controller.themeMode,
+        supportedLocales: FLocalizations.supportedLocales,
+        localizationsDelegates: const [
+          ...FLocalizations.localizationsDelegates,
+        ],
+        builder: (context, child) => FTheme(
+          data: Theme.brightnessOf(context) == .light
+              ? AppTheme.light
+              : AppTheme.dark,
+          child: FToaster(child: FTooltipGroup(child: child!)),
+        ),
         home: const AuthGate(),
       ),
     ),

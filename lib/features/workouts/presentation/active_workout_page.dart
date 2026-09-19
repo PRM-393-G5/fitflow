@@ -1,9 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 
 import '../../../app/app_controller.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
@@ -131,7 +133,6 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       widget.controller.sessions,
       performed,
     );
-    final messenger = ScaffoldMessenger.of(context);
     await widget.controller.addSession(
       WorkoutSession(
         id: completedAt.microsecondsSinceEpoch.toString(),
@@ -146,12 +147,11 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     );
     if (mounted) {
       Navigator.of(context).popUntil((route) => route.isFirst);
-      if (newRecords.isNotEmpty) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              'New PR: ${newRecords.map((item) => item.name).join(', ')}',
-            ),
+      if (newRecords.isNotEmpty && context.mounted) {
+        showFToast(
+          context: context,
+          title: Text(
+            'New PR: ${newRecords.map((item) => item.name).join(', ')}',
           ),
         );
       }
@@ -159,22 +159,21 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   }
 
   Future<bool> _confirm(String title, String message, String action) async =>
-      await showDialog<bool>(
+      await showAppDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Keep going'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(action),
-            ),
-          ],
-        ),
+        title: title,
+        body: Text(message),
+        actions: [
+          FButton(
+            variant: .ghost,
+            onPress: () => Navigator.pop(context, false),
+            child: const Text('Keep going'),
+          ),
+          FButton(
+            onPress: () => Navigator.pop(context, true),
+            child: Text(action),
+          ),
+        ],
       ) ??
       false;
 
@@ -193,118 +192,113 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     onPopInvokedWithResult: (didPop, result) {
       if (!didPop) _cancel();
     },
-    child: Scaffold(
-      appBar: AppBar(
+    child: FScaffold(
+      header: FHeader.nested(
         title: const Text('Active workout'),
-        leading: IconButton(
-          tooltip: 'Cancel workout',
-          onPressed: _cancel,
-          icon: const Icon(Icons.close),
-        ),
-        actions: [TextButton(onPressed: _finish, child: const Text('Finish'))],
+        prefixes: [
+          FHeaderAction(icon: const Icon(FLucideIcons.x), onPress: _cancel),
+        ],
+        suffixes: [
+          FButton(
+            variant: .ghost,
+            size: .sm,
+            onPress: _finish,
+            child: const Text('Finish'),
+          ),
+        ],
       ),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) => SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: IntrinsicHeight(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Semantics(
-                      label: '${(_progress * 100).round()} percent complete',
-                      child: LinearProgressIndicator(value: _progress),
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Semantics(
+                    label: '${(_progress * 100).round()} percent complete',
+                    child: FDeterminateProgress(value: _progress),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text('$_completedSets of ${widget.workout.totalSets} sets'),
+                  const Spacer(),
+                  if (_restRemaining > 0) ...[
+                    Icon(
+                      FLucideIcons.timer,
+                      size: 72,
+                      color: context.theme.colors.primary,
+                    ),
+                    Text(
+                      'Rest',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                    Text(
+                      '$_restRemaining',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.displayLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    FButton(
+                      key: const Key('skip-rest'),
+                      variant: .outline,
+                      onPress: _advance,
+                      child: const Text('Skip rest'),
+                    ),
+                  ] else ...[
+                    Text(
+                      'Exercise ${_exerciseIndex + 1} of ${widget.workout.exercises.length}',
+                      textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: AppSpacing.sm),
-                    Text('$_completedSets of ${widget.workout.totalSets} sets'),
-                    const Spacer(),
-                    if (_restRemaining > 0) ...[
-                      Icon(
-                        Icons.timer_outlined,
-                        size: 72,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      Text(
-                        'Rest',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineMedium,
-                      ),
-                      Text(
-                        '$_restRemaining',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.displayLarge
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      OutlinedButton(
-                        key: const Key('skip-rest'),
-                        onPressed: _advance,
-                        child: const Text('Skip rest'),
-                      ),
-                    ] else ...[
-                      Text(
-                        'Exercise ${_exerciseIndex + 1} of ${widget.workout.exercises.length}',
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        _exercise.name,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineLarge
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Text(
-                        'Set ${_setIndex + 1} of ${_exercise.sets}',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              key: const Key('set-amount'),
-                              controller: _amountCtrl,
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              decoration: InputDecoration(
-                                labelText: _exercise.isTimed
-                                    ? 'Seconds'
-                                    : 'Reps',
-                              ),
-                            ),
+                    Text(
+                      _exercise.name,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text(
+                      'Set ${_setIndex + 1} of ${_exercise.sets}',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FTextField(
+                            key: const Key('set-amount'),
+                            control: .managed(controller: _amountCtrl),
+                            keyboardType: TextInputType.number,
+                            label: Text(_exercise.isTimed ? 'Seconds' : 'Reps'),
                           ),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: TextField(
-                              key: const Key('set-weight'),
-                              controller: _weightCtrl,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              textAlign: TextAlign.center,
-                              decoration: const InputDecoration(
-                                labelText: 'Kg',
-                              ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: FTextField(
+                            key: const Key('set-weight'),
+                            control: .managed(controller: _weightCtrl),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
                             ),
+                            label: const Text('Kg'),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-                      FilledButton.icon(
-                        key: const Key('complete-set'),
-                        onPressed: _completeSet,
-                        icon: const Icon(Icons.check),
-                        label: const Text('Complete set'),
-                      ),
-                    ],
-                    const Spacer(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    FButton(
+                      key: const Key('complete-set'),
+                      onPress: _completeSet,
+                      prefix: const Icon(FLucideIcons.check),
+                      child: const Text('Complete set'),
+                    ),
                   ],
-                ),
+                  const Spacer(),
+                ],
               ),
             ),
           ),

@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:forui/forui.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../core/theme/app_theme.dart';
@@ -18,64 +19,59 @@ class SessionDetailPage extends StatelessWidget {
         ? session.volumeKg
         : session.volumeKg * 2.20462;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Session detail')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          children: [
-            Text(
-              session.workoutName,
-              style: Theme.of(context).textTheme.headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            Text(_date(session.completedAt)),
-            const SizedBox(height: AppSpacing.md),
-            Card(
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.timer_outlined),
-                    title: const Text('Duration'),
-                    trailing: Text('${session.durationMinutes} min'),
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.check_circle_outline),
-                    title: const Text('Sets completed'),
-                    trailing: Text('${session.completedSets}'),
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.monitor_weight_outlined),
-                    title: const Text('Volume'),
-                    trailing: Text('${volume.round()} $unit'),
-                  ),
-                ],
+    return FScaffold(
+      header: FHeader.nested(
+        title: const Text('Session detail'),
+        prefixes: [
+          FHeaderAction.back(onPress: () => Navigator.of(context).pop()),
+        ],
+      ),
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        children: [
+          Text(
+            session.workoutName,
+            style: Theme.of(context).textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          Text(_date(session.completedAt)),
+          const SizedBox(height: AppSpacing.md),
+          FTileGroup(
+            children: [
+              FTile(
+                prefix: const Icon(FLucideIcons.timer),
+                title: const Text('Duration'),
+                suffix: Text('${session.durationMinutes} min'),
               ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Text('Exercises', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: AppSpacing.sm),
-            if (session.exercises.isEmpty)
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(AppSpacing.lg),
-                  child: Text('No exercises recorded for this session.'),
-                ),
-              )
-            else
-              ...session.exercises.indexed.map(
-                (entry) => Card(
-                  child: ListTile(
-                    leading: CircleAvatar(child: Text('${entry.$1 + 1}')),
-                    title: Text(entry.$2.name),
-                    subtitle: Text(_setsLine(entry.$2, controller.useMetric)),
-                  ),
-                ),
+              FTile(
+                prefix: const Icon(FLucideIcons.circleCheckBig),
+                title: const Text('Sets completed'),
+                suffix: Text('${session.completedSets}'),
               ),
-          ],
-        ),
+              FTile(
+                prefix: const Icon(FLucideIcons.weight),
+                title: const Text('Volume'),
+                suffix: Text('${volume.round()} $unit'),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Text('Exercises', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: AppSpacing.sm),
+          if (session.exercises.isEmpty)
+            const FCard(child: Text('No exercises recorded for this session.'))
+          else
+            FTileGroup(
+              children: [
+                for (final (index, exercise) in session.exercises.indexed)
+                  FTile(
+                    prefix: FAvatar.raw(child: Text('${index + 1}')),
+                    title: Text(exercise.name),
+                    subtitle: Text(_setsLine(exercise, controller.useMetric)),
+                  ),
+              ],
+            ),
+        ],
       ),
     );
   }

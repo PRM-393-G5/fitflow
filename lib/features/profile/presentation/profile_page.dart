@@ -1,9 +1,11 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:forui/forui.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../../workouts/presentation/schedule_page.dart';
 import 'reminders_page.dart';
 
@@ -14,121 +16,114 @@ class ProfilePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final user = controller.auth?.currentUser;
+    final textTheme = Theme.of(context).textTheme;
+    final colors = context.theme.colors;
     return ResponsiveContent(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Profile & settings',
-            style: Theme.of(context).textTheme.headlineMedium
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
+          Text('Profile & settings', style: textTheme.headlineMedium),
           const SizedBox(height: AppSpacing.lg),
-          CircleAvatar(
-            radius: 40,
-            backgroundImage: user?.photoURL == null
-                ? null
-                : NetworkImage(user!.photoURL!),
-            child: user?.photoURL == null
-                ? const Icon(Icons.person, size: 40)
-                : null,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            user?.displayName ?? 'FitFlow Athlete',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          Text(user?.email ?? 'Your preferences stay on this device.'),
-          const SizedBox(height: AppSpacing.lg),
-          Card(
+          Center(
             child: Column(
               children: [
-                ListTile(
-                  leading: const Icon(Icons.palette_outlined),
-                  title: const Text('Theme'),
-                  trailing: DropdownButton<ThemeMode>(
-                    value: controller.themeMode,
-                    underline: const SizedBox.shrink(),
-                    onChanged: (value) {
-                      if (value != null) controller.setThemeMode(value);
-                    },
-                    items: const [
-                      DropdownMenuItem(
-                        value: ThemeMode.system,
-                        child: Text('System'),
-                      ),
-                      DropdownMenuItem(
-                        value: ThemeMode.light,
-                        child: Text('Light'),
-                      ),
-                      DropdownMenuItem(
-                        value: ThemeMode.dark,
-                        child: Text('Dark'),
-                      ),
-                    ],
+                user?.photoURL == null
+                    ? FAvatar.raw(
+                        size: 88,
+                        child: const Icon(FLucideIcons.user, size: 36),
+                      )
+                    : FAvatar(image: NetworkImage(user!.photoURL!), size: 88),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  user?.displayName ?? 'FitFlow Athlete',
+                  style: textTheme.titleLarge,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  user?.email ?? 'Your preferences stay on this device.',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colors.mutedForeground,
                   ),
                 ),
-                const Divider(height: 1),
-                SwitchListTile(
-                  secondary: const Icon(Icons.straighten),
-                  title: const Text('Metric units'),
-                  subtitle: Text(
-                    controller.useMetric ? 'Kilograms (kg)' : 'Pounds (lb)',
-                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          FTileGroup(
+            children: [
+              FSelectMenuTile<ThemeMode>.fromMap(
+                const {
+                  'System': ThemeMode.system,
+                  'Light': ThemeMode.light,
+                  'Dark': ThemeMode.dark,
+                },
+                prefix: const Icon(FLucideIcons.sunMoon),
+                title: const Text('Theme'),
+                selectControl: .managedRadio(
+                  initial: controller.themeMode,
+                  onChange: (values) {
+                    if (values.isNotEmpty) {
+                      controller.setThemeMode(values.first);
+                    }
+                  },
+                ),
+              ),
+              FTile(
+                prefix: const Icon(FLucideIcons.ruler),
+                title: const Text('Metric units'),
+                subtitle: Text(
+                  controller.useMetric ? 'Kilograms (kg)' : 'Pounds (lb)',
+                ),
+                suffix: FSwitch(
                   value: controller.useMetric,
-                  onChanged: controller.setMetric,
+                  onChange: controller.setMetric,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
           const SizedBox(height: AppSpacing.lg),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.notifications_outlined),
-                  title: const Text('Workout reminders'),
-                  subtitle: const Text('Time and training days'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const RemindersPage(),
-                    ),
+          FTileGroup(
+            children: [
+              FTile(
+                prefix: const Icon(FLucideIcons.bell),
+                title: const Text('Workout reminders'),
+                subtitle: const Text('Time and training days'),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const RemindersPage(),
                   ),
                 ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.calendar_month_outlined),
-                  title: const Text('Weekly schedule'),
-                  subtitle: const Text('Assign a plan to each day'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SchedulePage(),
-                    ),
-                  ),
+              ),
+              FTile(
+                prefix: const Icon(FLucideIcons.calendarDays),
+                title: const Text('Weekly schedule'),
+                subtitle: const Text('Assign a plan to each day'),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const SchedulePage()),
                 ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.upload_outlined),
-                  title: const Text('Export data'),
-                  subtitle: const Text(
-                    'Workouts, sessions, and metrics as JSON',
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _showExport(context, controller.exportJson()),
-                ),
-              ],
-            ),
+              ),
+              FTile(
+                prefix: const Icon(FLucideIcons.upload),
+                title: const Text('Export data'),
+                subtitle: const Text('Workouts, sessions, and metrics as JSON'),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: () => _showExport(context, controller.exportJson()),
+              ),
+            ],
           ),
           const SizedBox(height: AppSpacing.lg),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Sign out'),
-              subtitle: Text(user?.email ?? 'Not signed in'),
-              onTap: () => controller.auth?.signOut(),
-            ),
+          FTileGroup(
+            children: [
+              FTile(
+                variant: .destructive,
+                prefix: const Icon(FLucideIcons.logOut),
+                title: const Text('Sign out'),
+                subtitle: Text(user?.email ?? 'Not signed in'),
+                onPress: () => controller.auth?.signOut(),
+              ),
+            ],
           ),
         ],
       ),
@@ -136,38 +131,35 @@ class ProfilePage extends StatelessWidget {
   }
 
   void _showExport(BuildContext context, String json) {
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Export data'),
-        content: SizedBox(
-          width: 420,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              json,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+      title: 'Export data',
+      body: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 320),
+        child: SingleChildScrollView(
+          child: SelectableText(
+            json,
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-          FilledButton.icon(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: json));
-              if (context.mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Export copied.')));
-              }
-            },
-            icon: const Icon(Icons.copy),
-            label: const Text('Copy'),
-          ),
-        ],
       ),
+      actions: [
+        FButton(
+          variant: .ghost,
+          onPress: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+        FButton(
+          onPress: () async {
+            await Clipboard.setData(ClipboardData(text: json));
+            if (context.mounted) {
+              showFToast(context: context, title: const Text('Export copied.'));
+            }
+          },
+          prefix: const Icon(FLucideIcons.copy),
+          child: const Text('Copy'),
+        ),
+      ],
     );
   }
 }
