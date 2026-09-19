@@ -21,7 +21,7 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 | Tính năng | Mô tả | Trạng thái |
 |---|---|---|
 | Pose detection | ML Kit pose + skeleton overlay trên camera preview, xử lý hoàn toàn trên máy | ✅ |
-| Squat | Đếm rep qua góc gối/hông, cảnh báo knee tracking | ✅ |
+| Squat | Đếm rep qua góc gối/hông, cảnh báo knee tracking; per-rep telemetry (độ sâu, tempo ↓↑, lỗi: shallow/valgus/lean/heels/asymmetry/fast) + review sheet sau set + AI coach nhận xét (gpt-6-luna) | ✅ (AI review cần `OPENAI_API_KEY`) |
 | Push-up | Đếm rep qua góc khuỷu tay, phát hiện hông xệ/pike | ✅ |
 | Plank | Đo thời gian giữ đúng form (hold seconds), kiểm tra độ thẳng thân | ✅ |
 | Chấm điểm + cues | Form score 0–100, gợi ý sửa tư thế realtime; pause, đổi camera | ✅ |
