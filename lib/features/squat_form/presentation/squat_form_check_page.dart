@@ -314,7 +314,10 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
       if (mounted && !_saving) Navigator.of(context).pop();
       return;
     }
-    final records = _analyzer.repRecords;
+    // _saving must gate before the sheet: a second back/close tap while
+    // the review is open would re-enter and double-pop the page.
+    setState(() => _saving = true);
+    final records = List.of(_analyzer.repRecords);
     if (records.isNotEmpty) {
       await showModalBottomSheet<void>(
         context: context,
@@ -324,7 +327,6 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
       );
       if (!mounted) return;
     }
-    setState(() => _saving = true);
     final completed = DateTime.now();
     await widget.controller.addSession(
       WorkoutSession(
