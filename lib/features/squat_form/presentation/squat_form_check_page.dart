@@ -705,6 +705,13 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
       setState(() => _loading = false);
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      // Unexpected response shape — strict schema should prevent this.
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not review — try again.')),
+      );
     }
   }
 
