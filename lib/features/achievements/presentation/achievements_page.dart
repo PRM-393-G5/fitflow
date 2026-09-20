@@ -12,101 +12,125 @@ class _Badge {
     required this.icon,
     required this.title,
     required this.detail,
-    required this.unlocked,
+    required this.progress,
+    required this.goal,
+    this.format,
   });
 
   final IconData icon;
   final String title;
   final String detail;
-  final bool unlocked;
+
+  /// Current value toward [goal]; unlocked once it reaches it.
+  final num progress;
+  final num goal;
+
+  /// Formats progress/goal numbers (e.g. unit conversion); plain by default.
+  final String Function(num value)? format;
+
+  bool get unlocked => progress >= goal;
+
+  /// "3/5" toward a locked badge.
+  String get progressLabel {
+    String show(num value) => format?.call(value) ?? '${value.round()}';
+    final current = progress > goal ? goal : progress;
+    return '${show(current)}/${show(goal)}';
+  }
 }
 
 class AchievementsPage extends StatelessWidget {
   const AchievementsPage({super.key});
 
+  /// Total volume for the strength badge — about 10 heavy sessions.
+  static const _volumeGoalKg = 10000;
+
   @override
   Widget build(BuildContext context) {
-    final sessions = AppScope.of(context).sessions;
+    final controller = AppScope.of(context);
+    // Empty sessions never count toward badges.
+    final sessions = WorkoutStats.counted(controller.sessions).toList();
     final count = sessions.length;
     final streak = WorkoutStats.longestStreak(sessions);
     final minutes = WorkoutStats.totalMinutes(sessions);
     final volume = WorkoutStats.totalVolume(sessions);
+    final weeklyGoal = controller.weeklyGoal;
+    final goalWeeks = WorkoutStats.longestWeeklyGoalStreak(
+      sessions,
+      weeklyGoal,
+    );
     final weekend = sessions.any(
       (item) => item.completedAt.weekday >= DateTime.saturday,
     );
+    final metric = controller.useMetric;
+    final volumeGoal = metric
+        ? '10,000 kg'
+        : '${_thousands(_volumeGoalKg * 2.20462)} lb';
+
+    _Badge workouts(IconData icon, String title, int goal) => _Badge(
+      icon: icon,
+      title: title,
+      detail: goal == 1
+          ? 'Finish your first workout'
+          : 'Complete $goal workouts',
+      progress: count,
+      goal: goal,
+    );
 
     final badges = [
-      _Badge(
-        icon: FLucideIcons.footprints,
-        title: 'First steps',
-        detail: 'Finish your first workout',
-        unlocked: count >= 1,
-      ),
-      _Badge(
-        icon: FLucideIcons.repeat,
-        title: 'Regular',
-        detail: 'Complete 5 workouts',
-        unlocked: count >= 5,
-      ),
-      _Badge(
-        icon: FLucideIcons.dumbbell,
-        title: 'Committed',
-        detail: 'Complete 10 workouts',
-        unlocked: count >= 10,
-      ),
-      _Badge(
-        icon: FLucideIcons.medal,
-        title: 'Dedicated',
-        detail: 'Complete 25 workouts',
-        unlocked: count >= 25,
-      ),
-      _Badge(
-        icon: FLucideIcons.award,
-        title: 'Unstoppable',
-        detail: 'Complete 50 workouts',
-        unlocked: count >= 50,
-      ),
+      workouts(FLucideIcons.footprints, 'First steps', 1),
+      workouts(FLucideIcons.repeat, 'Regular', 5),
+      workouts(FLucideIcons.dumbbell, 'Committed', 10),
+      workouts(FLucideIcons.medal, 'Dedicated', 25),
+      workouts(FLucideIcons.award, 'Unstoppable', 50),
       _Badge(
         icon: FLucideIcons.flame,
         title: 'Warming up',
         detail: 'Reach a 3-day streak',
-        unlocked: streak >= 3,
+        progress: streak,
+        goal: 3,
       ),
       _Badge(
         icon: FLucideIcons.flame,
         title: 'On fire',
         detail: 'Reach a 7-day streak',
-        unlocked: streak >= 7,
+        progress: streak,
+        goal: 7,
       ),
       _Badge(
         icon: FLucideIcons.sparkles,
         title: 'Monthly beast',
-        detail: 'Reach a 30-day streak',
-        unlocked: streak >= 30,
+        detail: 'Hit your weekly goal ($weeklyGoal/week) 4 weeks in a row',
+        progress: goalWeeks,
+        goal: 4,
       ),
       _Badge(
         icon: FLucideIcons.timer,
         title: 'Five hours',
         detail: 'Train for 300 total minutes',
-        unlocked: minutes >= 300,
+        progress: minutes,
+        goal: 300,
       ),
       _Badge(
         icon: FLucideIcons.hourglass,
         title: 'Endurance',
         detail: 'Train for 1,000 total minutes',
-        unlocked: minutes >= 1000,
+        progress: minutes,
+        goal: 1000,
       ),
       _Badge(
         icon: FLucideIcons.weight,
-        title: 'One tonne club',
-        detail: 'Lift 1,000 kg of total volume',
-        unlocked: volume >= 1000,
+        title: 'Ten tonne club',
+        detail: 'Lift $volumeGoal of total volume',
+        progress: volume,
+        goal: _volumeGoalKg,
+        format: (kg) => _thousands(metric ? kg : kg * 2.20462),
       ),
       _Badge(
         icon: FLucideIcons.sofa,
         title: 'Weekend warrior',
         detail: 'Work out on a Saturday or Sunday',
-        unlocked: weekend,
+        progress: weekend ? 1 : 0,
+        goal: 1,
       ),
     ];
     final unlockedCount = badges.where((item) => item.unlocked).length;
@@ -139,7 +163,7 @@ class AchievementsPage extends StatelessWidget {
                       : 4,
                   crossAxisSpacing: AppSpacing.md,
                   mainAxisSpacing: AppSpacing.md,
-                  mainAxisExtent: 170,
+                  mainAxisExtent: 190,
                 ),
                 itemCount: badges.length,
                 itemBuilder: (_, index) => _BadgeCard(badge: badges[index]),
@@ -162,7 +186,7 @@ class _BadgeCard extends StatelessWidget {
     final colors = context.theme.colors;
     return AppCard(
       child: Opacity(
-        opacity: badge.unlocked ? 1 : 0.45,
+        opacity: badge.unlocked ? 1 : 0.6,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -178,9 +202,32 @@ class _BadgeCard extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
             Text(badge.detail, style: Theme.of(context).textTheme.bodySmall),
+            if (!badge.unlocked && badge.goal > 1) ...[
+              const SizedBox(height: AppSpacing.xs),
+              FDeterminateProgress(
+                value: (badge.progress / badge.goal).clamp(0.0, 1.0).toDouble(),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                badge.progressLabel,
+                style: Theme.of(context).textTheme.labelSmall
+                    ?.copyWith(color: colors.mutedForeground),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
+}
+
+/// 10000 → "10,000".
+String _thousands(num value) {
+  final digits = value.round().toString();
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
+    buffer.write(digits[i]);
+  }
+  return buffer.toString();
 }

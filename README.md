@@ -1,6 +1,6 @@
 # FitFlow
 
-FitFlow is a Flutter workout-tracking MVP. It ships with built-in workout plans, guides a local workout session, and records progress on the device without requiring an account or network connection.
+FitFlow is a Flutter workout-tracking MVP. It ships with built-in workout plans, guides a local workout session, and records progress on the device without requiring an account or network connection. Signing in with Google is optional and adds Firestore backup and multi-device sync.
 
 ## Toolchain
 
@@ -65,11 +65,16 @@ For a distributable Android release, configure a production application ID and r
 - Onboarding goal/level setup that personalizes suggested workouts
 - Weekly schedule that pins a plan to each day
 - AI form check for squat, push-up, and plank via on-device pose detection
-- Reminder preferences, JSON export, and shareable summary card
+- Reminder preferences, JSON export/import backup, and a shareable summary image
+- Optional Google sign-in with Firestore sync, sign-out and account deletion
 - Session detail view per completed workout
 - Theme selection (system, light, or dark)
 - Metric/imperial preference
 - Responsive Material UI for phone and wider layouts
+
+## Firestore rules
+
+Security rules live in `firestore.rules` (templates public read-only, each user limited to `users/{uid}`). Deploy them with `firebase deploy --only firestore:rules`.
 
 ## Architecture and directories
 

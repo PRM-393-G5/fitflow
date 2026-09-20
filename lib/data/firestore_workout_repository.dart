@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../domain/models/workout.dart';
@@ -11,15 +12,24 @@ import '../domain/repositories/workout_repository.dart';
 import 'local_workout_repository.dart';
 
 /// Workout templates come from the global `workouts` collection (cached in
-/// SharedPreferences). Per-user data syncs under `users/{uid}`: sessions and
-/// custom workouts (`custom-*` ids) merge by id, the meta doc (weights,
-/// profile, schedule, onboarding, weekly goal) is last-write-wins.
-/// Everything stays readable offline; sign-out falls back to local-only.
+/// SharedPreferences, bundled seeds before the first fetch). Per-user data
+/// syncs under `users/{uid}`: sessions, custom workouts (`custom-*` ids)
+/// and weights merge by id, the meta doc (profile, schedule, onboarding,
+/// weekly goal) is last-write-wins.
+///
+/// The controller drives the merge ([AppController.sync]) so it can apply
+/// edits made while the network round trip was in flight.
+///
+/// Reads and writes never wait for the server: writes land locally first
+/// and Firestore's offline queue delivers them later. Deletes are soft
+/// (`{deleted: true}` tombstones) so another device's merge cannot
+/// resurrect the doc.
 class FirestoreWorkoutRepository implements WorkoutRepository {
   FirestoreWorkoutRepository(this._firestore, this._local, this._preferences);
 
   static const _cacheKey = 'workouts_remote_v1';
   static const _timeout = Duration(seconds: 8);
+  static const _batchLimit = 400;
 
   final FirebaseFirestore _firestore;
   final LocalWorkoutRepository _local;
@@ -49,85 +59,142 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
     return byId.values.toList();
   }
 
-  /// Docs of a user collection as JSON maps, or null when unreachable.
-  Future<List<Map<String, dynamic>>?> _fetchDocs(
-    CollectionReference<Map<String, dynamic>> collection,
+  /// Applies local changes made while a sync was in flight to its result:
+  /// [merged] was computed from [before]; [after] is the local state now.
+  /// Items added or edited since (a different object than in [before])
+  /// keep the local copy; items deleted since are dropped; untouched items
+  /// take the merged copy (or disappear if the cloud tombstoned them).
+  static List<T> reconcile<T>(
+    List<T> merged,
+    List<T> before,
+    List<T> after,
+    String Function(T) idOf,
+  ) {
+    final beforeById = {for (final item in before) idOf(item): item};
+    final afterById = {for (final item in after) idOf(item): item};
+    final result = <String, T>{};
+    for (final item in merged) {
+      final id = idOf(item);
+      if (beforeById.containsKey(id) && !afterById.containsKey(id)) continue;
+      result[id] = item;
+    }
+    for (final MapEntry(key: id, value: item) in afterById.entries) {
+      final previous = beforeById[id];
+      if (previous == null || !identical(previous, item)) result[id] = item;
+    }
+    return result.values.toList();
+  }
+
+  /// Merges [local] JSON docs (each with an `id`) into `users/{uid}/[name]`:
+  /// remote wins on conflicts, tombstoned ids are dropped, local-only docs
+  /// are uploaded. Returns the merged docs, or null when signed out or
+  /// unreachable (callers keep their local data).
+  Future<List<Map<String, dynamic>>?> syncDocs(
+    String name,
+    List<Map<String, dynamic>> local,
   ) async {
+    final collection = _userCollection(name);
+    if (collection == null) return null;
+    final QuerySnapshot<Map<String, dynamic>> snapshot;
     try {
-      final snapshot = await collection.get().timeout(_timeout);
-      return snapshot.docs.map((doc) => {...doc.data(), 'id': doc.id}).toList();
+      snapshot = await collection.get().timeout(_timeout);
     } catch (_) {
       return null;
     }
-  }
-
-  /// Pushes merged docs that exist locally but not remotely.
-  // ponytail: one batch caps at 500 writes — a backlog that big never
-  // uploads; upgrade path is chunking docs into batches of 500.
-  void _pushMissing(
-    CollectionReference<Map<String, dynamic>> collection,
-    Iterable<({String id, Map<String, Object> json})> docs,
-  ) {
-    final batch = _firestore.batch();
-    var dirty = false;
-    for (final doc in docs) {
-      batch.set(collection.doc(doc.id), doc.json);
-      dirty = true;
+    final deleted = <String>{};
+    final remote = <Map<String, dynamic>>[];
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      if (data['deleted'] == true) {
+        deleted.add(doc.id);
+      } else {
+        remote.add({...data, 'id': doc.id});
+      }
     }
-    if (dirty) batch.commit().ignore();
+    final merged = mergeById(
+      local.where((item) => !deleted.contains(item['id'])),
+      remote,
+      (item) => item['id'] as String,
+    );
+    final remoteIds = {for (final item in remote) item['id']};
+    _pushAll(
+      collection,
+      merged.where((item) => !remoteIds.contains(item['id'])),
+    );
+    return merged;
   }
 
-  Future<List<Workout>?> _fetchRemote() async {
+  /// Uploads docs in batches (Firestore caps a batch at 500 writes).
+  void _pushAll(
+    CollectionReference<Map<String, dynamic>> collection,
+    Iterable<Map<String, dynamic>> docs,
+  ) {
+    final pending = docs.toList();
+    for (var start = 0; start < pending.length; start += _batchLimit) {
+      final batch = _firestore.batch();
+      for (final doc in pending.skip(start).take(_batchLimit)) {
+        batch.set(collection.doc(doc['id'] as String), doc);
+      }
+      batch.commit().catchError((Object e) {
+        debugPrint('Sync upload failed: $e');
+      });
+    }
+  }
+
+  /// Queues a doc write without waiting for the server acknowledgement —
+  /// offline, Firestore only completes the future once it reconnects.
+  void putDoc(String name, String id, Map<String, Object?> json) {
+    _userCollection(name)?.doc(id).set(json).catchError((Object e) {
+      debugPrint('Cloud write failed: $e');
+    });
+  }
+
+  /// Queues a tombstone for [id] (see class docs).
+  void deleteDoc(String name, String id) => putDoc(name, id, {'deleted': true});
+
+  List<Workout>? _cachedTemplates() {
+    final raw = _preferences.getString(_cacheKey);
+    if (raw == null) return null;
+    final cached = LocalWorkoutRepository.decodeList(raw, Workout.fromJson);
+    return cached.isEmpty ? null : cached;
+  }
+
+  /// Re-fetches the global templates into the cache; no-op offline.
+  Future<void> refreshTemplates() async {
     try {
       final snapshot = await _firestore
           .collection('workouts')
           .get(const GetOptions(source: Source.server))
           .timeout(_timeout);
-      final workouts = snapshot.docs
-          .map((doc) => Workout.fromJson({...doc.data(), 'id': doc.id}))
-          .toList();
+      final workouts = <Workout>[];
+      for (final doc in snapshot.docs) {
+        try {
+          workouts.add(Workout.fromJson({...doc.data(), 'id': doc.id}));
+        } catch (e) {
+          debugPrint('Skipping malformed template ${doc.id}: $e');
+        }
+      }
+      if (workouts.isEmpty) return;
       await _preferences.setString(
         _cacheKey,
         jsonEncode(workouts.map((item) => item.toJson()).toList()),
       );
-      return workouts;
     } catch (_) {
-      final raw = _preferences.getString(_cacheKey);
-      if (raw == null) return null;
-      try {
-        return (jsonDecode(raw) as List)
-            .map((item) => Workout.fromJson(item as Map<String, dynamic>))
-            .toList();
-      } on FormatException {
-        return null;
-      }
+      // Offline — keep the cached (or bundled) templates.
     }
   }
 
-  /// Merges user-cloud custom workouts with local ones (remote wins on
-  /// conflicts), refreshes the local cache and pushes local-only docs.
-  Future<List<Workout>> _syncCustomWorkouts(List<Workout> localAll) async {
-    final localCustom = localAll
-        .where((item) => item.id.startsWith('custom-'))
-        .toList();
-    final collection = _userCollection('workouts');
-    if (collection == null) return localCustom;
-    final docs = await _fetchDocs(collection);
-    if (docs == null) return localCustom;
-    final remote = docs.map(Workout.fromJson).toList();
-    final merged = mergeById(localCustom, remote, (item) => item.id);
-    for (final workout in merged) {
-      await _local.saveWorkout(workout);
-    }
-    final remoteIds = {for (final item in remote) item.id};
-    _pushMissing(
-      collection,
-      merged
-          .where((item) => !remoteIds.contains(item.id))
-          .map((item) => (id: item.id, json: item.toJson())),
+  /// Stores merged custom workouts locally (see [AppController.sync]).
+  Future<void> storeCustomWorkouts(List<Workout> custom) async {
+    final others = (await _local.getSavedWorkouts()).where(
+      (item) => !item.id.startsWith('custom-'),
     );
-    return merged;
+    await _local.overwriteWorkouts([...others, ...custom]);
   }
+
+  /// Stores merged sessions locally (see [AppController.sync]).
+  Future<void> storeSessions(List<WorkoutSession> sessions) =>
+      _local.overwriteSessions(sessions);
 
   /// Pulls the `users/{uid}` meta doc. Null when signed out or absent;
   /// callers must catch failures (offline) and skip syncing.
@@ -150,9 +217,53 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
       await _firestore
           .collection('users')
           .doc(currentUid)
-          .set({...meta, 'updatedAt': updatedAt}, SetOptions(merge: true))
+          .set({
+            ...meta,
+            'updatedAt': updatedAt,
+            // Weights moved to their own collection; drop the legacy copy
+            // so it can't be merged back in later.
+            'weights': FieldValue.delete(),
+          }, SetOptions(merge: true))
           .timeout(_timeout);
     } catch (_) {}
+  }
+
+  /// Waits for queued writes to reach the server. False when they are
+  /// still pending after [timeout] (offline) — signing out then would drop
+  /// them.
+  Future<bool> flushPendingWrites({
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    if (!signedIn) return true;
+    try {
+      await _firestore.waitForPendingWrites().timeout(timeout);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Deletes everything under `users/{uid}` on the server. Throws when
+  /// unreachable so the caller can keep the account intact.
+  Future<void> deleteCloudData() async {
+    final currentUid = uid;
+    if (currentUid == null) return;
+    final userDoc = _firestore.collection('users').doc(currentUid);
+    for (final name in ['sessions', 'workouts', 'weights']) {
+      final snapshot = await userDoc
+          .collection(name)
+          .get(const GetOptions(source: Source.server))
+          .timeout(_timeout);
+      final docs = snapshot.docs;
+      for (var start = 0; start < docs.length; start += _batchLimit) {
+        final batch = _firestore.batch();
+        for (final doc in docs.skip(start).take(_batchLimit)) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit().timeout(_timeout);
+      }
+    }
+    await userDoc.delete().timeout(_timeout);
   }
 
   /// Drops all locally cached synced data (sessions + custom workouts).
@@ -160,10 +271,10 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
 
   @override
   Future<List<Workout>> getWorkouts() async {
-    final remote = await _fetchRemote();
-    final local = await _local.getWorkouts();
-    if (remote == null || remote.isEmpty) return local;
-    return [...remote, ...await _syncCustomWorkouts(local)];
+    final saved = await _local.getSavedWorkouts();
+    final templates = _cachedTemplates() ?? _local.templates;
+    final custom = saved.where((item) => item.id.startsWith('custom-'));
+    return [...templates, ...custom];
   }
 
   @override
@@ -178,37 +289,28 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
   Future<void> saveWorkout(Workout workout) async {
     await _local.saveWorkout(workout);
     if (!workout.id.startsWith('custom-')) return;
-    try {
-      await _userCollection('workouts')?.doc(workout.id).set(workout.toJson());
-    } catch (_) {}
+    putDoc('workouts', workout.id, workout.toJson());
   }
 
   @override
-  Future<List<WorkoutSession>> getRecentSessions() async {
-    final local = await _local.getRecentSessions();
-    final collection = _userCollection('sessions');
-    if (collection == null) return local;
-    final docs = await _fetchDocs(collection);
-    if (docs == null) return local;
-    final remote = docs.map(WorkoutSession.fromJson).toList();
-    final merged = mergeById(local, remote, (item) => item.id)
-      ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
-    await _local.overwriteSessions(merged);
-    final remoteIds = {for (final item in remote) item.id};
-    _pushMissing(
-      collection,
-      merged
-          .where((item) => !remoteIds.contains(item.id))
-          .map((item) => (id: item.id, json: item.toJson())),
-    );
-    return merged;
+  Future<void> deleteWorkout(String id) async {
+    await _local.deleteWorkout(id);
+    if (id.startsWith('custom-')) deleteDoc('workouts', id);
   }
+
+  @override
+  Future<List<WorkoutSession>> getRecentSessions() =>
+      _local.getRecentSessions();
 
   @override
   Future<void> saveSession(WorkoutSession session) async {
     await _local.saveSession(session);
-    try {
-      await _userCollection('sessions')?.doc(session.id).set(session.toJson());
-    } catch (_) {}
+    putDoc('sessions', session.id, session.toJson());
+  }
+
+  @override
+  Future<void> deleteSession(String id) async {
+    await _local.deleteSession(id);
+    deleteDoc('sessions', id);
   }
 }

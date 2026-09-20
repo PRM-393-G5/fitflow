@@ -1,7 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
 
-import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
@@ -23,7 +22,14 @@ class ProgressPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final sessions = controller.sessions;
-    final volume = WorkoutStats.totalVolume(sessions);
+    // Stats ignore empty sessions; computed once per build.
+    final counted = WorkoutStats.counted(sessions).toList();
+    final records = PersonalRecords.all(sessions).values.toList()
+      ..sort((a, b) {
+        final byName = a.exerciseName.compareTo(b.exerciseName);
+        return byName != 0 ? byName : a.kind.index.compareTo(b.kind.index);
+      });
+    final volume = WorkoutStats.totalVolume(counted);
     final displayVolume = controller.useMetric ? volume : volume * 2.20462;
     final unit = controller.useMetric ? 'kg' : 'lb';
 
@@ -38,6 +44,8 @@ class ProgressPage extends StatelessWidget {
           ),
           const Text('Consistency compounds. Every session counts.'),
           const SizedBox(height: AppSpacing.lg),
+          const SectionHeader(title: 'All time'),
+          const SizedBox(height: AppSpacing.sm),
           LayoutBuilder(
             builder: (context, constraints) => GridView.count(
               crossAxisCount: constraints.maxWidth < 500 ? 2 : 3,
@@ -49,12 +57,12 @@ class ProgressPage extends StatelessWidget {
               children: [
                 StatCard(
                   icon: FLucideIcons.calendarCheck,
-                  value: '${sessions.length}',
+                  value: '${counted.length}',
                   label: 'sessions',
                 ),
                 StatCard(
                   icon: FLucideIcons.timer,
-                  value: '${WorkoutStats.totalMinutes(sessions)}',
+                  value: '${WorkoutStats.totalMinutes(counted)}',
                   label: 'minutes',
                 ),
                 StatCard(
@@ -68,12 +76,12 @@ class ProgressPage extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'Activity'),
           const SizedBox(height: AppSpacing.sm),
-          AppCard(child: _ActivityHeatmap(sessions: sessions)),
+          AppCard(child: _ActivityHeatmap(sessions: counted)),
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'This week'),
           const SizedBox(height: AppSpacing.sm),
-          AppCard(child: _WeekChart(sessions: sessions)),
-          if (sessions.isNotEmpty) ...[
+          AppCard(child: _WeekChart(sessions: counted)),
+          if (counted.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.lg),
             const SectionHeader(title: 'Personal records'),
             const SizedBox(height: AppSpacing.sm),
@@ -88,24 +96,32 @@ class ProgressPage extends StatelessWidget {
                 children: [
                   StatCard(
                     icon: FLucideIcons.flame,
-                    value: '${WorkoutStats.longestStreak(sessions)}',
+                    value: '${WorkoutStats.longestStreak(counted)} days',
                     label: 'longest streak',
                   ),
                   StatCard(
                     icon: FLucideIcons.dumbbell,
-                    value: _bestVolume(sessions, controller.useMetric),
+                    value: _bestVolume(counted, controller.useMetric),
                     label: 'best session',
                   ),
                   StatCard(
                     icon: FLucideIcons.clock,
                     value:
-                        '${sessions.map((item) => item.durationMinutes).reduce((a, b) => a > b ? a : b)} min',
+                        '${counted.map((item) => item.durationMinutes).reduce((a, b) => a > b ? a : b)} min',
                     label: 'longest session',
                   ),
                 ],
               ),
             ),
-            ..._exerciseRecords(context, controller),
+            if (records.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm),
+              FTileGroup(
+                children: [
+                  for (final record in records)
+                    _recordTile(context, record, controller.useMetric),
+                ],
+              ),
+            ],
           ],
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'Explore'),
@@ -153,24 +169,7 @@ class ProgressPage extends StatelessWidget {
               ),
             )
           else
-            FTileGroup(
-              children: [
-                for (final session in sessions)
-                  FTile(
-                    prefix: FAvatar.raw(child: const Icon(FLucideIcons.check)),
-                    title: Text(session.workoutName),
-                    subtitle: Text(
-                      '${_date(session.completedAt)} • ${session.durationMinutes} min • ${session.completedSets} sets',
-                    ),
-                    suffix: const Icon(FLucideIcons.chevronRight),
-                    onPress: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => SessionDetailPage(session: session),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            _HistoryList(sessions: sessions),
         ],
       ),
     );
@@ -187,34 +186,88 @@ class ProgressPage extends StatelessWidget {
   static String _date(DateTime date) =>
       '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 
-  static List<Widget> _exerciseRecords(
+  static FTile _recordTile(
     BuildContext context,
-    AppController controller,
+    PersonalRecord record,
+    bool metric,
   ) {
-    final records = PersonalRecords.best(controller.sessions).values.toList()
-      ..sort((a, b) => a.exerciseName.compareTo(b.exerciseName));
-    if (records.isEmpty) return [];
-    final unit = controller.useMetric ? 'kg' : 'lb';
-    return [
-      const SizedBox(height: AppSpacing.sm),
-      FTileGroup(
-        children: [
-          for (final record in records)
-            FTile(
-              prefix: const Icon(FLucideIcons.trophy),
-              title: Text(record.exerciseName),
-              subtitle: Text(_date(record.date)),
-              suffix: Text(
-                record.isTimed
-                    ? '${record.value.round()}s'
-                    : '${(controller.useMetric ? record.value : record.value * 2.20462).round()} $unit',
-                style: Theme.of(context).textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-            ),
-        ],
+    final unit = metric ? 'kg' : 'lb';
+    String weight(double kg) =>
+        '${trimDecimal(metric ? kg : kg * 2.20462)} $unit';
+    final oneRepMax = record.estimatedOneRepMaxKg;
+    return FTile(
+      prefix: const Icon(FLucideIcons.trophy),
+      title: Text(record.exerciseName),
+      subtitle: Text(
+        record.kind == RecordKind.weight && oneRepMax > 0
+            ? '${_date(record.date)} • est. 1RM ${weight(oneRepMax)}'
+            : _date(record.date),
       ),
-    ];
+      suffix: Text(
+        switch (record.kind) {
+          RecordKind.weight => weight(record.value),
+          RecordKind.hold => '${record.value.round()} s',
+          RecordKind.reps => '${record.value.round()} reps',
+        },
+        style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+}
+
+/// Session history, built in pages so long histories stay cheap.
+class _HistoryList extends StatefulWidget {
+  const _HistoryList({required this.sessions});
+
+  final List<WorkoutSession> sessions;
+
+  @override
+  State<_HistoryList> createState() => _HistoryListState();
+}
+
+class _HistoryListState extends State<_HistoryList> {
+  static const _page = 20;
+  int _visible = _page;
+
+  @override
+  Widget build(BuildContext context) {
+    final sessions = widget.sessions;
+    final remaining = sessions.length - _visible;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FTileGroup(
+          children: [
+            for (final session in sessions.take(_visible))
+              FTile(
+                prefix: FAvatar.raw(child: const Icon(FLucideIcons.check)),
+                title: Text(session.workoutName),
+                subtitle: Text(
+                  '${ProgressPage._date(session.completedAt)} • '
+                  '${session.durationMinutes} min • '
+                  '${WorkoutStats.formCheckLabel(session) ?? '${session.completedSets} sets'}',
+                ),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => SessionDetailPage(session: session),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        if (remaining > 0) ...[
+          const SizedBox(height: AppSpacing.sm),
+          FButton(
+            key: const Key('history-show-more'),
+            variant: .outline,
+            onPress: () => setState(() => _visible += _page),
+            child: Text('Show more ($remaining left)'),
+          ),
+        ],
+      ],
+    );
   }
 }
 
@@ -224,6 +277,51 @@ class _ActivityHeatmap extends StatelessWidget {
   final List<WorkoutSession> sessions;
 
   static const _weeks = 12;
+  static const _cell = 14.0;
+  static const _gap = 2.0;
+  static const _weekdays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  static const _months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  static Color _shade(FColors colors, int count) => count == 0
+      ? colors.muted
+      : colors.primary.withValues(alpha: (0.25 + 0.25 * count).clamp(0.0, 1.0));
+
+  Widget _box(Color color) => Container(
+    width: _cell,
+    height: _cell,
+    margin: const EdgeInsets.all(_gap),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(3),
+    ),
+  );
+
+  Widget _label(String text, TextStyle? style) => SizedBox(
+    height: _cell + _gap * 2,
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.visible,
+        style: style,
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -236,6 +334,7 @@ class _ActivityHeatmap extends StatelessWidget {
       );
       counts[day] = (counts[day] ?? 0) + 1;
     }
+    // Recomputed every build so the grid rolls over at midnight.
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final start = DateTime(
@@ -244,38 +343,83 @@ class _ActivityHeatmap extends StatelessWidget {
       today.day - (today.weekday - 1) - 7 * (_weeks - 1),
     );
     final colors = context.theme.colors;
+    final labelStyle = Theme.of(context).textTheme.labelSmall
+        ?.copyWith(color: colors.mutedForeground);
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: List.generate(
-        _weeks,
-        (week) => Column(
-          children: List.generate(7, (weekday) {
-            final day = DateTime(
-              start.year,
-              start.month,
-              start.day + week * 7 + weekday,
-            );
-            final count = counts[day] ?? 0;
-            final color = day.isAfter(today)
-                ? Colors.transparent
-                : count == 0
-                ? colors.muted
-                : colors.primary.withValues(
-                    alpha: (0.25 + 0.25 * count).clamp(0.0, 1.0),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _label('', labelStyle),
+                for (final day in _weekdays) _label(day, labelStyle),
+              ],
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: List.generate(_weeks, (week) {
+                  final monday = DateTime(
+                    start.year,
+                    start.month,
+                    start.day + week * 7,
                   );
-            return Container(
-              width: 14,
-              height: 14,
-              margin: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(3),
+                  final previous = DateTime(
+                    monday.year,
+                    monday.month,
+                    monday.day - 7,
+                  );
+                  // Label a column when its week starts a new month.
+                  final monthLabel = week == 0 || previous.month != monday.month
+                      ? _months[monday.month - 1]
+                      : '';
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: _cell + _gap * 2,
+                        child: _label(monthLabel, labelStyle),
+                      ),
+                      for (var weekday = 0; weekday < 7; weekday++)
+                        Builder(
+                          builder: (context) {
+                            final day = DateTime(
+                              monday.year,
+                              monday.month,
+                              monday.day + weekday,
+                            );
+                            return _box(
+                              day.isAfter(today)
+                                  ? Colors.transparent
+                                  : _shade(colors, counts[day] ?? 0),
+                            );
+                          },
+                        ),
+                    ],
+                  );
+                }),
               ),
-            );
-          }),
+            ),
+          ],
         ),
-      ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text('Less', style: labelStyle),
+            const SizedBox(width: AppSpacing.xs),
+            for (var count = 0; count <= 3; count++)
+              _box(_shade(colors, count)),
+            const SizedBox(width: AppSpacing.xs),
+            Text('More', style: labelStyle),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -286,6 +430,7 @@ class _WeekChart extends StatelessWidget {
   final List<WorkoutSession> sessions;
 
   static const _labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  static const _maxBar = 72.0;
 
   @override
   Widget build(BuildContext context) {
@@ -309,42 +454,70 @@ class _WeekChart extends StatelessWidget {
     }
     final peak = minutes.reduce((a, b) => a > b ? a : b);
     final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
 
-    return SizedBox(
-      height: 120,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: List.generate(7, (index) {
-          final value = minutes[index];
-          final isToday = monday.add(Duration(days: index)) == today;
-          return Expanded(
-            child: Column(
-              children: [
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Container(
-                      width: 20,
-                      height: peak == 0 ? 4 : (value / peak) * 88,
-                      decoration: BoxDecoration(
-                        color: isToday
-                            ? colors.primary
-                            : colors.primary.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(6),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Minutes trained per day',
+          style: textTheme.bodySmall?.copyWith(color: colors.mutedForeground),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          height: 120,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: List.generate(7, (index) {
+              final value = minutes[index];
+              // Calendar construction, not Duration: DST-safe.
+              final isToday =
+                  DateTime(monday.year, monday.month, monday.day + index) ==
+                  today;
+              return Expanded(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (value > 0)
+                            Text(
+                              '$value',
+                              style: textTheme.labelSmall?.copyWith(
+                                fontWeight: isToday ? FontWeight.bold : null,
+                              ),
+                            ),
+                          const SizedBox(height: 2),
+                          Container(
+                            width: 20,
+                            height: peak == 0 || value == 0
+                                ? 4
+                                : 4 + (value / peak) * (_maxBar - 4),
+                            decoration: BoxDecoration(
+                              color: isToday
+                                  ? colors.primary
+                                  : colors.primary.withValues(alpha: 0.35),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      _labels[index],
+                      style: textTheme.labelSmall?.copyWith(
+                        fontWeight: isToday ? FontWeight.bold : null,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _labels[index],
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              ],
-            ),
-          );
-        }),
-      ),
+              );
+            }),
+          ),
+        ),
+      ],
     );
   }
 }

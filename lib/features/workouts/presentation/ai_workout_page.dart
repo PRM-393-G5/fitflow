@@ -8,6 +8,8 @@ import '../../../data/openai_service.dart';
 import '../../../domain/ai_workout_parser.dart';
 import '../../../domain/models/workout.dart';
 import '../../../core/widgets/app_card.dart';
+import 'workout_builder_page.dart';
+import 'workout_detail_page.dart';
 
 /// Natural-language workout builder: describe a session, GPT returns a
 /// structured plan, preview it, save as a `custom-ai-*` workout.
@@ -34,6 +36,7 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
   // Track fraction 0..1 mapped onto 10..90 minutes in 5-minute steps.
   late final FContinuousSliderController _durationControl;
   bool _generating = false;
+  bool _saving = false;
   Workout? _preview;
 
   @override
@@ -92,6 +95,9 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
       _showError(e.message);
     } on FormatException {
       _showError('Could not generate a plan — try again.');
+    } catch (e) {
+      debugPrint('AI workout generation failed: $e');
+      _showError('Something went wrong — try again.');
     } finally {
       if (mounted) setState(() => _generating = false);
     }
@@ -104,9 +110,42 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
 
   Future<void> _save() async {
     final workout = _preview;
-    if (workout == null) return;
-    await AppScope.of(context).saveWorkout(workout);
-    if (mounted) Navigator.of(context).pop();
+    if (workout == null || _saving) return;
+    setState(() => _saving = true);
+    try {
+      await AppScope.of(context).saveWorkout(workout);
+    } catch (e) {
+      debugPrint('Saving AI workout failed: $e');
+      _showError('Could not save the plan — try again.');
+      return;
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+    _openSaved(workout);
+  }
+
+  /// Opens the builder on the generated plan; saving there stores it.
+  Future<void> _editBeforeSaving() async {
+    final workout = _preview;
+    if (workout == null || _saving) return;
+    final saved = await Navigator.of(context).push(
+      MaterialPageRoute<Workout>(
+        builder: (_) => WorkoutBuilderPage(initial: workout),
+      ),
+    );
+    if (saved != null) _openSaved(saved);
+  }
+
+  /// Replaces this page with the saved plan's details; the list receives
+  /// the plan as this route's result.
+  void _openSaved(Workout workout) {
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => WorkoutDetailPage(workout: workout),
+      ),
+      result: workout,
+    );
   }
 
   @override
@@ -255,7 +294,7 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
             child: FButton(
               key: const Key('ai-regenerate'),
               variant: .outline,
-              onPress: _generating ? null : _generate,
+              onPress: _generating || _saving ? null : _generate,
               prefix: _generating
                   ? const FCircularProgress()
                   : const Icon(FLucideIcons.rotateCcw),
@@ -266,12 +305,20 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
           Expanded(
             child: FButton(
               key: const Key('ai-save'),
-              onPress: _generating ? null : _save,
+              onPress: _generating || _saving ? null : _save,
               prefix: const Icon(FLucideIcons.check),
               child: const Text('Save plan'),
             ),
           ),
         ],
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      FButton(
+        key: const Key('ai-edit-plan'),
+        variant: .outline,
+        onPress: _generating || _saving ? null : _editBeforeSaving,
+        prefix: const Icon(FLucideIcons.pencil),
+        child: const Text('Edit before saving'),
       ),
       const SizedBox(height: AppSpacing.sm),
       Center(

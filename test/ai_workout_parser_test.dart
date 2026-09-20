@@ -15,6 +15,7 @@ Map<String, dynamic> plan({List<Map<String, dynamic>>? exercises}) => {
 };
 
 Map<String, dynamic> exercise({
+  String muscleGroup = 'Legs',
   int sets = 3,
   int reps = 12,
   int durationSeconds = 0,
@@ -22,7 +23,7 @@ Map<String, dynamic> exercise({
   double weightKg = 0,
 }) => {
   'name': 'Bodyweight Squat',
-  'muscleGroup': 'Legs',
+  'muscleGroup': muscleGroup,
   'sets': sets,
   'reps': reps,
   'durationSeconds': durationSeconds,
@@ -37,7 +38,8 @@ void main() {
     expect(workout.name, 'Lower Body Blast');
     expect(workout.level, 'Beginner');
     expect(workout.category, 'Strength');
-    expect(workout.duration.inMinutes, 30);
+    // 3 × (12 reps × 3 s + 45 s rest) = 243 s → 5 min, not the claimed 30.
+    expect(workout.duration.inMinutes, 5);
     expect(workout.exercises.single.name, 'Bodyweight Squat');
     expect(workout.exercises.single.sets, 3);
     expect(workout.id, startsWith('custom-ai-'));
@@ -75,6 +77,65 @@ void main() {
       () => AiWorkoutParser.parse(plan(exercises: [])),
       throwsFormatException,
     );
+  });
+
+  test('non-list exercises throws FormatException, not TypeError', () {
+    for (final bad in <Object>[
+      'squats',
+      42,
+      {'name': 'x'},
+    ]) {
+      expect(
+        () => AiWorkoutParser.parse(plan()..['exercises'] = bad),
+        throwsFormatException,
+      );
+    }
+  });
+
+  test('muscleGroup is whitelisted, case-insensitively', () {
+    final workout = AiWorkoutParser.parse(
+      plan(
+        exercises: [
+          exercise(muscleGroup: 'Full Body'),
+          exercise(muscleGroup: 'core'),
+          exercise(muscleGroup: 'Glutes & hamstrings'),
+          exercise(muscleGroup: ''),
+        ],
+      ),
+    );
+
+    expect(workout.exercises.map((item) => item.muscleGroup), [
+      'Full body',
+      'Core',
+      'Full body',
+      'Full body',
+    ]);
+    for (final item in workout.exercises) {
+      expect(workoutMuscleGroups, contains(item.muscleGroup));
+    }
+  });
+
+  test('caps the number of exercises', () {
+    final workout = AiWorkoutParser.parse(
+      plan(exercises: List.generate(30, (_) => exercise())),
+    );
+
+    expect(workout.exercises, hasLength(AiWorkoutPrompt.maxExercises));
+  });
+
+  test('duration is estimated from the plan, ignoring the claim', () {
+    final workout = AiWorkoutParser.parse(
+      plan(
+        exercises: [
+          exercise(sets: 4, reps: 10, restSeconds: 60),
+          exercise(sets: 3, reps: 0, durationSeconds: 45, restSeconds: 30),
+        ],
+      )..['durationMinutes'] = 90,
+    );
+
+    // 4 × (30 + 60) + 3 × (45 + 30) = 585 s → 10 min.
+    expect(workout.duration, estimateWorkoutDuration(workout.exercises));
+    expect(workout.duration.inMinutes, 10);
   });
 
   test('rep-less non-timed exercise defaults to 10 reps', () {

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// One suggested food item inside a meal.
 class MealItem {
   const MealItem({
@@ -22,14 +24,36 @@ class MealItem {
     'fatG': fatG,
   };
 
-  factory MealItem.fromJson(Map<String, dynamic> json) => MealItem(
-    name: json['name'] as String,
-    kcal: (json['kcal'] as num?)?.toInt() ?? 0,
-    proteinG: (json['proteinG'] as num?)?.toDouble() ?? 0,
-    carbsG: (json['carbsG'] as num?)?.toDouble() ?? 0,
-    fatG: (json['fatG'] as num?)?.toDouble() ?? 0,
+  MealItem copyWith({
+    int? kcal,
+    double? proteinG,
+    double? carbsG,
+    double? fatG,
+  }) => MealItem(
+    name: name,
+    kcal: kcal ?? this.kcal,
+    proteinG: proteinG ?? this.proteinG,
+    carbsG: carbsG ?? this.carbsG,
+    fatG: fatG ?? this.fatG,
   );
+
+  /// Throws [FormatException] when [json] has no usable name.
+  factory MealItem.fromJson(Map<String, dynamic> json) {
+    final name = json['name'];
+    if (name is! String) throw const FormatException('Meal item has no name');
+    return MealItem(
+      name: name,
+      kcal: _num(json['kcal'])?.toInt() ?? 0,
+      proteinG: _num(json['proteinG'])?.toDouble() ?? 0,
+      carbsG: _num(json['carbsG'])?.toDouble() ?? 0,
+      fatG: _num(json['fatG'])?.toDouble() ?? 0,
+    );
+  }
 }
+
+num? _num(Object? value) => value is num && value.isFinite ? value : null;
+
+List<Object?> _list(Object? value) => value is List ? value : const [];
 
 /// A labeled meal (Breakfast, Lunch, ...) holding suggested items.
 class Meal {
@@ -39,19 +63,63 @@ class Meal {
   final List<MealItem> items;
 
   int get kcal => items.fold(0, (sum, item) => sum + item.kcal);
+  double get proteinG => items.fold(0, (sum, item) => sum + item.proteinG);
+  double get carbsG => items.fold(0, (sum, item) => sum + item.carbsG);
+  double get fatG => items.fold(0, (sum, item) => sum + item.fatG);
+
+  /// This meal resized to [target] kcal — a portion edit. Items and
+  /// macros scale proportionally; a zero-kcal meal puts [target] on its
+  /// first item.
+  Meal withKcal(int target) {
+    if (items.isEmpty) return this;
+    final total = kcal;
+    if (total <= 0) {
+      return Meal(
+        label: label,
+        items: [
+          items.first.copyWith(kcal: target),
+          ...items.skip(1),
+        ],
+      );
+    }
+    final factor = target / total;
+    final scaled = [
+      for (final item in items)
+        item.copyWith(
+          kcal: (item.kcal * factor).round(),
+          proteinG: item.proteinG * factor,
+          carbsG: item.carbsG * factor,
+          fatG: item.fatG * factor,
+        ),
+    ];
+    // Absorb rounding drift so the meal totals exactly [target].
+    final drift = target - scaled.fold<int>(0, (sum, item) => sum + item.kcal);
+    final last = scaled.last.kcal + drift;
+    scaled[scaled.length - 1] = scaled.last.copyWith(kcal: last < 0 ? 0 : last);
+    return Meal(label: label, items: scaled);
+  }
 
   Map<String, Object> toJson() => {
     'label': label,
     'items': items.map((item) => item.toJson()).toList(),
   };
 
-  factory Meal.fromJson(Map<String, dynamic> json) => Meal(
-    label: json['label'] as String,
-    items: [
-      for (final item in json['items'] as List? ?? const [])
-        MealItem.fromJson(item as Map<String, dynamic>),
-    ],
-  );
+  /// Malformed items are dropped; throws [FormatException] when the
+  /// label is missing.
+  factory Meal.fromJson(Map<String, dynamic> json) {
+    final label = json['label'];
+    if (label is! String) throw const FormatException('Meal has no label');
+    final items = <MealItem>[];
+    for (final item in _list(json['items'])) {
+      if (item is! Map<String, dynamic>) continue;
+      try {
+        items.add(MealItem.fromJson(item));
+      } on FormatException {
+        // Skip the broken item, keep the rest of the meal.
+      }
+    }
+    return Meal(label: label, items: items);
+  }
 }
 
 /// An AI-suggested day menu plus the target it was generated against.
@@ -70,12 +138,10 @@ class MealPlan {
 
   int get totalKcal => meals.fold(0, (sum, meal) => sum + meal.kcal);
 
-  bool get isToday {
-    final now = DateTime.now();
-    return date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day;
-  }
+  bool get isToday => isOn(DateTime.now());
+
+  bool isOn(DateTime day) =>
+      date.year == day.year && date.month == day.month && date.day == day.day;
 
   Map<String, Object> toJson() => {
     'date': date.toIso8601String(),
@@ -84,15 +150,183 @@ class MealPlan {
     'note': note,
   };
 
-  factory MealPlan.fromJson(Map<String, dynamic> json) => MealPlan(
-    date: DateTime.parse(json['date'] as String),
-    targetKcal: (json['targetKcal'] as num?)?.toInt() ?? 0,
-    meals: [
-      for (final item in json['meals'] as List? ?? const [])
-        Meal.fromJson(item as Map<String, dynamic>),
-    ],
-    note: json['note'] as String? ?? '',
+  /// Throws [FormatException] when the date is missing or malformed.
+  factory MealPlan.fromJson(Map<String, dynamic> json) {
+    final date = json['date'];
+    if (date is! String) throw const FormatException('Plan has no date');
+    final note = json['note'];
+    return MealPlan(
+      date: DateTime.parse(date),
+      targetKcal: _num(json['targetKcal'])?.toInt() ?? 0,
+      meals: [
+        for (final item in _list(json['meals']))
+          if (item is Map<String, dynamic>) Meal.fromJson(item),
+      ],
+      note: note is String ? note : '',
+    );
+  }
+}
+
+/// What the nutrition page persists under `meal_plan_v1`: today's plan
+/// plus the generator settings (so they survive restarts, and are wiped
+/// with the rest of the user's data on account changes).
+class MealPlanCache {
+  const MealPlanCache({this.plan, this.preferences = '', this.mealCount = 3});
+
+  final MealPlan? plan;
+  final String preferences;
+
+  /// 3 meals, or 4 (3 + snack).
+  final int mealCount;
+
+  MealPlanCache withPlan(MealPlan? plan) =>
+      MealPlanCache(plan: plan, preferences: preferences, mealCount: mealCount);
+
+  MealPlanCache copyWith({String? preferences, int? mealCount}) =>
+      MealPlanCache(
+        plan: plan,
+        preferences: preferences ?? this.preferences,
+        mealCount: mealCount ?? this.mealCount,
+      );
+
+  Map<String, Object?> toJson() => {
+    'version': 2,
+    'plan': plan?.toJson(),
+    'preferences': preferences,
+    'mealCount': mealCount,
+  };
+
+  /// Never throws: corrupt data degrades to defaults. Also reads the
+  /// legacy format, where the key held a bare [MealPlan].
+  static MealPlanCache decode(String? raw) {
+    if (raw == null) return const MealPlanCache();
+    try {
+      final json = jsonDecode(raw);
+      if (json is! Map<String, dynamic>) return const MealPlanCache();
+      if (json.containsKey('meals')) {
+        return MealPlanCache(plan: MealPlan.fromJson(json));
+      }
+      final plan = json['plan'];
+      final preferences = json['preferences'];
+      return MealPlanCache(
+        plan: plan is Map<String, dynamic> ? _tryPlan(plan) : null,
+        preferences: preferences is String ? preferences : '',
+        mealCount: json['mealCount'] == 4 ? 4 : 3,
+      );
+    } on FormatException {
+      return const MealPlanCache();
+    }
+  }
+
+  static MealPlan? _tryPlan(Map<String, dynamic> json) {
+    try {
+      return MealPlan.fromJson(json);
+    } on FormatException {
+      return null;
+    }
+  }
+}
+
+/// Logged meals per local calendar day, kept for [keepDays] days.
+/// Persisted under `food_log_v1`.
+class FoodLog {
+  FoodLog([Map<String, List<Meal>>? days]) : days = days ?? {};
+
+  static const keepDays = 30;
+
+  /// `yyyy-mm-dd` → meals logged that day.
+  final Map<String, List<Meal>> days;
+
+  static String dayKey(DateTime day) =>
+      '${day.year.toString().padLeft(4, '0')}-'
+      '${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
+
+  List<Meal> mealsOn(DateTime day) => days[dayKey(day)] ?? const [];
+
+  void add(DateTime day, Meal meal) =>
+      days.putIfAbsent(dayKey(day), () => []).add(meal);
+
+  void replace(DateTime day, int index, Meal meal) {
+    final meals = days[dayKey(day)];
+    if (meals == null || index < 0 || index >= meals.length) return;
+    meals[index] = meal;
+  }
+
+  void removeAt(DateTime day, int index) {
+    final key = dayKey(day);
+    final meals = days[key];
+    if (meals == null || index < 0 || index >= meals.length) return;
+    meals.removeAt(index);
+    if (meals.isEmpty) days.remove(key);
+  }
+
+  /// Drops days older than the last [keepDays] days ending at [now].
+  void prune(DateTime now) {
+    final cutoff = dayKey(
+      DateTime(now.year, now.month, now.day - (keepDays - 1)),
+    );
+    // yyyy-mm-dd keys sort chronologically as strings.
+    days.removeWhere(
+      (key, meals) => key.compareTo(cutoff) < 0 || meals.isEmpty,
+    );
+  }
+
+  /// Total kcal and macros of [meals].
+  static ({int kcal, double proteinG, double carbsG, double fatG}) totals(
+    Iterable<Meal> meals,
+  ) => (
+    kcal: meals.fold(0, (sum, meal) => sum + meal.kcal),
+    proteinG: meals.fold(0, (sum, meal) => sum + meal.proteinG),
+    carbsG: meals.fold(0, (sum, meal) => sum + meal.carbsG),
+    fatG: meals.fold(0, (sum, meal) => sum + meal.fatG),
   );
+
+  Map<String, Object> toJson() => {
+    'version': 2,
+    'days': {
+      for (final entry in days.entries)
+        entry.key: [for (final meal in entry.value) meal.toJson()],
+    },
+  };
+
+  /// Never throws: malformed days or meals are dropped. Also reads the
+  /// legacy single-day format (`{date, meals}`).
+  static FoodLog decode(String? raw) {
+    final log = FoodLog();
+    if (raw == null) return log;
+    try {
+      final json = jsonDecode(raw);
+      if (json is! Map<String, dynamic>) return log;
+      final legacyDate = json['date'];
+      if (legacyDate is String) {
+        final date = DateTime.parse(legacyDate);
+        log.days[dayKey(date)] = _meals(json['meals']);
+      } else if (json['days'] case final Map<String, dynamic> days) {
+        for (final entry in days.entries) {
+          if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(entry.key)) continue;
+          log.days[entry.key] = _meals(entry.value);
+        }
+      }
+    } on FormatException {
+      // Unreadable log — start fresh.
+    }
+    log.days.removeWhere((_, meals) => meals.isEmpty);
+    return log;
+  }
+
+  static List<Meal> _meals(Object? value) {
+    final meals = <Meal>[];
+    for (final item in _list(value)) {
+      if (item is! Map<String, dynamic>) continue;
+      try {
+        meals.add(Meal.fromJson(item));
+      } on FormatException {
+        // Skip the broken entry.
+      }
+    }
+    return meals;
+  }
 }
 
 /// Calorie and macro targets derived from TDEE and the onboarding goal.
@@ -132,9 +366,8 @@ abstract final class NutritionTargets {
 abstract final class AiMealPrompt {
   static const system = '''
 You are a nutritionist generating a day meal plan as JSON. Rules:
-- Split the day into the requested meals (Breakfast, Lunch, Dinner,
-  Snack) with sensible kcal distribution (breakfast ~25%, lunch ~35%,
-  dinner ~30%, snack ~10%).
+- Split the day into exactly the requested meals, following the kcal
+  split given in the request.
 - Total calories within +/-10% of the target.
 - Every item carries realistic kcal and macro estimates (grams).
 - Use common, recognizable dish names in English.
@@ -176,6 +409,11 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
     'additionalProperties': false,
   };
 
+  /// Percent of the day's kcal per meal; always sums to 100.
+  static Map<String, int> split(int meals) => meals >= 4
+      ? const {'Breakfast': 25, 'Lunch': 35, 'Dinner': 30, 'Snack': 10}
+      : const {'Breakfast': 30, 'Lunch': 40, 'Dinner': 30};
+
   static String user({
     required int targetKcal,
     required int proteinG,
@@ -187,6 +425,14 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
       'Create a day meal plan.\nTarget: $targetKcal kcal, ~$proteinG g '
       'protein, $meals meals',
     );
+    final shares = split(meals).entries
+        .map(
+          (entry) =>
+              '${entry.key} ${entry.value}% '
+              '(~${(targetKcal * entry.value / 100).round()} kcal)',
+        )
+        .join(', ');
+    buffer.write('\nSplit: $shares');
     if (goal != null) buffer.write('\nUser goal: $goal');
     if (preferences != null && preferences.isNotEmpty) {
       buffer.write('\nPreferences/restrictions: $preferences');
@@ -242,7 +488,7 @@ abstract final class AiMealParser {
   /// identified.
   static ({Meal meal, String note}) parsePhoto(Map<String, dynamic> json) {
     final items = [
-      for (final item in json['dishes'] as List? ?? const [])
+      for (final item in _list(json['dishes']))
         if (item is Map<String, dynamic>) _item(item),
     ];
     if (items.isEmpty) {
@@ -256,7 +502,7 @@ abstract final class AiMealParser {
 
   static MealPlan parse(Map<String, dynamic> json, {required int targetKcal}) {
     final meals = [
-      for (final (index, item) in (json['meals'] as List? ?? const []).indexed)
+      for (final (index, item) in _list(json['meals']).indexed)
         if (item is Map<String, dynamic>) _meal(item, 'Meal ${index + 1}'),
     ].where((meal) => meal.items.isNotEmpty).toList();
     if (meals.isEmpty) {
@@ -273,7 +519,7 @@ abstract final class AiMealParser {
   static Meal _meal(Map<String, dynamic> json, String fallbackLabel) => Meal(
     label: _text(json['label'], fallbackLabel),
     items: [
-      for (final item in json['items'] as List? ?? const [])
+      for (final item in _list(json['items']))
         if (item is Map<String, dynamic>) _item(item),
     ],
   );

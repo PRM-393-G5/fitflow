@@ -1,29 +1,59 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../domain/models/workout.dart';
 import '../domain/models/workout_session.dart';
 import '../domain/repositories/workout_repository.dart';
+import 'seed_workouts.dart';
 
 class LocalWorkoutRepository implements WorkoutRepository {
-  LocalWorkoutRepository(this.preferences);
+  LocalWorkoutRepository(this.preferences, {this.templates = seedWorkouts});
 
   static const _workoutsKey = 'workouts_v1';
   static const _sessionsKey = 'sessions_v1';
   final SharedPreferences preferences;
 
-  @override
-  Future<List<Workout>> getWorkouts() async {
-    final raw = preferences.getString(_workoutsKey);
+  /// Bundled plans, shown until (or instead of) cloud templates.
+  final List<Workout> templates;
+
+  /// Decodes a stored JSON list item by item — one malformed record is
+  /// dropped instead of failing the whole list.
+  static List<T> decodeList<T>(
+    String? raw,
+    T Function(Map<String, dynamic>) fromJson,
+  ) {
     if (raw == null) return [];
     try {
-      return (jsonDecode(raw) as List)
-          .map((item) => Workout.fromJson(item as Map<String, dynamic>))
-          .toList();
+      final items = jsonDecode(raw);
+      if (items is! List) return [];
+      final result = <T>[];
+      for (final item in items) {
+        try {
+          result.add(fromJson(item as Map<String, dynamic>));
+        } catch (e) {
+          debugPrint('Skipping malformed record: $e');
+        }
+      }
+      return result;
     } on FormatException {
       return [];
     }
+  }
+
+  /// Workouts the user saved on this device (custom plans, AI plans).
+  Future<List<Workout>> getSavedWorkouts() async =>
+      decodeList(preferences.getString(_workoutsKey), Workout.fromJson);
+
+  @override
+  Future<List<Workout>> getWorkouts() async {
+    final saved = await getSavedWorkouts();
+    final savedIds = {for (final item in saved) item.id};
+    return [
+      ...templates.where((item) => !savedIds.contains(item.id)),
+      ...saved,
+    ];
   }
 
   @override
@@ -37,13 +67,25 @@ class LocalWorkoutRepository implements WorkoutRepository {
 
   @override
   Future<void> saveWorkout(Workout workout) async {
-    final workouts = await getWorkouts();
+    final workouts = await getSavedWorkouts();
     final index = workouts.indexWhere((item) => item.id == workout.id);
     if (index < 0) {
       workouts.add(workout);
     } else {
       workouts[index] = workout;
     }
+    await overwriteWorkouts(workouts);
+  }
+
+  @override
+  Future<void> deleteWorkout(String id) async {
+    final workouts = await getSavedWorkouts();
+    workouts.removeWhere((item) => item.id == id);
+    await overwriteWorkouts(workouts);
+  }
+
+  /// Replaces all saved workouts — used by cloud sync merges.
+  Future<void> overwriteWorkouts(List<Workout> workouts) async {
     await preferences.setString(
       _workoutsKey,
       jsonEncode(workouts.map((item) => item.toJson()).toList()),
@@ -52,17 +94,12 @@ class LocalWorkoutRepository implements WorkoutRepository {
 
   @override
   Future<List<WorkoutSession>> getRecentSessions() async {
-    final raw = preferences.getString(_sessionsKey);
-    if (raw == null) return [];
-    try {
-      final sessions = (jsonDecode(raw) as List)
-          .map((item) => WorkoutSession.fromJson(item as Map<String, dynamic>))
-          .toList();
-      sessions.sort((a, b) => b.completedAt.compareTo(a.completedAt));
-      return sessions;
-    } on FormatException {
-      return [];
-    }
+    final sessions = decodeList(
+      preferences.getString(_sessionsKey),
+      WorkoutSession.fromJson,
+    );
+    sessions.sort((a, b) => b.completedAt.compareTo(a.completedAt));
+    return sessions;
   }
 
   @override
@@ -70,10 +107,14 @@ class LocalWorkoutRepository implements WorkoutRepository {
     final sessions = await getRecentSessions();
     sessions.removeWhere((item) => item.id == session.id);
     sessions.insert(0, session);
-    await preferences.setString(
-      _sessionsKey,
-      jsonEncode(sessions.map((item) => item.toJson()).toList()),
-    );
+    await overwriteSessions(sessions);
+  }
+
+  @override
+  Future<void> deleteSession(String id) async {
+    final sessions = await getRecentSessions();
+    sessions.removeWhere((item) => item.id == id);
+    await overwriteSessions(sessions);
   }
 
   /// Replaces all stored sessions — used by cloud sync merges.

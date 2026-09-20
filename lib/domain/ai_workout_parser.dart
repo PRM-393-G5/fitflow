@@ -1,9 +1,38 @@
 import 'models/exercise.dart';
 import 'models/workout.dart';
 
+/// Muscle-group vocabulary shared by the builder picker and the AI parser.
+const workoutMuscleGroups = [
+  'Legs',
+  'Chest',
+  'Back',
+  'Shoulders',
+  'Arms',
+  'Core',
+  'Full body',
+  'Cardio',
+];
+
+/// Rough session length from the plan itself: each set is its hold time
+/// (or ~3 s per rep, at least 20 s) plus the rest after it. Used instead of
+/// any duration a user or model claims.
+Duration estimateWorkoutDuration(Iterable<Exercise> exercises) {
+  final seconds = exercises.fold<int>(0, (sum, item) {
+    final work = item.isTimed
+        ? item.durationSeconds
+        : (item.reps * 3).clamp(20, 600);
+    return sum + item.sets * (work + item.restSeconds);
+  });
+  return Duration(minutes: (seconds / 60).ceil().clamp(1, 600));
+}
+
 /// Prompt contract + parser for AI-generated workout plans.
 abstract final class AiWorkoutPrompt {
-  static const system = '''
+  /// Hard cap on parsed exercises, whatever the model returns.
+  static const maxExercises = 12;
+
+  static final system =
+      '''
 You are a fitness coach generating workout plans as JSON. Rules:
 - 4-10 exercises ordered compound -> isolation -> core/stretch last.
 - Timed holds use durationSeconds>0 and reps=0; rep exercises use
@@ -11,8 +40,7 @@ You are a fitness coach generating workout plans as JSON. Rules:
 - restSeconds 30-90 for strength work, 15-45 for cardio/mobility.
 - weightKg is 0 for bodyweight exercises.
 - Use common, recognizable exercise names in English.
-- muscleGroup is one of: Chest, Back, Legs, Shoulders, Arms, Core,
-  Full Body.
+- muscleGroup is one of: ${workoutMuscleGroups.join(', ')}.
 - level and category must come from the enums in the schema.''';
 
   /// OpenAI structured-output schema (strict mode requires every property
@@ -37,7 +65,7 @@ You are a fitness coach generating workout plans as JSON. Rules:
           'type': 'object',
           'properties': {
             'name': {'type': 'string'},
-            'muscleGroup': {'type': 'string'},
+            'muscleGroup': {'type': 'string', 'enum': workoutMuscleGroups},
             'sets': {'type': 'integer'},
             'reps': {'type': 'integer'},
             'durationSeconds': {'type': 'integer'},
@@ -92,11 +120,14 @@ abstract final class AiWorkoutParser {
   static const _categories = {'Strength', 'Cardio', 'Mobility'};
 
   static Workout parse(Map<String, dynamic> json) {
-    final rawExercises = json['exercises'] as List? ?? const [];
+    final rawExercises = json['exercises'] ?? const [];
+    if (rawExercises is! List) {
+      throw const FormatException('AI plan exercises is not a list');
+    }
     final exercises = [
       for (final (index, item) in rawExercises.indexed)
         if (item is Map<String, dynamic>) _exercise(item, index),
-    ];
+    ].take(AiWorkoutPrompt.maxExercises).toList();
     if (exercises.isEmpty) {
       throw const FormatException('AI plan has no exercises');
     }
@@ -105,9 +136,8 @@ abstract final class AiWorkoutParser {
     return Workout(
       id: 'custom-ai-${DateTime.now().microsecondsSinceEpoch}',
       name: _text(json['name'], 'AI Workout'),
-      duration: Duration(
-        minutes: _clampInt(json['durationMinutes'], 5, 120, 30),
-      ),
+      // The model's claimed minutes are ignored — estimate from the plan.
+      duration: estimateWorkoutDuration(exercises),
       level: _levels.contains(level) ? level : 'Beginner',
       category: _categories.contains(category) ? category : 'Strength',
       description: _text(json['description'], ''),
@@ -122,13 +152,21 @@ abstract final class AiWorkoutParser {
     return Exercise(
       id: 'ai-ex-$index',
       name: _text(json['name'], 'Exercise ${index + 1}'),
-      muscleGroup: _text(json['muscleGroup'], 'General'),
+      muscleGroup: _muscleGroup(json['muscleGroup']),
       sets: _clampInt(json['sets'], 1, 10, 3),
       reps: reps,
       durationSeconds: durationSeconds,
       restSeconds: _clampInt(json['restSeconds'], 15, 300, 45),
       weightKg: _clampDouble(json['weightKg'], 0, 500, 0),
     );
+  }
+
+  static String _muscleGroup(Object? value) {
+    final text = _text(value, '').toLowerCase();
+    for (final group in workoutMuscleGroups) {
+      if (group.toLowerCase() == text) return group;
+    }
+    return 'Full body';
   }
 
   static String _text(Object? value, String fallback) {

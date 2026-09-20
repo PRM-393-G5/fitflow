@@ -17,10 +17,22 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _index = 0;
+  bool _onboardingShown = false;
 
+  /// Shows onboarding once local data has loaded and any cloud merge has
+  /// finished — a returning user's synced profile must arrive first, or
+  /// they would be onboarded again (and "Skip" would overwrite it).
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final controller = AppScope.of(context);
+    if (_onboardingShown ||
+        controller.loading ||
+        controller.syncing ||
+        controller.onboardingDone) {
+      return;
+    }
+    _onboardingShown = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || AppScope.of(context).onboardingDone) return;
       Navigator.of(

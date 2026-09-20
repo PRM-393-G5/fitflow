@@ -20,19 +20,41 @@ class ReminderService {
 
   Future<void> init() async {
     tz.initializeTimeZones();
-    try {
-      final info = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(info.identifier));
-    } catch (e) {
-      debugPrint('Could not resolve local timezone, using UTC: $e');
-      tz.setLocalLocation(tz.UTC);
-    }
+    tz.setLocalLocation(await _resolveLocation());
     await _plugin.initialize(
       settings: const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
+        // Ask on iOS only when the user turns reminders on, not at launch.
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+        ),
       ),
     );
+  }
+
+  /// The device timezone; when it can't be resolved, a fixed-offset zone
+  /// matching the current UTC offset so reminders still fire at local time.
+  Future<tz.Location> _resolveLocation() async {
+    try {
+      final info = await FlutterTimezone.getLocalTimezone();
+      return tz.getLocation(info.identifier);
+    } catch (e) {
+      final offset = DateTime.now().timeZoneOffset;
+      debugPrint('Could not resolve local timezone ($e), offset $offset');
+      if (offset.inMinutes % 60 == 0) {
+        // Etc/GMT names invert the sign: UTC+7 is "Etc/GMT-7".
+        final hours = -offset.inHours;
+        final name = hours == 0
+            ? 'Etc/UTC'
+            : 'Etc/GMT${hours > 0 ? '+' : ''}$hours';
+        try {
+          return tz.getLocation(name);
+        } catch (_) {}
+      }
+      return tz.UTC;
+    }
   }
 
   Future<bool> requestPermission() async {
@@ -40,13 +62,29 @@ class ReminderService {
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
-    return await android?.requestNotificationsPermission() ?? true;
+    if (android != null) {
+      return await android.requestNotificationsPermission() ?? false;
+    }
+    final ios = _plugin
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >();
+    if (ios != null) {
+      return await ios.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          false;
+    }
+    return true;
   }
 
   /// Replaces all scheduled reminders. [days] uses weekday numbering
   /// (1 = Monday … 7 = Sunday), [minutes] is minutes since midnight.
   // ponytail: inexact scheduling avoids the USE_EXACT_ALARM permission review;
-  // alarms may fire a few minutes late and do not survive a device reboot.
+  // alarms may fire a few minutes late. Reboots are covered by the plugin's
+  // boot receiver (AndroidManifest) plus a reschedule on every app start.
   Future<void> reschedule({
     required bool enabled,
     required int minutes,
@@ -56,13 +94,19 @@ class ReminderService {
     if (!enabled) return;
     final hour = minutes ~/ 60;
     final minute = minutes % 60;
-    var id = 0;
     for (final day in days) {
       await _plugin.zonedSchedule(
-        id: id++,
+        // Stable per-weekday ids, so overlapping reschedules overwrite
+        // rather than duplicate.
+        id: day,
         title: 'Time to train',
         body: 'Your workout is waiting for you.',
-        scheduledDate: _nextInstance(day, hour, minute),
+        scheduledDate: nextInstance(
+          tz.TZDateTime.now(tz.local),
+          day,
+          hour,
+          minute,
+        ),
         notificationDetails: _channel,
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
@@ -70,19 +114,29 @@ class ReminderService {
     }
   }
 
-  tz.TZDateTime _nextInstance(int weekday, int hour, int minute) {
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduled = tz.TZDateTime(
-      tz.local,
-      now.year,
-      now.month,
-      now.day,
-      hour,
-      minute,
-    );
-    while (scheduled.weekday != weekday || !scheduled.isAfter(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
+  /// Next [weekday] at [hour]:[minute] wall-clock time after [now]. Built
+  /// from calendar fields, not by adding 24h steps, so a DST change in
+  /// between cannot shift the hour.
+  @visibleForTesting
+  static tz.TZDateTime nextInstance(
+    tz.TZDateTime now,
+    int weekday,
+    int hour,
+    int minute,
+  ) {
+    for (var offset = 0; offset <= 7; offset++) {
+      final candidate = tz.TZDateTime(
+        now.location,
+        now.year,
+        now.month,
+        now.day + offset,
+        hour,
+        minute,
+      );
+      if (candidate.weekday == weekday && candidate.isAfter(now)) {
+        return candidate;
+      }
     }
-    return scheduled;
+    throw StateError('unreachable: a weekday recurs within 8 days');
   }
 }

@@ -32,9 +32,16 @@ class StatCard extends StatelessWidget {
             child: Icon(icon, size: 20, color: colors.primary),
           ),
           const SizedBox(height: AppSpacing.md),
-          Text(value, style: textTheme.headlineSmall),
+          Text(
+            value,
+            style: textTheme.headlineSmall,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           Text(
             label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: textTheme.bodySmall?.copyWith(color: colors.mutedForeground),
           ),
         ],
