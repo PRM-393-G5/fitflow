@@ -28,22 +28,141 @@ void main() {
     expect(analyzer.repetitions, 1);
   });
 
-  test('plank analyzer flags sagging hips and times good holds', () {
-    final analyzer = PlankAnalyzer();
+  test('push-up analyzer drops a half rep when the arms leave the frame', () {
+    final analyzer = PushupAnalyzer(smoothingFactor: 1, transitionFrames: 2);
 
-    Map<SquatJoint, SquatPoint> pose(double hipY) => {
+    Map<SquatJoint, SquatPoint> pose(double wristX, double wristY) => {
       SquatJoint.leftShoulder: const SquatPoint(.3, .4),
+      SquatJoint.leftElbow: const SquatPoint(.4, .4),
+      SquatJoint.leftWrist: SquatPoint(wristX, wristY),
+      SquatJoint.leftHip: const SquatPoint(.55, .4),
+      SquatJoint.leftAnkle: const SquatPoint(.75, .4),
+    };
+
+    void frames(Map<SquatJoint, SquatPoint> value, int count) {
+      for (var i = 0; i < count; i++) {
+        analyzer.analyze(value);
+      }
+    }
+
+    frames(pose(.5, .4), 3); // top
+    frames(pose(.4, .55), 3); // bottom: depth armed
+    expect(analyzer.analyze(const {}).bodyVisible, isFalse); // arms gone
+    frames(pose(.5, .4), 3); // straight arms back in view
+    expect(analyzer.repetitions, 0);
+    frames(pose(.4, .55), 3);
+    frames(pose(.5, .4), 3);
+    expect(analyzer.repetitions, 1);
+  });
+
+  test('push-up analyzer flags sagging hips in torso lengths', () {
+    final result = PushupAnalyzer().analyze({
+      SquatJoint.leftShoulder: const SquatPoint(.3, .4),
+      SquatJoint.leftElbow: const SquatPoint(.4, .4),
+      SquatJoint.leftWrist: const SquatPoint(.5, .4),
+      // .05 below the line on a ~.25 torso: ~0.2 torso lengths.
+      SquatJoint.leftHip: const SquatPoint(.55, .45),
+      SquatJoint.leftAnkle: const SquatPoint(.75, .4),
+    });
+    expect(result.cue, 'Đừng để hông xệ');
+  });
+
+  test('push-up analyzer ignores elbow bends while standing upright', () {
+    final analyzer = PushupAnalyzer(smoothingFactor: 1, transitionFrames: 2);
+
+    // Same arm motion as a push-up, but the torso is vertical.
+    Map<SquatJoint, SquatPoint> pose(double wristX, double wristY) => {
+      SquatJoint.leftShoulder: const SquatPoint(.3, .4),
+      SquatJoint.leftElbow: const SquatPoint(.4, .4),
+      SquatJoint.leftWrist: SquatPoint(wristX, wristY),
+      SquatJoint.leftHip: const SquatPoint(.3, .7),
+      SquatJoint.leftAnkle: const SquatPoint(.3, .95),
+    };
+
+    SquatAnalysis? result;
+    for (var cycle = 0; cycle < 3; cycle++) {
+      for (var i = 0; i < 3; i++) {
+        result = analyzer.analyze(pose(.5, .4));
+      }
+      for (var i = 0; i < 3; i++) {
+        result = analyzer.analyze(pose(.4, .55));
+      }
+    }
+    expect(analyzer.repetitions, 0);
+    expect(result!.cue, 'Giữ thân nằm ngang để bắt đầu');
+  });
+
+  group('plank analyzer', () {
+    // Forearm plank: elbow under the shoulder.
+    Map<SquatJoint, SquatPoint> pose(double hipY, {double elbowY = .55}) => {
+      SquatJoint.leftShoulder: const SquatPoint(.3, .4),
+      SquatJoint.leftElbow: SquatPoint(.3, elbowY),
       SquatJoint.leftHip: SquatPoint(.55, hipY),
       SquatJoint.leftAnkle: const SquatPoint(.75, .4),
     };
 
-    var result = analyzer.analyze(pose(.4), timestampUs: 1000000);
-    expect(result.bodyVisible, isTrue);
-    expect(result.score, greaterThan(90));
-    result = analyzer.analyze(pose(.4), timestampUs: 3000000);
-    expect(result.repetitions, 2);
-    result = analyzer.analyze(pose(.5), timestampUs: 4000000);
-    expect(result.cue, 'Đừng để hông xệ');
-    expect(result.repetitions, 2);
+    /// Feeds [count] frames 100ms apart, starting after [startUs].
+    int hold(
+      PlankAnalyzer analyzer,
+      Map<SquatJoint, SquatPoint> value,
+      int startUs,
+      int count,
+    ) {
+      var us = startUs;
+      for (var i = 0; i < count; i++) {
+        us += 100000;
+        analyzer.analyze(value, timestampUs: us);
+      }
+      return us;
+    }
+
+    test('flags sagging hips and times good holds', () {
+      final analyzer = PlankAnalyzer();
+      final first = analyzer.analyze(pose(.4), timestampUs: 0);
+      expect(first.bodyVisible, isTrue);
+      expect(first.score, greaterThan(90));
+      final us = hold(analyzer, pose(.4), 0, 20);
+      expect(analyzer.repetitions, 2);
+      final sag = analyzer.analyze(pose(.5), timestampUs: us + 100000);
+      expect(sag.cue, 'Đừng để hông xệ');
+      expect(sag.repetitions, 2);
+    });
+
+    test('keeps the hold time when the body briefly drops out', () {
+      final analyzer = PlankAnalyzer();
+      final us = hold(analyzer, pose(.4), 0, 21);
+      expect(analyzer.repetitions, 2);
+      final lost = analyzer.analyze(const {}, timestampUs: us + 100000);
+      expect(lost.bodyVisible, isFalse);
+      expect(lost.repetitions, 2);
+    });
+
+    test('does not credit a long gap (pause/background) as hold time', () {
+      final analyzer = PlankAnalyzer();
+      var us = hold(analyzer, pose(.4), 0, 11); // 1.1s
+      expect(analyzer.repetitions, 1);
+      us += 30000000; // 30s without frames
+      analyzer.analyze(pose(.4), timestampUs: us);
+      expect(analyzer.repetitions, 1);
+      hold(analyzer, pose(.4), us, 10); // +1s of real holding
+      expect(analyzer.repetitions, 2);
+    });
+
+    test('pauseTiming drops the anchor even for a short gap', () {
+      final analyzer = PlankAnalyzer();
+      final us = hold(analyzer, pose(.4), 0, 9); // 0.9s
+      analyzer.pauseTiming();
+      // 0.4s later — under the gap cap, but it spans a pause.
+      hold(analyzer, pose(.4), us + 300000, 1);
+      expect(analyzer.repetitions, 0);
+    });
+
+    test('lying flat with arms level with the shoulders is not a plank', () {
+      final analyzer = PlankAnalyzer();
+      final result = analyzer.analyze(pose(.4, elbowY: .42), timestampUs: 0);
+      expect(result.bodyVisible, isFalse);
+      hold(analyzer, pose(.4, elbowY: .42), 0, 30);
+      expect(analyzer.repetitions, 0);
+    });
   });
 }

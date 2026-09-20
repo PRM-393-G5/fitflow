@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prm/domain/meal_plan.dart';
 
@@ -121,5 +123,83 @@ void main() {
     final kcal = protein * 4 + carbs * 4 + fat * 9;
 
     expect((kcal - target).abs(), lessThan(50));
+  });
+
+  test('meal split sums to 100% with and without a snack', () {
+    for (final meals in [3, 4]) {
+      final split = AiMealPrompt.split(meals);
+      expect(split.length, meals);
+      expect(split.values.fold(0, (a, b) => a + b), 100);
+    }
+    expect(
+      AiMealPrompt.user(targetKcal: 2000, proteinG: 120, meals: 3),
+      contains('Lunch 40% (~800 kcal)'),
+    );
+  });
+
+  test('malformed AI and cached JSON raise FormatException, not TypeError', () {
+    expect(
+      () => AiMealParser.parse({'meals': 'oops'}, targetKcal: 2000),
+      throwsFormatException,
+    );
+    expect(
+      () => AiMealParser.parsePhoto({'dishes': 42}),
+      throwsFormatException,
+    );
+    expect(
+      () => MealPlan.fromJson({'date': 7, 'meals': []}),
+      throwsFormatException,
+    );
+    final meal = Meal.fromJson({
+      'label': 'Lunch',
+      'items': [
+        {'kcal': 300},
+        {'name': 'Rice', 'kcal': 'many'},
+      ],
+    });
+    expect(meal.items.single.name, 'Rice');
+    expect(meal.items.single.kcal, 0);
+  });
+
+  test('plan cache keeps settings and reads the legacy bare-plan format', () {
+    final original = AiMealParser.parse(plan(), targetKcal: 2000);
+    final legacy = MealPlanCache.decode(jsonEncode(original.toJson()));
+    expect(legacy.plan!.targetKcal, 2000);
+    expect(legacy.mealCount, 3);
+
+    final cache = MealPlanCache(
+      plan: original,
+      preferences: 'vegetarian',
+      mealCount: 4,
+    );
+    final decoded = MealPlanCache.decode(jsonEncode(cache.toJson()));
+    expect(decoded.plan!.meals.single.label, 'Breakfast');
+    expect(decoded.preferences, 'vegetarian');
+    expect(decoded.mealCount, 4);
+
+    expect(MealPlanCache.decode('not json').plan, isNull);
+    expect(MealPlanCache.decode('[1, 2]').mealCount, 3);
+  });
+
+  test('portion edits rescale kcal and macros', () {
+    const meal = Meal(
+      label: 'Lunch',
+      items: [
+        MealItem(name: 'Rice', kcal: 200, carbsG: 44),
+        MealItem(name: 'Chicken', kcal: 165, proteinG: 31),
+      ],
+    );
+
+    final doubled = meal.withKcal(730);
+    expect(doubled.kcal, 730);
+    expect(doubled.proteinG, closeTo(62, 0.01));
+    expect(doubled.carbsG, closeTo(88, 0.01));
+    expect(meal.withKcal(101).kcal, 101);
+
+    const empty = Meal(
+      label: 'x',
+      items: [MealItem(name: 'Tea', kcal: 0)],
+    );
+    expect(empty.withKcal(30).kcal, 30);
   });
 }

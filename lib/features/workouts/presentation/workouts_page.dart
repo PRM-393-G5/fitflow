@@ -18,33 +18,87 @@ class WorkoutsPage extends StatefulWidget {
 }
 
 class _WorkoutsPageState extends State<WorkoutsPage> {
-  String _query = '';
-  String _category = 'All';
-  bool _appliedGoal = false;
+  static const _all = 'All';
+  static const _levels = ['Beginner', 'Intermediate', 'Advanced'];
+
+  final _searchCtrl = TextEditingController();
+  String _category = _all;
+  String _level = _all;
+
+  /// The onboarding goal last applied as the category filter. The filter
+  /// follows goal changes (including onboarding finishing after the first
+  /// build) without overriding a choice the user made since.
+  String? _appliedGoal;
+
+  String get _query => _searchCtrl.text.trim().toLowerCase();
+  bool get _filtered =>
+      _query.isNotEmpty || _category != _all || _level != _all;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(() => setState(() {}));
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_appliedGoal) return;
-    _appliedGoal = true;
     final goal = AppScope.of(context).goal;
+    if (goal == _appliedGoal) return;
+    _appliedGoal = goal;
     if (goal != null) _category = goal;
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _clearFilters() => setState(() {
+    _searchCtrl.clear();
+    _category = _all;
+    _level = _all;
+  });
+
+  bool _matches(Workout workout) {
+    if (_category != _all && workout.category != _category) return false;
+    if (_level != _all && workout.level != _level) return false;
+    final query = _query;
+    if (query.isEmpty) return true;
+    return [
+      workout.name,
+      workout.category,
+      workout.level,
+      for (final exercise in workout.exercises) ...[
+        exercise.name,
+        exercise.muscleGroup,
+      ],
+    ].any((text) => text.toLowerCase().contains(query));
+  }
+
+  /// Opens the builder or AI page; a newly saved plan comes back as the
+  /// result, so show it instead of letting the filters hide it.
+  Future<void> _create(Widget page) async {
+    final saved = await Navigator.of(context)
+        .push(MaterialPageRoute<Workout>(builder: (_) => page));
+    if (saved == null || !mounted) return;
+    setState(() {
+      _searchCtrl.clear();
+      _category = saved.category;
+      _level = _all;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final textTheme = Theme.of(context).textTheme;
-    final workouts = controller.workouts.where((workout) {
-      final queryMatches = workout.name.toLowerCase().contains(
-        _query.toLowerCase(),
-      );
-      return queryMatches &&
-          (_category == 'All' || workout.category == _category);
-    }).toList();
+    final workouts = controller.workouts.where(_matches).toList();
     final categories = {
-      'All',
+      _all,
       ...controller.workouts.map((item) => item.category),
+      _category,
     };
 
     return ResponsiveContent(
@@ -59,10 +113,9 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
             children: [
               Expanded(
                 child: FTextField(
-                  hint: 'Search workouts',
-                  control: .managed(
-                    onChange: (value) => setState(() => _query = value.text),
-                  ),
+                  key: const Key('workout-search'),
+                  hint: 'Search plans, exercises, muscles',
+                  control: .managed(controller: _searchCtrl),
                   prefixBuilder: (context, style, variants) =>
                       FTextField.prefixIconBuilder(
                         context,
@@ -76,47 +129,65 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
               FButton.icon(
                 key: const Key('open-ai-workout'),
                 variant: .secondary,
-                onPress: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AiWorkoutPage(),
-                  ),
-                ),
+                onPress: () => _create(const AiWorkoutPage()),
                 child: const Icon(FLucideIcons.sparkles),
               ),
               const SizedBox(width: AppSpacing.sm),
               FButton.icon(
                 key: const Key('open-workout-builder'),
-                onPress: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const WorkoutBuilderPage(),
-                  ),
-                ),
+                onPress: () => _create(const WorkoutBuilderPage()),
                 child: const Icon(FLucideIcons.plus),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: categories
-                  .map(
-                    (category) => Padding(
-                      padding: const EdgeInsets.only(right: AppSpacing.sm),
-                      child: FButton(
-                        variant: _category == category ? .primary : .outline,
-                        size: .sm,
-                        onPress: () => setState(() => _category = category),
-                        child: Text(category),
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
+          _chips(
+            categories,
+            _category,
+            (value) => setState(() => _category = value),
           ),
+          const SizedBox(height: AppSpacing.sm),
+          _chips(
+            {_all, ..._levels},
+            _level,
+            (value) => setState(() => _level = value),
+            labelFor: (value) => value == _all ? 'All levels' : value,
+          ),
+          if (_filtered) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${workouts.length} of ${controller.workouts.length} plans'
+                    '${_category != _all && _category == controller.goal ? ' • filtered by your goal' : ''}',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: context.theme.colors.mutedForeground,
+                    ),
+                  ),
+                ),
+                FButton(
+                  key: const Key('clear-workout-filters'),
+                  variant: .ghost,
+                  size: .sm,
+                  mainAxisSize: .min,
+                  onPress: _clearFilters,
+                  prefix: const Icon(FLucideIcons.x),
+                  child: const Text('Clear filters'),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           if (controller.error != null)
             _Message(icon: FLucideIcons.circleAlert, text: controller.error!)
+          else if (controller.loading && controller.workouts.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(AppSpacing.xl),
+                child: FCircularProgress(),
+              ),
+            )
           else if (workouts.isEmpty)
             const _Message(
               icon: FLucideIcons.searchX,
@@ -145,6 +216,29 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
       ),
     );
   }
+
+  Widget _chips(
+    Iterable<String> values,
+    String selected,
+    ValueChanged<String> onSelect, {
+    String Function(String value)? labelFor,
+  }) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: Row(
+      children: [
+        for (final value in values)
+          Padding(
+            padding: const EdgeInsets.only(right: AppSpacing.sm),
+            child: FButton(
+              variant: selected == value ? .primary : .outline,
+              size: .sm,
+              onPress: () => onSelect(value),
+              child: Text(labelFor?.call(value) ?? value),
+            ),
+          ),
+      ],
+    ),
+  );
 }
 
 class _WorkoutCard extends StatelessWidget {

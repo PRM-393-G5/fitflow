@@ -39,7 +39,7 @@ void main() {
     });
     final preferences = await SharedPreferences.getInstance();
     final controller = AppController(
-      LocalWorkoutRepository(preferences),
+      LocalWorkoutRepository(preferences, templates: const []),
       preferences,
     );
     await controller.load();
@@ -89,7 +89,7 @@ void main() {
     SharedPreferences.setMockInitialValues({'onboarding_v1': '{"done":true}'});
     final preferences = await SharedPreferences.getInstance();
     final controller = AppController(
-      LocalWorkoutRepository(preferences),
+      LocalWorkoutRepository(preferences, templates: const []),
       preferences,
     );
     await controller.load();

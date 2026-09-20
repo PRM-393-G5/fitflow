@@ -46,7 +46,8 @@ class SchedulePage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Assign a plan to each day. Home shows today\u2019s pick.',
+              'Assign a plan or a rest day to each day. Home shows '
+              'today\u2019s pick.',
             ),
             const SizedBox(height: AppSpacing.md),
             Row(
@@ -61,8 +62,9 @@ class SchedulePage extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
-            Row(
+            Wrap(
               spacing: AppSpacing.md,
+              runSpacing: AppSpacing.xs,
               children: [
                 for (final category in _categoryIcons.keys)
                   _Legend(
@@ -70,6 +72,11 @@ class SchedulePage extends StatelessWidget {
                     color: _categoryColors[category]!,
                     label: category,
                   ),
+                _Legend(
+                  icon: FLucideIcons.moon,
+                  color: context.theme.colors.mutedForeground,
+                  label: 'Rest',
+                ),
               ],
             ),
           ],
@@ -90,26 +97,48 @@ class _DayCell extends StatelessWidget {
   final String label;
   final AppController controller;
 
+  /// The assigned plan id, or null when unassigned — including stale ids
+  /// whose plan no longer exists.
+  String? get _assignedId {
+    if (controller.isRestDay(weekday)) return null;
+    return controller.scheduledWorkout(weekday)?.id;
+  }
+
   Future<void> _pick(BuildContext context) {
     final colors = context.theme.colors;
+    final rest = controller.isRestDay(weekday);
+    final assigned = _assignedId;
+    Widget? check(bool selected) =>
+        selected ? Icon(FLucideIcons.check, color: colors.primary) : null;
+    void choose(String? value) {
+      controller.setScheduleDay(weekday, value);
+      Navigator.of(context).pop();
+    }
+
     return showAppDialog<void>(
       context: context,
       title: SchedulePage._dayNames[weekday - 1],
       body: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 320),
+        constraints: const BoxConstraints(maxHeight: 360),
         child: SingleChildScrollView(
           child: FTileGroup(
             children: [
               FTile(
+                key: const Key('schedule-rest'),
                 prefix: Icon(FLucideIcons.moon, color: colors.mutedForeground),
-                title: const Text('Rest'),
-                suffix: controller.schedule[weekday] == null
-                    ? Icon(FLucideIcons.check, color: colors.primary)
-                    : null,
-                onPress: () {
-                  controller.setScheduleDay(weekday, null);
-                  Navigator.of(context).pop();
-                },
+                title: const Text('Rest day'),
+                suffix: check(rest),
+                onPress: () => choose(AppController.restDay),
+              ),
+              FTile(
+                key: const Key('schedule-unassigned'),
+                prefix: Icon(
+                  FLucideIcons.circleMinus,
+                  color: colors.mutedForeground,
+                ),
+                title: const Text('Unassigned'),
+                suffix: check(!rest && assigned == null),
+                onPress: () => choose(null),
               ),
               for (final workout in controller.workouts)
                 FTile(
@@ -121,13 +150,8 @@ class _DayCell extends StatelessWidget {
                         colors.primary,
                   ),
                   title: Text(workout.name),
-                  suffix: controller.schedule[weekday] == workout.id
-                      ? Icon(FLucideIcons.check, color: colors.primary)
-                      : null,
-                  onPress: () {
-                    controller.setScheduleDay(weekday, workout.id);
-                    Navigator.of(context).pop();
-                  },
+                  suffix: check(assigned == workout.id),
+                  onPress: () => choose(workout.id),
                 ),
             ],
           ),
@@ -139,46 +163,80 @@ class _DayCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.theme.colors;
-    final workout = controller.scheduledWorkout(weekday);
+    final textTheme = Theme.of(context).textTheme;
+    final rest = controller.isRestDay(weekday);
+    final workout = rest ? null : controller.scheduledWorkout(weekday);
     final color =
         SchedulePage._categoryColors[workout?.category] ?? colors.primary;
     final isToday = DateTime.now().weekday == weekday;
+    final foreground = workout == null ? colors.mutedForeground : color;
+    final IconData icon;
+    final String text;
+    if (workout != null) {
+      icon =
+          SchedulePage._categoryIcons[workout.category] ??
+          FLucideIcons.dumbbell;
+      text = workout.name;
+    } else if (rest) {
+      icon = FLucideIcons.moon;
+      text = 'Rest';
+    } else {
+      icon = FLucideIcons.plus;
+      text = 'Unassigned';
+    }
     return Expanded(
-      child: FTappable(
-        onPress: () => _pick(context),
-        child: Column(
-          children: [
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: isToday ? .bold : null,
-                color: isToday ? color : colors.mutedForeground,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Container(
-              height: 44,
-              decoration: BoxDecoration(
-                color: workout == null
-                    ? colors.muted
-                    : color.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(10),
-                border: isToday
-                    ? Border.all(color: color, width: 1.5)
-                    : Border.all(color: colors.border),
-              ),
-              child: Center(
-                child: Icon(
-                  workout == null
-                      ? FLucideIcons.moon
-                      : (SchedulePage._categoryIcons[workout.category] ??
-                            FLucideIcons.dumbbell),
-                  size: 18,
-                  color: workout == null ? colors.mutedForeground : color,
+      child: Semantics(
+        button: true,
+        label: '${SchedulePage._dayNames[weekday - 1]}: $text',
+        excludeSemantics: true,
+        child: FTappable(
+          onPress: () => _pick(context),
+          child: Column(
+            children: [
+              Text(
+                label,
+                style: textTheme.labelSmall?.copyWith(
+                  fontWeight: isToday ? .bold : null,
+                  color: isToday ? color : colors.mutedForeground,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: AppSpacing.xs),
+              Container(
+                height: 76,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 2,
+                  vertical: AppSpacing.xs,
+                ),
+                decoration: BoxDecoration(
+                  color: workout == null
+                      ? colors.muted
+                      : color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                  border: isToday
+                      ? Border.all(color: color, width: 1.5)
+                      : Border.all(color: colors.border),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 16, color: foreground),
+                    const SizedBox(height: 2),
+                    Text(
+                      text,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.labelSmall?.copyWith(
+                        fontSize: 9,
+                        height: 1.1,
+                        color: foreground,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -194,6 +252,7 @@ class _Legend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
     spacing: 4,
     children: [
       Icon(icon, size: 14, color: color),

@@ -9,7 +9,7 @@ void main() {
   test('persists workouts and completed sessions across instances', () async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
-    final repository = LocalWorkoutRepository(preferences);
+    final repository = LocalWorkoutRepository(preferences, templates: const []);
 
     await repository.saveWorkout(
       const Workout(
@@ -47,10 +47,20 @@ void main() {
       ),
     );
 
-    final reloaded = LocalWorkoutRepository(preferences);
+    final reloaded = LocalWorkoutRepository(preferences, templates: const []);
     final sessions = await reloaded.getRecentSessions();
     expect(sessions, hasLength(1));
     expect(sessions.single.workoutName, workouts.first.name);
     expect(sessions.single.volumeKg, 960);
+  });
+
+  test('bundled templates show alongside saved workouts', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final repository = LocalWorkoutRepository(preferences);
+
+    final workouts = await repository.getWorkouts();
+    expect(workouts, isNotEmpty);
+    expect(await repository.getSavedWorkouts(), isEmpty);
   });
 }

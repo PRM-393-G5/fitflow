@@ -5,9 +5,17 @@ import 'squat_analyzer.dart';
 /// Plank hold timer: scores how straight the shoulder-hip-ankle line is and
 /// accumulates the seconds the body holds good form.
 class PlankAnalyzer implements RepAnalyzer {
-  PlankAnalyzer({this.minimumConfidence = 0.55});
+  PlankAnalyzer({this.minimumConfidence = 0.55, this.maxFrameGapUs = 500000});
 
   final double minimumConfidence;
+
+  /// Longest frame-to-frame gap credited as hold time. Larger gaps (pause,
+  /// camera switch, app background) are skipped instead of counted.
+  final int maxFrameGapUs;
+
+  /// Hip offset from the shoulder-ankle line, in torso lengths, beyond which
+  /// the hips count as sagging or piking. Matches the score's 70 cut-off.
+  static const _hipTolerance = 0.15;
 
   int _goodHoldUs = 0;
   int? _lastTimestampUs;
@@ -27,6 +35,9 @@ class PlankAnalyzer implements RepAnalyzer {
   }
 
   @override
+  void pauseTiming() => _lastTimestampUs = null;
+
+  @override
   SquatAnalysis analyze(
     Map<SquatJoint, SquatPoint> points, {
     int? timestampUs,
@@ -35,30 +46,42 @@ class PlankAnalyzer implements RepAnalyzer {
     final offset = side == null ? null : _hipOffset(points, side);
     if (side == null || offset == null) {
       _lastTimestampUs = timestampUs;
-      return const SquatAnalysis(
+      // Keep the accumulated hold: a dropped frame must not flash 0.
+      return SquatAnalysis(
         phase: SquatPhase.findingBody,
-        repetitions: 0,
+        repetitions: repetitions,
         score: 0,
         cue: 'Lùi ra để thấy toàn thân',
         bodyVisible: false,
       );
     }
+    if (!_supported(points, side)) {
+      _lastTimestampUs = timestampUs;
+      return SquatAnalysis(
+        phase: SquatPhase.findingBody,
+        repetitions: repetitions,
+        score: 0,
+        cue: 'Chống khuỷu tay dưới vai',
+        bodyVisible: false,
+      );
+    }
 
-    final score = (100 - offset.abs() * 500).round().clamp(0, 100);
+    final score = (100 - offset.abs() * 200).round().clamp(0, 100);
     final good = score >= 70;
     final previousUs = _lastTimestampUs;
     _lastTimestampUs = timestampUs;
     if (good && previousUs != null && timestampUs != null) {
-      _goodHoldUs += timestampUs - previousUs;
+      final gapUs = timestampUs - previousUs;
+      if (gapUs > 0 && gapUs <= maxFrameGapUs) _goodHoldUs += gapUs;
     }
 
     return SquatAnalysis(
       phase: SquatPhase.standing,
       repetitions: repetitions,
       score: score,
-      cue: offset > 0.06
+      cue: offset > _hipTolerance
           ? 'Đừng để hông xệ'
-          : offset < -0.06
+          : offset < -_hipTolerance
           ? 'Hạ hông thấp hơn'
           : 'Tốt lắm, giữ nguyên',
       bodyVisible: true,
@@ -81,10 +104,37 @@ class PlankAnalyzer implements RepAnalyzer {
     }
     final spanX = ankle.x - shoulder.x;
     if (spanX.abs() < 0.15) return null;
+    final torso = _distance(shoulder, hip);
+    if (torso == 0) return null;
     final expectedY =
         shoulder.y + (hip.x - shoulder.x) / spanX * (ankle.y - shoulder.y);
-    return hip.y - expectedY;
+    return (hip.y - expectedY) / torso;
   }
+
+  /// Body held up on the arms: a confident elbow or wrist on the tracked
+  /// side sits clearly below the shoulder. Rejects lying flat on the floor,
+  /// where the arms rest level with the shoulders.
+  bool _supported(
+    Map<SquatJoint, SquatPoint> points,
+    (SquatJoint, SquatJoint, SquatJoint) side,
+  ) {
+    final shoulder = points[side.$1]!;
+    final margin = _distance(shoulder, points[side.$2]!) * 0.35;
+    final arm = side.$1 == SquatJoint.leftShoulder
+        ? const [SquatJoint.leftElbow, SquatJoint.leftWrist]
+        : const [SquatJoint.rightElbow, SquatJoint.rightWrist];
+    return arm
+        .map((joint) => points[joint])
+        .any(
+          (point) =>
+              point != null &&
+              point.confidence >= minimumConfidence &&
+              point.y - shoulder.y > margin,
+        );
+  }
+
+  static double _distance(SquatPoint a, SquatPoint b) =>
+      math.sqrt(math.pow(a.x - b.x, 2) + math.pow(a.y - b.y, 2));
 
   (SquatJoint, SquatJoint, SquatJoint)? _bestSide(
     Map<SquatJoint, SquatPoint> points,

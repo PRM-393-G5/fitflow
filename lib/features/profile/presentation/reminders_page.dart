@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
@@ -38,7 +39,30 @@ class RemindersPage extends StatelessWidget {
                   subtitle: const Text('Get nudged on your training days'),
                   suffix: FSwitch(
                     value: controller.reminderEnabled,
-                    onChange: (value) => controller.setReminder(enabled: value),
+                    onChange: (value) async {
+                      final granted = await controller.setReminder(
+                        enabled: value,
+                      );
+                      if (!granted && context.mounted) {
+                        showFToast(
+                          context: context,
+                          title: const Text('Notifications are blocked'),
+                          description: const Text(
+                            'Allow notifications for FitFlow in system '
+                            'settings to get reminders.',
+                          ),
+                          suffixBuilder: (context, entry) => FButton(
+                            size: .sm,
+                            mainAxisSize: .min,
+                            onPress: () {
+                              entry.dismiss();
+                              openAppSettings();
+                            },
+                            child: const Text('Settings'),
+                          ),
+                        );
+                      }
+                    },
                   ),
                 ),
                 FTile(
@@ -106,17 +130,37 @@ class RemindersPage extends StatelessWidget {
                         mainAxisSize: .min,
                         onPress: !controller.reminderEnabled
                             ? null
-                            : () {
-                                final days = {...controller.reminderDays};
-                                controller.reminderDays.contains(index + 1)
-                                    ? days.remove(index + 1)
-                                    : days.add(index + 1);
-                                controller.setReminder(days: days);
-                              },
+                            : () => controller.toggleReminderDay(index + 1),
                         child: Text(_dayLabels[index]),
                       ),
                     ),
                   ),
+                  if (controller.reminderEnabled &&
+                      controller.reminderDays.isEmpty) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Pick at least one day — no reminders are scheduled.',
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: context.theme.colors.destructive),
+                    ),
+                  ],
+                  if (controller.reminderEnabled &&
+                      controller.schedule.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    FButton(
+                      variant: .ghost,
+                      size: .sm,
+                      mainAxisSize: .min,
+                      prefix: const Icon(FLucideIcons.calendarDays),
+                      onPress: () => controller.setReminder(
+                        days: {
+                          for (final day in controller.schedule.keys)
+                            if (controller.scheduledWorkout(day) != null) day,
+                        },
+                      ),
+                      child: const Text('Match my weekly schedule'),
+                    ),
+                  ],
                 ],
               ),
             ),

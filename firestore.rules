@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Workout templates are public read-only; each user can only read and
+// write their own subtree under users/{uid}.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /workouts/{workoutId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      match /{collection}/{docId} {
+        allow read, write: if request.auth != null
+          && request.auth.uid == uid
+          && collection in ['sessions', 'workouts', 'weights'];
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

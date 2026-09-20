@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/auth_service.dart';
 import '../data/firestore_workout_repository.dart';
+import '../data/local_workout_repository.dart';
 import '../data/reminder_service.dart';
 import '../domain/models/body_weight_entry.dart';
 import '../domain/models/workout.dart';
@@ -25,6 +26,27 @@ class AppController extends ChangeNotifier {
   static const _weeklyGoalKey = 'weekly_goal_v1';
   static const _metaTsKey = 'meta_updated_at';
   static const _syncUidKey = 'sync_uid';
+  static const _metaPulledKey = 'meta_pulled_uid';
+  static const _skipSignInKey = 'sign_in_skipped_v1';
+
+  /// Feature-owned keys holding per-user data (nutrition cache and food
+  /// log); wiped with the rest of the user's data on account changes.
+  static const featureUserKeys = ['meal_plan_v1', 'food_log_v1'];
+
+  /// Schedule value marking a deliberate rest day (vs. an unassigned day).
+  static const restDay = 'rest';
+
+  static const _userKeys = [
+    _weightsKey,
+    _profileKey,
+    _scheduleKey,
+    _onboardingKey,
+    _weeklyGoalKey,
+    _metaTsKey,
+    _metaPulledKey,
+    ...featureUserKeys,
+  ];
+
   final WorkoutRepository repository;
   final SharedPreferences preferences;
   final ReminderService? reminders;
@@ -37,6 +59,14 @@ class AppController extends ChangeNotifier {
   bool useMetric = true;
   bool loading = true;
   String? error;
+
+  /// True while a background cloud merge runs; onboarding waits for it so
+  /// a returning user's cloud profile arrives before deciding to show it.
+  bool syncing = false;
+
+  /// Bumped whenever the user's data is wiped (sign-out, account switch,
+  /// import) so pages caching feature data can reload it.
+  int dataEpoch = 0;
 
   bool reminderEnabled = false;
   int reminderMinutes = 18 * 60;
@@ -55,37 +85,97 @@ class AppController extends ChangeNotifier {
 
   int weeklyGoal = 3;
 
-  Future<void> load() async {
+  /// The user chose to use the app without an account.
+  bool get signInSkipped => preferences.getBool(_skipSignInKey) ?? false;
+
+  bool get signedIn {
+    final repo = repository;
+    return repo is FirestoreWorkoutRepository && repo.signedIn;
+  }
+
+  Future<void>? _loadChain;
+  Future<void>? _reminderChain;
+
+  /// Loads everything from local storage, then merges with the cloud in
+  /// the background. Calls are serialized — an auth change can trigger a
+  /// load while another one is still running.
+  Future<void> load() {
+    final next = (_loadChain ?? Future<void>.value()).then((_) => _load());
+    _loadChain = next.catchError((Object _) {});
+    return next;
+  }
+
+  Future<void> _load() async {
     loading = true;
     error = null;
     try {
       await _guardAccountSwitch();
+    } catch (e) {
+      debugPrint('Account switch check failed: $e');
+    }
+    // Settings and per-user state decode independently of the workout
+    // data, so a bad record in one cannot reset the others.
+    themeMode = ThemeMode.values.firstWhere(
+      (mode) => mode.name == preferences.getString(_themeKey),
+      orElse: () => ThemeMode.system,
+    );
+    useMetric = preferences.getBool(_unitKey) ?? true;
+    _decodeReminder();
+    try {
       workouts = await repository.getWorkouts();
       sessions = await repository.getRecentSessions();
-      themeMode = ThemeMode.values.firstWhere(
-        (mode) => mode.name == preferences.getString(_themeKey),
-        orElse: () => ThemeMode.system,
-      );
-      useMetric = preferences.getBool(_unitKey) ?? true;
-      weightEntries = _decodeWeights();
-      _decodeReminder();
-      _decodeProfile();
-      _decodeSchedule();
-      _decodeOnboarding();
-      weeklyGoal = preferences.getInt(_weeklyGoalKey) ?? 3;
-      unawaited(_syncMeta());
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Local load failed: $e');
       error = 'Could not load your local data.';
-    } finally {
-      loading = false;
-      notifyListeners();
     }
+    _decodeUserState();
+    loading = false;
+    notifyListeners();
+    unawaited(_restoreReminders());
+    unawaited(sync());
+  }
+
+  /// Resets the per-user fields to defaults, then decodes stored values.
+  void _decodeUserState() {
+    weightEntries = _decodeWeights();
+    heightCm = null;
+    age = null;
+    isMale = true;
+    activityLevel = 1;
+    schedule = {};
+    onboardingDone = false;
+    goal = null;
+    level = null;
+    for (final decode in [_decodeProfile, _decodeSchedule, _decodeOnboarding]) {
+      try {
+        decode();
+      } catch (e) {
+        debugPrint('Skipping malformed stored state: $e');
+      }
+    }
+    weeklyGoal = preferences.getInt(_weeklyGoalKey) ?? 3;
+  }
+
+  /// Wipes the user's local data (not settings) and the in-memory copy.
+  Future<void> _clearUserData() async {
+    for (final key in _userKeys) {
+      await preferences.remove(key);
+    }
+    final repo = repository;
+    if (repo is FirestoreWorkoutRepository) {
+      await repo.clearLocalData();
+    } else if (repo is LocalWorkoutRepository) {
+      await repo.clearAll();
+    }
+    sessions = [];
+    _decodeUserState();
+    dataEpoch++;
   }
 
   /// When the signed-in account changes on this device, drop the previous
   /// account's synced local data first — otherwise it would merge into and
-  /// upload to the new account's cloud. The previous account loses nothing:
-  /// its data already lives under `users/{oldUid}`.
+  /// upload to the new account's cloud. Sign-out flushes and clears data
+  /// itself, so this only catches switches that bypassed it.
   Future<void> _guardAccountSwitch() async {
     final repo = repository;
     if (repo is! FirestoreWorkoutRepository) return;
@@ -93,46 +183,127 @@ class AppController extends ChangeNotifier {
     if (uid == null) return;
     final lastUid = preferences.getString(_syncUidKey);
     if (lastUid == uid) return;
-    if (lastUid != null) {
-      for (final key in [
-        _weightsKey,
-        _profileKey,
-        _scheduleKey,
-        _onboardingKey,
-        _weeklyGoalKey,
-        _metaTsKey,
-      ]) {
-        await preferences.remove(key);
-      }
-      await repo.clearLocalData();
-    }
-    // lastUid == null → first sync since the feature shipped: keep the
-    // existing local data so it uploads to this account.
+    if (lastUid != null) await _clearUserData();
+    // lastUid == null → data created signed out (guest): keep it so it
+    // uploads to this account. Its sessions/plans/weights merge by id; an
+    // existing cloud profile wins (see [_mergeMeta]).
     await preferences.setString(_syncUidKey, uid);
   }
 
-  /// Last-write-wins meta sync (weights, profile, schedule, onboarding,
-  /// weekly goal) against the `users/{uid}` doc. Runs in the background —
-  /// the server-source pull must not stall startup when offline. Skipped
-  /// when signed out; local data stays and the next launch retries.
-  Future<void> _syncMeta() async {
+  /// Background cloud merge of workouts, sessions, weights and meta.
+  /// Each network step is followed by a check that the account (and its
+  /// data) is still the one the sync started for — a sign-out or account
+  /// switch mid-sync must not write the old account's data back. Results
+  /// are reconciled with edits made in the meantime, then stored.
+  Future<void> sync() async {
     final repo = repository;
-    if (repo is! FirestoreWorkoutRepository || !repo.signedIn) return;
+    if (repo is! FirestoreWorkoutRepository || !repo.signedIn || syncing) {
+      return;
+    }
+    final uid = repo.uid;
+    final epoch = dataEpoch;
+    bool stale() => dataEpoch != epoch || repo.uid != uid;
+    syncing = true;
+    notifyListeners();
     try {
-      final remote = await repo.pullMeta();
-      final localTs = preferences.getInt(_metaTsKey) ?? 0;
-      final remoteTs = remote?['updatedAt'] as int? ?? 0;
-      if (remote != null && remoteTs > localTs) {
-        await _applyRemoteMeta(remote);
-        notifyListeners();
-      } else if (remoteTs < localTs || remote == null) {
-        await _pushMeta();
+      await repo.refreshTemplates();
+      if (stale()) return;
+
+      final customBefore = workouts.where(isCustomWorkout).toList();
+      final mergedWorkouts = await repo.syncDocs(
+        'workouts',
+        customBefore.map((item) => item.toJson()).toList(),
+      );
+      if (stale()) return;
+      final custom = mergedWorkouts == null
+          ? workouts.where(isCustomWorkout).toList()
+          : FirestoreWorkoutRepository.reconcile(
+              LocalWorkoutRepository.decodeList(
+                jsonEncode(mergedWorkouts),
+                Workout.fromJson,
+              ),
+              customBefore,
+              workouts.where(isCustomWorkout).toList(),
+              (item) => item.id,
+            );
+      final templates = await repo.getWorkouts();
+      if (stale()) return;
+      await repo.storeCustomWorkouts(custom);
+      workouts = [
+        ...templates.where((item) => !isCustomWorkout(item)),
+        ...custom,
+      ];
+
+      final sessionsBefore = List.of(sessions);
+      final mergedSessions = await repo.syncDocs(
+        'sessions',
+        sessionsBefore.map((item) => item.toJson()).toList(),
+      );
+      if (stale()) return;
+      if (mergedSessions != null) {
+        sessions = FirestoreWorkoutRepository.reconcile(
+          LocalWorkoutRepository.decodeList(
+            jsonEncode(mergedSessions),
+            WorkoutSession.fromJson,
+          ),
+          sessionsBefore,
+          sessions,
+          (item) => item.id,
+        )..sort((a, b) => b.completedAt.compareTo(a.completedAt));
+        await repo.storeSessions(sessions);
       }
-    } catch (_) {}
+
+      final weightsBefore = List.of(weightEntries);
+      final mergedWeights = await repo.syncDocs(
+        'weights',
+        weightsBefore.map((item) => item.toJson()).toList(),
+      );
+      if (stale()) return;
+      if (mergedWeights != null) {
+        weightEntries = FirestoreWorkoutRepository.reconcile(
+          LocalWorkoutRepository.decodeList(
+            jsonEncode(mergedWeights),
+            BodyWeightEntry.fromJson,
+          ),
+          weightsBefore,
+          weightEntries,
+          (item) => item.id,
+        )..sort((a, b) => a.date.compareTo(b.date));
+        await _saveWeights();
+      }
+
+      final remote = await repo.pullMeta();
+      if (stale()) return;
+      await _mergeMeta(repo, remote);
+    } catch (e) {
+      debugPrint('Sync failed: $e');
+    } finally {
+      syncing = false;
+      notifyListeners();
+    }
+  }
+
+  /// Last-write-wins meta sync (profile, schedule, onboarding, weekly goal)
+  /// against the `users/{uid}` doc. Until this device has pulled the doc
+  /// once for the account, the cloud copy wins outright: local values are
+  /// then only defaults or a guest's data, and must not overwrite an
+  /// existing profile.
+  Future<void> _mergeMeta(
+    FirestoreWorkoutRepository repo,
+    Map<String, dynamic>? remote,
+  ) async {
+    final firstPull = preferences.getString(_metaPulledKey) != repo.uid;
+    await preferences.setString(_metaPulledKey, repo.uid!);
+    final localTs = preferences.getInt(_metaTsKey) ?? 0;
+    final remoteTs = remote?['updatedAt'] as int? ?? 0;
+    if (remote != null && (firstPull || remoteTs > localTs)) {
+      await _applyRemoteMeta(remote);
+    } else if (remoteTs < localTs || remote == null) {
+      await _pushMeta();
+    }
   }
 
   Map<String, Object?> _metaSnapshot() => {
-    'weights': weightEntries.map((item) => item.toJson()).toList(),
     'profile': {
       'heightCm': heightCm,
       'age': age,
@@ -145,10 +316,22 @@ class AppController extends ChangeNotifier {
   };
 
   Future<void> _applyRemoteMeta(Map<String, dynamic> remote) async {
-    await preferences.setString(
-      _weightsKey,
-      jsonEncode(remote['weights'] ?? []),
-    );
+    // Older app versions kept weights in the meta doc — merge them in
+    // rather than replace (they now sync per entry).
+    final legacyWeights = remote['weights'];
+    if (legacyWeights is List && legacyWeights.isNotEmpty) {
+      final legacy = LocalWorkoutRepository.decodeList(
+        jsonEncode(legacyWeights),
+        BodyWeightEntry.fromJson,
+      );
+      // Local entries win: they are newer than the legacy blob.
+      weightEntries = FirestoreWorkoutRepository.mergeById(
+        legacy,
+        weightEntries,
+        (item) => item.id,
+      )..sort((a, b) => a.date.compareTo(b.date));
+      await _saveWeights();
+    }
     await preferences.setString(
       _profileKey,
       jsonEncode(remote['profile'] ?? {}),
@@ -161,76 +344,103 @@ class AppController extends ChangeNotifier {
       _onboardingKey,
       jsonEncode(remote['onboarding'] ?? {}),
     );
-    final remoteTs = remote['updatedAt'] as int? ?? 0;
     await preferences.setInt(_weeklyGoalKey, remote['weeklyGoal'] as int? ?? 3);
-    await preferences.setInt(_metaTsKey, remoteTs);
-    weightEntries = _decodeWeights();
-    _decodeProfile();
-    _decodeSchedule();
-    _decodeOnboarding();
-    weeklyGoal = remote['weeklyGoal'] as int? ?? 3;
+    await preferences.setInt(_metaTsKey, remote['updatedAt'] as int? ?? 0);
+    final weights = weightEntries;
+    _decodeUserState();
+    weightEntries = weights;
+    // Re-push once so the legacy weights field is removed from the cloud.
+    if (legacyWeights is List && legacyWeights.isNotEmpty) await _pushMeta();
   }
 
-  /// Stamps the meta change and pushes it to the cloud (when signed in).
+  /// Stamps the meta change and pushes it to the cloud in the background
+  /// (when signed in) — the UI never waits on the network.
   Future<void> _pushMeta() async {
     final ts = DateTime.now().millisecondsSinceEpoch;
     await preferences.setInt(_metaTsKey, ts);
     final repo = repository;
-    if (repo is FirestoreWorkoutRepository && repo.signedIn) {
-      await repo.pushMeta(_metaSnapshot(), ts);
+    if (repo is FirestoreWorkoutRepository &&
+        repo.signedIn &&
+        preferences.getString(_metaPulledKey) == repo.uid) {
+      unawaited(repo.pushMeta(_metaSnapshot(), ts));
     }
   }
 
   List<BodyWeightEntry> _decodeWeights() {
-    final raw = preferences.getString(_weightsKey);
-    if (raw == null) return [];
-    try {
-      final entries = (jsonDecode(raw) as List)
-          .map((item) => BodyWeightEntry.fromJson(item as Map<String, dynamic>))
-          .toList();
-      entries.sort((a, b) => a.date.compareTo(b.date));
-      return entries;
-    } on FormatException {
-      return [];
-    }
+    final entries = LocalWorkoutRepository.decodeList(
+      preferences.getString(_weightsKey),
+      BodyWeightEntry.fromJson,
+    );
+    entries.sort((a, b) => a.date.compareTo(b.date));
+    return entries;
   }
+
+  Future<void> _saveWeights() => preferences.setString(
+    _weightsKey,
+    jsonEncode(weightEntries.map((item) => item.toJson()).toList()),
+  );
 
   Future<void> addSession(WorkoutSession session) async {
     await repository.saveSession(session);
-    sessions = await repository.getRecentSessions();
+    sessions = [session, ...sessions.where((item) => item.id != session.id)]
+      ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
+    notifyListeners();
+  }
+
+  Future<void> deleteSession(String id) async {
+    await repository.deleteSession(id);
+    sessions = sessions.where((item) => item.id != id).toList();
     notifyListeners();
   }
 
   Future<void> saveWorkout(Workout workout) async {
     await repository.saveWorkout(workout);
-    workouts = await repository.getWorkouts();
+    final index = workouts.indexWhere((item) => item.id == workout.id);
+    workouts = [...workouts];
+    if (index < 0) {
+      workouts.add(workout);
+    } else {
+      workouts[index] = workout;
+    }
     notifyListeners();
   }
 
+  /// User-created plans (builder or AI) can be edited and deleted;
+  /// templates cannot.
+  static bool isCustomWorkout(Workout workout) =>
+      workout.id.startsWith('custom-');
+
+  Future<void> deleteWorkout(String id) async {
+    await repository.deleteWorkout(id);
+    workouts = workouts.where((item) => item.id != id).toList();
+    if (schedule.containsValue(id)) {
+      schedule.removeWhere((_, workoutId) => workoutId == id);
+      await _saveSchedule();
+    }
+    notifyListeners();
+  }
+
+  /// Logs [weightKg] for [date]'s calendar day, replacing that day's entry.
   Future<void> addWeightEntry(double weightKg, DateTime date) async {
-    weightEntries.removeWhere(
-      (item) =>
-          item.date.year == date.year &&
-          item.date.month == date.month &&
-          item.date.day == date.day,
-    );
-    weightEntries.add(BodyWeightEntry(date: date, weightKg: weightKg));
+    final entry = BodyWeightEntry(date: date, weightKg: weightKg);
+    weightEntries.removeWhere((item) => item.id == entry.id);
+    weightEntries.add(entry);
     weightEntries.sort((a, b) => a.date.compareTo(b.date));
-    await preferences.setString(
-      _weightsKey,
-      jsonEncode(weightEntries.map((item) => item.toJson()).toList()),
-    );
-    await _pushMeta();
+    await _saveWeights();
+    final repo = repository;
+    if (repo is FirestoreWorkoutRepository) {
+      repo.putDoc('weights', entry.id, entry.toJson());
+    }
     notifyListeners();
   }
 
   Future<void> removeWeightEntry(BodyWeightEntry entry) async {
-    weightEntries.remove(entry);
-    await preferences.setString(
-      _weightsKey,
-      jsonEncode(weightEntries.map((item) => item.toJson()).toList()),
-    );
-    await _pushMeta();
+    weightEntries.removeWhere((item) => item.id == entry.id);
+    await _saveWeights();
+    final repo = repository;
+    if (repo is FirestoreWorkoutRepository) {
+      repo.deleteDoc('weights', entry.id);
+    }
     notifyListeners();
   }
 
@@ -238,33 +448,81 @@ class AppController extends ChangeNotifier {
     final raw = preferences.getString(key);
     if (raw == null) return null;
     try {
-      return jsonDecode(raw) as Map<String, dynamic>;
+      final json = jsonDecode(raw);
+      return json is Map<String, dynamic> ? json : null;
     } on FormatException {
       return null;
     }
   }
 
   void _decodeReminder() {
-    final json = _decode(_reminderKey);
-    if (json == null) return;
-    reminderEnabled = json['enabled'] as bool? ?? false;
-    reminderMinutes = json['minutes'] as int? ?? 18 * 60;
-    reminderDays = {for (final day in json['days'] as List? ?? []) day as int};
+    try {
+      final json = _decode(_reminderKey);
+      if (json == null) return;
+      reminderEnabled = json['enabled'] as bool? ?? false;
+      reminderMinutes = json['minutes'] as int? ?? 18 * 60;
+      reminderDays = {
+        for (final day in json['days'] as List? ?? []) day as int,
+      };
+    } catch (e) {
+      debugPrint('Skipping malformed reminder settings: $e');
+    }
   }
 
-  Future<void> setReminder({
+  /// Scheduled notifications don't survive force-stop or some OEM reboots;
+  /// re-register them on every start. Queued with [setReminder] so it can't
+  /// re-schedule after the user has just turned reminders off.
+  Future<void> _restoreReminders() => _queueReminder(() async {
+    if (!reminderEnabled || reminderDays.isEmpty) return true;
+    try {
+      await reminders?.reschedule(
+        enabled: true,
+        minutes: reminderMinutes,
+        days: reminderDays,
+      );
+    } catch (e) {
+      debugPrint('Could not restore reminders: $e');
+    }
+    return true;
+  });
+
+  Future<bool> _queueReminder(Future<bool> Function() task) {
+    final next = (_reminderChain ?? Future<void>.value()).then((_) => task());
+    _reminderChain = next.catchError((Object _) => true);
+    return next;
+  }
+
+  /// Adds or removes [weekday] from the reminder days. The new set is
+  /// computed when the queued update runs, so rapid taps compose.
+  Future<void> toggleReminderDay(int weekday) => _queueReminder(() {
+    final days = {...reminderDays};
+    if (!days.remove(weekday)) days.add(weekday);
+    return _setReminder(days: days);
+  });
+
+  /// Updates reminder settings. Returns false when turning reminders on
+  /// failed because notification permission was denied. Calls are
+  /// serialized so rapid taps cannot interleave cancel/schedule.
+  Future<bool> setReminder({bool? enabled, int? minutes, Set<int>? days}) =>
+      _queueReminder(
+        () => _setReminder(enabled: enabled, minutes: minutes, days: days),
+      );
+
+  Future<bool> _setReminder({
     bool? enabled,
     int? minutes,
     Set<int>? days,
   }) async {
-    reminderEnabled = enabled ?? reminderEnabled;
+    final wantEnabled = enabled ?? reminderEnabled;
+    var granted = true;
+    if (wantEnabled && enabled == true && reminders != null) {
+      granted = await reminders!.requestPermission();
+    }
+    reminderEnabled = wantEnabled && granted;
     reminderMinutes = minutes ?? reminderMinutes;
     reminderDays = days ?? reminderDays;
-    if (reminderEnabled) {
-      reminderEnabled = await reminders?.requestPermission() ?? false;
-    }
     await reminders?.reschedule(
-      enabled: reminderEnabled,
+      enabled: reminderEnabled && reminderDays.isNotEmpty,
       minutes: reminderMinutes,
       days: reminderDays,
     );
@@ -277,6 +535,7 @@ class AppController extends ChangeNotifier {
       }),
     );
     notifyListeners();
+    return granted;
   }
 
   Future<void> setWeeklyGoal(int value) async {
@@ -327,39 +586,60 @@ class AppController extends ChangeNotifier {
     };
   }
 
+  Future<void> _saveSchedule() async {
+    await preferences.setString(
+      _scheduleKey,
+      jsonEncode(schedule.map((day, id) => MapEntry('$day', id))),
+    );
+    await _pushMeta();
+  }
+
+  /// Assigns [workoutId] to [weekday]; [restDay] marks a rest day, null
+  /// clears the day.
   Future<void> setScheduleDay(int weekday, String? workoutId) async {
     if (workoutId == null) {
       schedule.remove(weekday);
     } else {
       schedule[weekday] = workoutId;
     }
-    await preferences.setString(
-      _scheduleKey,
-      jsonEncode(schedule.map((day, id) => MapEntry('$day', id))),
-    );
-    await _pushMeta();
+    await _saveSchedule();
     notifyListeners();
   }
 
+  bool isRestDay(int weekday) => schedule[weekday] == restDay;
+
   Workout? scheduledWorkout(int weekday) {
     final id = schedule[weekday];
-    if (id == null) return null;
+    if (id == null || id == restDay) return null;
     for (final workout in workouts) {
       if (workout.id == id) return workout;
     }
     return null;
   }
 
-  /// The workout to feature on Home: today's scheduled plan, else the first
-  /// plan matching the onboarding goal category, else the first plan.
+  /// The workout to feature on Home: today's scheduled plan, else the
+  /// first plan matching the onboarding goal (preferring the chosen level),
+  /// else the first plan. Null on a scheduled rest day.
   Workout? suggestedWorkout() {
     if (workouts.isEmpty) return null;
-    final scheduled = scheduledWorkout(DateTime.now().weekday);
+    final today = DateTime.now().weekday;
+    if (isRestDay(today)) return null;
+    final scheduled = scheduledWorkout(today);
     if (scheduled != null) return scheduled;
     final currentGoal = goal;
+    final currentLevel = level;
     if (currentGoal != null) {
+      final matches = workouts.where((item) => item.category == currentGoal);
+      for (final workout in matches) {
+        if (currentLevel == null || workout.level == currentLevel) {
+          return workout;
+        }
+      }
+      if (matches.isNotEmpty) return matches.first;
+    }
+    if (currentLevel != null) {
       for (final workout in workouts) {
-        if (workout.category == currentGoal) return workout;
+        if (workout.level == currentLevel) return workout;
       }
     }
     return workouts.first;
@@ -385,13 +665,167 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Updates the training goal/level later on (e.g. from Profile).
+  Future<void> setGoal({String? goal, String? level}) =>
+      completeOnboarding(goal: goal, level: level);
+
+  static const _exportVersion = 2;
+
+  /// The user's own data as JSON — a backup [importJson] can restore.
+  /// Templates are left out; they ship with the app.
   String exportJson() => const JsonEncoder.withIndent('  ').convert({
+    'app': 'FitFlow',
+    'version': _exportVersion,
     'exportedAt': DateTime.now().toIso8601String(),
-    'workouts': workouts.map((item) => item.toJson()).toList(),
+    'workouts': workouts
+        .where(isCustomWorkout)
+        .map((item) => item.toJson())
+        .toList(),
     'sessions': sessions.map((item) => item.toJson()).toList(),
     'weightEntries': weightEntries.map((item) => item.toJson()).toList(),
-    'schedule': schedule.map((day, id) => MapEntry('$day', id)),
+    ..._metaSnapshot(),
+    'settings': {
+      'useMetric': useMetric,
+      'themeMode': themeMode.name,
+      'reminder': {
+        'enabled': reminderEnabled,
+        'minutes': reminderMinutes,
+        'days': reminderDays.toList()..sort(),
+      },
+    },
   });
+
+  /// Restores an [exportJson] backup, merging by id: imported sessions,
+  /// plans and weights are added or replace same-id ones; profile, schedule
+  /// and goals are replaced when present. Throws [FormatException] when
+  /// [raw] is not a FitFlow export. Returns the number of records imported.
+  Future<int> importJson(String raw) async {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      throw const FormatException('Not valid JSON.');
+    }
+    if (decoded is! Map<String, dynamic> ||
+        (decoded['sessions'] is! List && decoded['workouts'] is! List)) {
+      throw const FormatException('Not a FitFlow export.');
+    }
+    final imported = LocalWorkoutRepository.decodeList(
+      jsonEncode(decoded['sessions'] ?? []),
+      WorkoutSession.fromJson,
+    );
+    final plans = LocalWorkoutRepository.decodeList(
+      jsonEncode(decoded['workouts'] ?? []),
+      Workout.fromJson,
+    ).where(isCustomWorkout).toList();
+    final weights = LocalWorkoutRepository.decodeList(
+      jsonEncode(decoded['weightEntries'] ?? []),
+      BodyWeightEntry.fromJson,
+    );
+    for (final session in imported) {
+      await repository.saveSession(session);
+    }
+    for (final plan in plans) {
+      await repository.saveWorkout(plan);
+    }
+    for (final entry in weights) {
+      await addWeightEntry(entry.weightKg, entry.date);
+    }
+    final profile = decoded['profile'];
+    if (profile is Map<String, dynamic>) {
+      await preferences.setString(_profileKey, jsonEncode(profile));
+    }
+    final importedSchedule = decoded['schedule'];
+    if (importedSchedule is Map<String, dynamic>) {
+      await preferences.setString(_scheduleKey, jsonEncode(importedSchedule));
+    }
+    final onboarding = decoded['onboarding'];
+    if (onboarding is Map<String, dynamic>) {
+      await preferences.setString(_onboardingKey, jsonEncode(onboarding));
+    }
+    final importedGoal = decoded['weeklyGoal'];
+    if (importedGoal is int) {
+      await preferences.setInt(_weeklyGoalKey, importedGoal);
+    }
+    final settings = decoded['settings'];
+    if (settings is Map<String, dynamic>) {
+      if (settings['useMetric'] case final bool metric) await setMetric(metric);
+      if (settings['themeMode'] case final String mode) {
+        await setThemeMode(
+          ThemeMode.values.firstWhere(
+            (item) => item.name == mode,
+            orElse: () => themeMode,
+          ),
+        );
+      }
+      final reminder = settings['reminder'];
+      if (reminder is Map<String, dynamic>) {
+        await setReminder(
+          enabled: reminder['enabled'] as bool? ?? false,
+          minutes: reminder['minutes'] as int? ?? reminderMinutes,
+          days: {
+            for (final day in reminder['days'] as List? ?? [])
+              if (day is int && day >= 1 && day <= 7) day,
+          },
+        );
+      }
+    }
+    workouts = await repository.getWorkouts();
+    sessions = await repository.getRecentSessions();
+    final weightsNow = weightEntries;
+    _decodeUserState();
+    weightEntries = weightsNow;
+    await _pushMeta();
+    dataEpoch++;
+    notifyListeners();
+    return imported.length + plans.length + weights.length;
+  }
+
+  /// Marks that the user continues without an account (local-only).
+  Future<void> skipSignIn() async {
+    await preferences.setBool(_skipSignInKey, true);
+    notifyListeners();
+  }
+
+  /// Signs out and removes the account's data from this device (it stays
+  /// in the cloud). Returns false without signing out when some changes
+  /// have not reached the server yet, unless [force] — signing out would
+  /// drop them.
+  Future<bool> signOut({bool force = false}) async {
+    final repo = repository;
+    if (!force &&
+        repo is FirestoreWorkoutRepository &&
+        !await repo.flushPendingWrites()) {
+      return false;
+    }
+    await auth?.signOut();
+    await _clearUserData();
+    await preferences.remove(_syncUidKey);
+    await preferences.remove(_skipSignInKey);
+    await load();
+    return true;
+  }
+
+  /// Permanently deletes the account. Re-authenticates first, so a
+  /// cancelled or failed Google prompt aborts before anything is deleted;
+  /// then cloud data (fails offline, leaving the account intact), then the
+  /// Firebase user, then local data.
+  Future<void> deleteAccount() async {
+    await auth?.reauthenticate();
+    final repo = repository;
+    if (repo is FirestoreWorkoutRepository) await repo.deleteCloudData();
+    await auth?.deleteAccount();
+    await _clearUserData();
+    await preferences.remove(_syncUidKey);
+    await preferences.remove(_skipSignInKey);
+    await load();
+  }
+
+  /// Deletes all data on this device while signed out (guest mode).
+  Future<void> clearLocalData() async {
+    await _clearUserData();
+    await load();
+  }
 
   Future<void> setThemeMode(ThemeMode mode) async {
     themeMode = mode;

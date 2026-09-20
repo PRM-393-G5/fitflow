@@ -115,7 +115,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
     final controller = AppController(
-      LocalWorkoutRepository(preferences),
+      LocalWorkoutRepository(preferences, templates: const []),
       preferences,
     );
     await controller.load();
@@ -162,9 +162,11 @@ void main() {
     await tester.enterText(find.byKey(const Key('set-weight')), '22.5');
     await tester.tap(find.byKey(const Key('complete-set')));
     await tester.pump();
-    await tester.tap(find.byKey(const Key('skip-rest')));
-    await tester.pump();
 
+    // The last set needs no rest — the finish prompt opens right away.
+    expect(find.byKey(const Key('skip-rest')), findsNothing);
+    await tester.pumpAndSettle();
+    expect(find.text('Finish workout?'), findsOneWidget);
     await tester.tap(find.text('Finish').last);
     await tester.pumpAndSettle();
 

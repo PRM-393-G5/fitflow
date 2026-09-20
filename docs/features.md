@@ -7,14 +7,14 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 | Tính năng | Mô tả | Trạng thái |
 |---|---|---|
 | Onboarding | Lần đầu mở app: chọn mục tiêu (tăng cơ / giảm mỡ / vận động) + trình độ → cá nhân hoá gợi ý workout và filter mặc định | ✅ |
-| Thư viện workout | Browse, search, filter theo category/level; xem chi tiết exercise, sets, reps, rest | ✅ |
-| Màn tập (active workout) | Tick từng set, nhập reps/kg thực tế từng set (prefill từ plan), đếm ngược rest, xác nhận kết thúc; session hoàn thành tự lưu | ✅ |
+| Thư viện workout | Template có sẵn trong app (fallback khi offline/chưa có Firestore) + template từ Firestore; search theo tên/bài/nhóm cơ/level, filter category + level; chi tiết có "last performed", thêm vào lịch | ✅ |
+| Màn tập (active workout) | Tick từng set, nhập reps + tạ theo đơn vị người dùng (kg/lb, chấp nhận dấu phẩy), undo set, đếm ngược rest/hold theo mốc thời gian (đúng cả khi app ở nền) + rung/âm báo, preview bài kế tiếp; không lưu buổi 0 set | ✅ |
 | Today's workout | Home hiển thị workout theo lịch tuần hoặc theo goal onboarding | ✅ |
-| Workout builder | Tạo plan riêng: tên, category, level, danh sách exercise động (sets/reps/rest/tạ), tự estimate thời lượng | ✅ |
+| Workout builder | Tạo / **sửa / xoá** plan riêng: tên, category, level, exercise động (reps hoặc giây, nhóm cơ, rest, tạ), validate từng field, tự estimate thời lượng | ✅ |
 | AI workout generator | Nhập mô tả bằng text ("30 phút, tập chân, không dụng cụ") → gpt-6-luna tạo plan hoàn chỉnh (strict JSON schema + sanitize) → preview → lưu thành custom plan, sync cloud như plan tay | ✅ (cần `OPENAI_API_KEY` trong `.env` hoặc `--dart-define`) |
-| Nutrition (AI meal plan + food log) | Tab Nutrition: target calo từ TDEE + goal (Strength +300 / Cardio −400 / Mobility ±0), macros P/C/F; gpt-6-luna gợi ý thực đơn ngày (cache theo ngày); chụp/chọn ảnh → luna vision đoán món + kcal/macro; log bữa ăn (ảnh hoặc nhập tay) → progress "đã ăn / target", prefs local theo ngày, không sync | ✅ (cần `OPENAI_API_KEY` trong `.env` hoặc `--dart-define`) |
-| Weekly schedule | Gán plan cho từng thứ trong tuần | ✅ |
-| Session detail | Tap vào lịch sử → duration, sets, volume, breakdown từng set (reps × kg) theo exercise | ✅ |
+| Nutrition (AI meal plan + food log) | Tab Nutrition: target calo từ TDEE + goal (Strength +300 / Cardio −400 / Mobility ±0), macros P/C/F; gpt-6-luna gợi ý thực đơn ngày (cache theo ngày); chụp/chọn ảnh → luna vision đoán món + kcal/macro; log bữa ăn (ảnh, nhập tay kèm macro, hoặc 1 chạm từ thực đơn gợi ý), sửa khẩu phần, lịch sử 30 ngày, tổng P/C/F đã ăn vs target; đổi goal ngay trên tab; local, không sync | ✅ (cần `OPENAI_API_KEY` trong `.env` hoặc `--dart-define`) |
+| Weekly schedule | Gán plan / ngày nghỉ / bỏ trống cho từng thứ; Home hiện "Rest day" / "Done today" | ✅ |
+| Session detail | Tap vào lịch sử → duration, sets, volume, breakdown từng set theo exercise; **xoá session** | ✅ |
 
 ## 2. AI Form Check (kiểm tra tư thế on-device)
 
@@ -22,8 +22,8 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 |---|---|---|
 | Pose detection | ML Kit pose + skeleton overlay trên camera preview, xử lý hoàn toàn trên máy | ✅ |
 | Squat | Đếm rep qua góc gối/hông, cảnh báo knee tracking; per-rep telemetry (độ sâu, tempo ↓↑, lỗi: shallow/valgus/lean/heels/asymmetry/fast) + review sheet sau set + AI coach nhận xét (gpt-6-luna) | ✅ (AI review cần `OPENAI_API_KEY`) |
-| Push-up | Đếm rep qua góc khuỷu tay, phát hiện hông xệ/pike | ✅ |
-| Plank | Đo thời gian giữ đúng form (hold seconds), kiểm tra độ thẳng thân | ✅ |
+| Push-up | Đếm rep qua góc khuỷu tay chỉ khi thân nằm ngang, phát hiện hông xệ/pike | ✅ |
+| Plank | Đo thời gian giữ đúng form (hold seconds), độ lệch hông chuẩn hoá theo chiều dài thân, phải chống tay/khuỷu (nằm sấp không tính) | ✅ |
 | Chấm điểm + cues | Form score 0–100, gợi ý sửa tư thế realtime; pause, đổi camera | ✅ |
 | Lưu kết quả | Kết quả form check lưu vào session history | ✅ |
 | Thêm bài tập | Lunge, pull-up, overhead press (analyzer mới, tái dùng pipeline) | 📋 |
@@ -35,17 +35,17 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 | Dashboard | Tổng sessions, phút tập, volume | ✅ |
 | Activity heatmap | 12 tuần kiểu GitHub | ✅ |
 | Weekly chart | Bar chart phút tập theo thứ | ✅ |
-| Personal records | Streak dài nhất, session volume cao nhất, session dài nhất | ✅ |
-| Achievements | 12 badges theo streak/volume/số buổi tập | ✅ |
-| Share summary | Card tổng kết + copy text | 🟡 (chưa share ảnh — cần `share_plus`) |
+| Personal records | Streak, session volume/dài nhất; PR từng bài (tạ nặng nhất, hold lâu nhất, nhiều rep nhất) + ước lượng 1RM (Epley) | ✅ |
+| Achievements | 12 badges theo streak/volume/số buổi tập/chuỗi tuần đạt weekly goal, hiện tiến độ badge chưa mở | ✅ |
+| Share summary | Card tổng kết → share ảnh PNG (`share_plus`), fallback text/copy | ✅ |
 | So sánh tuần/tháng | Delta % so với kỳ trước | 📋 |
 
 ## 4. Chỉ số cơ thể (Body Metrics)
 
 | Tính năng | Mô tả | Trạng thái |
 |---|---|---|
-| Log cân nặng | Nhập theo ngày, tự đổi kg/lb, xoá entry | ✅ |
-| Trend chart | Line chart cân nặng theo thời gian | ✅ |
+| Log cân nặng | Một entry/ngày, kg/lb, validate, không cho ngày tương lai, xoá có xác nhận | ✅ |
+| Trend chart | Line chart theo trục thời gian, min/max, lọc 30d/90d/all | ✅ |
 | BMI / BMR / TDEE | Tính từ body profile (chiều cao, tuổi, giới tính, mức vận động) — Mifflin-St Jeor | ✅ |
 | Số đo khác | Vòng eo, % body fat, ảnh tiến trình | 📋 |
 
@@ -55,20 +55,20 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 |---|---|---|
 | Theme | Light / dark / system | ✅ |
 | Đơn vị | Metric / imperial | ✅ |
-| Reminders | Chọn giờ + thứ muốn tập, bắn notification thật qua `flutter_local_notifications` | ✅ |
+| Reminders | Chọn giờ + thứ (hoặc khớp lịch tuần), notification qua `flutter_local_notifications`; receiver + boot receiver trong manifest, reschedule mỗi lần mở app, an toàn DST | ✅ |
 
 ## 6. Dữ liệu & đồng bộ (Local-first + Cloud Sync)
 
 | Tính năng | Mô tả | Trạng thái |
 |---|---|---|
-| Local-first | Mọi dữ liệu (plans, sessions, cân nặng, profile, lịch, onboarding) lưu local — app dùng được hoàn toàn offline, không bắt account | ✅ |
-| Export JSON | Xuất toàn bộ dữ liệu, copy/share | ✅ |
-| Sign-in | Đăng nhập Google (Firebase Auth) — mở khoá cloud sync | ✅ |
-| Cloud sync | Backup + đồng bộ sessions/custom plans/metrics/schedule/onboarding qua Cloud Firestore (`users/{uid}`); merge by id cho sessions & plans, last-write-wins cho meta | ✅ |
+| Local-first | Mọi dữ liệu lưu local, đọc/ghi không chờ mạng; **không bắt buộc đăng nhập** ("Continue without an account"); Firebase lỗi/chưa cấu hình (iOS) → chạy local-only | ✅ |
+| Export / Import JSON | Xuất backup (plans riêng, sessions, cân nặng, profile, lịch, goal, settings) ra file/copy; import merge theo id | ✅ |
+| Sign-in | Đăng nhập Google tuỳ chọn — mở khoá cloud sync; đăng xuất chờ dữ liệu sync xong (cảnh báo nếu còn thay đổi chưa lên cloud) rồi xoá dữ liệu trên máy; **xoá tài khoản** + dữ liệu cloud | ✅ |
+| Cloud sync | Firestore `users/{uid}`: sessions, custom plans, cân nặng merge theo id với tombstone khi xoá; profile/lịch/onboarding last-write-wins; dữ liệu khách được gộp vào tài khoản khi đăng nhập; đổi tài khoản xoá sạch dữ liệu người trước; rules trong `firestore.rules` | ✅ |
 | Multi-device | Nhiều thiết bị cùng account thấy cùng dữ liệu (sync khi mở app + mỗi lần ghi) | ✅ |
 
 ## Ưu tiên triển khai tiếp
 
-1. **Share ảnh** summary card — cần `share_plus`
-2. Bài tập form check mới / số đo cơ thể — nếu dư thời gian
-3. Nhật ký calo đơn giản (log kcal/ngày vs TDEE) — nếu muốn thêm dinh dưỡng
+1. Chuyển OpenAI key ra backend (Cloud Function) — hiện key vẫn nằm trong APK
+2. Cấu hình Firebase cho iOS (`flutterfire configure`) — iOS hiện chạy local-only
+3. Bài tập form check mới / số đo cơ thể — nếu dư thời gian
