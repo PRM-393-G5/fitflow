@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Minimal OpenAI chat-completions client. The key comes from a bundled
@@ -18,7 +19,7 @@ class OpenAiService {
 
   /// gpt-6-luna: reasoning model with vision + structured output — it
   /// rejects `temperature`, and reasoning tokens share the completion
-  /// budget (hence the 3000 cap).
+  /// budget, so a low cap truncates the JSON mid-output (hence 8000).
   static const _model = 'gpt-6-luna';
   static const _timeout = Duration(seconds: 30);
 
@@ -44,11 +45,11 @@ class OpenAiService {
           .timeout(_timeout);
       request.headers
         ..set(HttpHeaders.authorizationHeader, 'Bearer $_apiKey')
-        ..set(HttpHeaders.contentTypeHeader, 'application/json');
+        ..contentType = ContentType.json;
       request.write(
         jsonEncode({
           'model': _model,
-          'max_completion_tokens': 3000,
+          'max_completion_tokens': 8000,
           'reasoning_effort': ?reasoningEffort,
           'messages': [
             {'role': 'system', 'content': system},
@@ -87,6 +88,9 @@ class OpenAiService {
         throw const OpenAiException('rate-limited');
       }
       if (response.statusCode != 200) {
+        debugPrint(
+          'OpenAI ${response.statusCode}: ${body.substring(0, body.length.clamp(0, 400))}',
+        );
         throw OpenAiException('http-${response.statusCode}');
       }
       final decoded = jsonDecode(body) as Map<String, dynamic>;
@@ -97,18 +101,43 @@ class OpenAiService {
       if (message?['refusal'] != null) {
         throw const OpenAiException('refused');
       }
-      final content = message?['content'] as String?;
-      if (content == null) throw const OpenAiException('invalid-response');
-      return jsonDecode(content) as Map<String, dynamic>;
+      final raw = message?['content'];
+      final content = raw is String
+          ? raw
+          : raw is List
+          ? [
+              for (final part in raw)
+                if (part is Map && part['text'] is String)
+                  part['text'] as String,
+            ].join()
+          : null;
+      if (content == null || content.isEmpty) {
+        debugPrint(
+          'OpenAI no content: ${body.substring(0, body.length.clamp(0, 500))}',
+        );
+        throw const OpenAiException('invalid-response');
+      }
+      try {
+        return jsonDecode(content) as Map<String, dynamic>;
+      } on FormatException {
+        debugPrint(
+          'OpenAI content not JSON: '
+          '${content.substring(0, content.length.clamp(0, 500))}',
+        );
+        throw const OpenAiException('invalid-response');
+      }
     } on OpenAiException {
       rethrow;
     } on TimeoutException {
+      debugPrint('OpenAI timeout');
       throw const OpenAiException('timeout');
-    } on SocketException {
+    } on SocketException catch (e) {
+      debugPrint('OpenAI socket: $e');
       throw const OpenAiException('offline');
-    } catch (_) {
+    } catch (e) {
       // FormatException on bad JSON, TypeError on unexpected shapes —
       // any other decode failure is an invalid response.
+      debugPrint('OpenAI unexpected: $e');
       throw const OpenAiException('invalid-response');
     } finally {
       client.close();
@@ -127,7 +156,7 @@ class OpenAiException implements Exception {
     'rate-limited' => 'Rate limit reached — try again later.',
     'timeout' => 'Request timed out — try again.',
     'offline' => 'No network connection.',
-    _ => 'Could not generate — try again.',
+    _ => 'Could not generate ($code) — try again.',
   };
 
   @override

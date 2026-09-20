@@ -15,6 +15,7 @@ import '../../../domain/body_metrics.dart';
 import '../../../domain/meal_plan.dart';
 import '../../metrics/presentation/body_metrics_page.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/section_header.dart';
 
 /// Suggestion-only nutrition: a daily calorie target from the user's
 /// profile and goal, plus an AI-generated meal plan cached per day.
@@ -154,27 +155,8 @@ class _NutritionPageState extends State<NutritionPage> {
     }
   }
 
-  Future<void> _analyzePhoto() async {
+  Future<void> _analyzePhoto(ImageSource source) async {
     if (_analyzing) return;
-    final source = await showFSheet<ImageSource>(
-      context: context,
-      side: .btt,
-      builder: (context) => FTileGroup(
-        children: [
-          FTile(
-            prefix: const Icon(FLucideIcons.camera),
-            title: const Text('Take photo'),
-            onPress: () => Navigator.pop(context, ImageSource.camera),
-          ),
-          FTile(
-            prefix: const Icon(FLucideIcons.images),
-            title: const Text('Choose from gallery'),
-            onPress: () => Navigator.pop(context, ImageSource.gallery),
-          ),
-        ],
-      ),
-    );
-    if (source == null || !mounted) return;
     final photo = await ImagePicker().pickImage(
       source: source,
       maxWidth: 1024,
@@ -304,8 +286,10 @@ class _NutritionPageState extends State<NutritionPage> {
               targetKcal: targetKcal!,
               proteinG: proteinG!,
             ),
+          const SizedBox(height: AppSpacing.lg),
+          const SectionHeader(title: 'Today'),
+          const SizedBox(height: AppSpacing.sm),
           if (targetKcal != null || _logged.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.md),
             Semantics(
               label: targetKcal == null
                   ? '$eatenKcal kilocalories eaten today'
@@ -332,71 +316,33 @@ class _NutritionPageState extends State<NutritionPage> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          FTextField(
-            key: const Key('nutrition-preferences'),
-            control: .managed(controller: _prefsCtrl),
-            label: const Text('Preferences (optional)'),
-            hint: 'e.g. vegetarian, no seafood, lactose free',
-          ),
-          const SizedBox(height: AppSpacing.md),
           Row(
+            spacing: AppSpacing.sm,
             children: [
-              for (final (value, label) in [(3, '3 meals'), (4, '3 + snack')])
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      right: value == 3 ? AppSpacing.sm : 0,
-                    ),
-                    child: FButton(
-                      variant: _mealCount == value ? .primary : .outline,
-                      size: .sm,
-                      onPress: () => setState(() => _mealCount = value),
-                      child: Text(label),
-                    ),
-                  ),
+              Expanded(
+                child: FButton(
+                  key: const Key('nutrition-photo'),
+                  variant: .outline,
+                  onPress: _analyzing || !OpenAiService.configured
+                      ? null
+                      : () => _analyzePhoto(.camera),
+                  prefix: _analyzing
+                      ? const FCircularProgress()
+                      : const Icon(FLucideIcons.camera),
+                  child: Text(_analyzing ? 'Analyzing…' : 'Take photo'),
                 ),
+              ),
+              Expanded(
+                child: FButton(
+                  variant: .outline,
+                  onPress: _analyzing || !OpenAiService.configured
+                      ? null
+                      : () => _analyzePhoto(.gallery),
+                  prefix: const Icon(FLucideIcons.images),
+                  child: const Text('Gallery'),
+                ),
+              ),
             ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          if (!OpenAiService.configured)
-            const AppCard(
-              child: Text(
-                'AI suggestions need an OpenAI API key '
-                '(.env file or --dart-define=OPENAI_API_KEY=…).',
-              ),
-            )
-          else if (targetKcal != null)
-            SizedBox(
-              width: double.infinity,
-              child: FButton(
-                key: const Key('nutrition-generate'),
-                onPress: _generating
-                    ? null
-                    : () => _generate(targetKcal, proteinG!),
-                prefix: _generating
-                    ? const FCircularProgress()
-                    : const Icon(FLucideIcons.sparkles),
-                child: Text(
-                  _generating ? 'Generating…' : "Suggest today's menu",
-                ),
-              ),
-            ),
-          const SizedBox(height: AppSpacing.md),
-          SizedBox(
-            width: double.infinity,
-            child: FButton(
-              key: const Key('nutrition-photo'),
-              variant: .outline,
-              onPress: _analyzing || !OpenAiService.configured
-                  ? null
-                  : _analyzePhoto,
-              prefix: _analyzing
-                  ? const FCircularProgress()
-                  : const Icon(FLucideIcons.camera),
-              child: Text(
-                _analyzing ? 'Analyzing photo…' : 'Analyze a food photo',
-              ),
-            ),
           ),
           const SizedBox(height: AppSpacing.sm),
           Align(
@@ -453,6 +399,60 @@ class _NutritionPageState extends State<NutritionPage> {
               ),
             ],
           ],
+          const SizedBox(height: AppSpacing.lg),
+          const SectionHeader(title: 'AI meal plan'),
+          const SizedBox(height: AppSpacing.sm),
+          FTextField(
+            key: const Key('nutrition-preferences'),
+            control: .managed(controller: _prefsCtrl),
+            label: const Text('Preferences (optional)'),
+            hint: 'e.g. vegetarian, no seafood, lactose free',
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text('Meals per day', style: Theme.of(context).textTheme.labelMedium),
+          const SizedBox(height: AppSpacing.xs),
+          Row(
+            children: [
+              for (final (value, label) in [(3, '3 meals'), (4, '3 + snack')])
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      right: value == 3 ? AppSpacing.sm : 0,
+                    ),
+                    child: FButton(
+                      variant: _mealCount == value ? .primary : .outline,
+                      size: .sm,
+                      onPress: () => setState(() => _mealCount = value),
+                      child: Text(label),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          if (!OpenAiService.configured)
+            const AppCard(
+              child: Text(
+                'AI suggestions need an OpenAI API key '
+                '(.env file or --dart-define=OPENAI_API_KEY=…).',
+              ),
+            )
+          else if (targetKcal != null)
+            SizedBox(
+              width: double.infinity,
+              child: FButton(
+                key: const Key('nutrition-generate'),
+                onPress: _generating
+                    ? null
+                    : () => _generate(targetKcal, proteinG!),
+                prefix: _generating
+                    ? const FCircularProgress()
+                    : const Icon(FLucideIcons.sparkles),
+                child: Text(
+                  _generating ? 'Generating…' : "Suggest today's menu",
+                ),
+              ),
+            ),
           if (_plan != null) ...[
             const SizedBox(height: AppSpacing.lg),
             _PlanView(plan: _plan!),
