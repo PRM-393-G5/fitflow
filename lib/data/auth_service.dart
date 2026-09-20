@@ -12,8 +12,7 @@ class AuthService {
 
   Future<void> signInWithGoogle() async {
     await (_initialized ??= _google.initialize(
-      serverClientId:
-          '578747595727-nftl7og0f8q21va0hdhohd6subqn2iiv.apps.googleusercontent.com',
+      serverClientId: '578747595727-nftl7og0f8q21va0hdhohd6subqn2iiv.apps.googleusercontent.com',
     ));
     final account = await _google.authenticate();
     final credential = GoogleAuthProvider.credential(

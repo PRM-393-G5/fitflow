@@ -5,6 +5,7 @@ import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../core/widgets/app_card.dart';
 
 class RemindersPage extends StatelessWidget {
   const RemindersPage({super.key});
@@ -86,7 +87,7 @@ class RemindersPage extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            FCard(
+            AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

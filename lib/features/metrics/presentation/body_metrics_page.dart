@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/body_metrics.dart';
 import '../../../domain/models/body_weight_entry.dart';
+import '../../../core/widgets/app_card.dart';
 
 class BodyMetricsPage extends StatelessWidget {
   const BodyMetricsPage({super.key});
@@ -37,7 +38,7 @@ class BodyMetricsPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            FCard(
+            AppCard(
               style: .delta(
                 decoration: .boxDelta(
                   color: context.theme.colors.secondary,
@@ -75,46 +76,35 @@ class BodyMetricsPage extends StatelessWidget {
             if (entries.length >= 2) ...[
               Text('Trend', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: AppSpacing.sm),
-              FCard(child: _WeightChart(entries: entries)),
+              AppCard(child: _WeightChart(entries: entries)),
               const SizedBox(height: AppSpacing.lg),
             ],
             Text('Log', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: AppSpacing.sm),
             if (entries.isEmpty)
-              const FCard(
+              const AppCard(
                 child: Center(child: Text('Log your first weigh-in.')),
               )
             else
-              ...entries.reversed.map(
-                (entry) => FCard(
-                  child: Row(
-                    children: [
-                      FAvatar.raw(child: const Icon(FLucideIcons.weight)),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${display(entry.weightKg).toStringAsFixed(1)} $unit',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                            Text(
-                              _date(entry.date),
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
+              FTileGroup(
+                children: [
+                  for (final entry in entries.reversed)
+                    FTile(
+                      prefix: FAvatar.raw(
+                        child: const Icon(FLucideIcons.weight),
                       ),
-                      FButton.icon(
+                      title: Text(
+                        '${display(entry.weightKg).toStringAsFixed(1)} $unit',
+                      ),
+                      subtitle: Text(_date(entry.date)),
+                      suffix: FButton.icon(
                         variant: .ghost,
                         size: .sm,
                         onPress: () => controller.removeWeightEntry(entry),
                         child: const Icon(FLucideIcons.trash2),
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                ],
               ),
             const SizedBox(height: AppSpacing.lg),
             SizedBox(
@@ -235,7 +225,7 @@ class _BodyProfileCard extends StatelessWidget {
       );
     }
 
-    return FCard(
+    return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -353,6 +343,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
           const SizedBox(height: AppSpacing.md),
           Wrap(
             spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
             children: [
               for (final (value, label) in [(true, 'Male'), (false, 'Female')])
                 FButton(

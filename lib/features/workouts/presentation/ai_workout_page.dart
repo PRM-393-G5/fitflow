@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../data/openai_service.dart';
 import '../../../domain/ai_workout_parser.dart';
 import '../../../domain/models/workout.dart';
+import '../../../core/widgets/app_card.dart';
 
 /// Natural-language workout builder: describe a session, GPT returns a
 /// structured plan, preview it, save as a `custom-ai-*` workout.
@@ -143,6 +144,7 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
       const SizedBox(height: AppSpacing.sm),
       Wrap(
         spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.sm,
         children: [
           for (final suggestion in _suggestions)
             FButton(
@@ -187,7 +189,7 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
       ),
       const SizedBox(height: AppSpacing.lg),
       if (!OpenAiService.configured)
-        const FCard(
+        const AppCard(
           child: Text(
             'AI generation needs an OpenAI API key '
             '(.env file or --dart-define=OPENAI_API_KEY=…).',
@@ -218,6 +220,7 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
       const SizedBox(height: AppSpacing.md),
       Wrap(
         spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.sm,
         children: [
           FBadge(variant: .secondary, child: Text(workout.category)),
           FBadge(variant: .secondary, child: Text(workout.level)),
@@ -270,6 +273,7 @@ class _AiWorkoutPageState extends State<AiWorkoutPage> {
           ),
         ],
       ),
+      const SizedBox(height: AppSpacing.sm),
       Center(
         child: FButton(
           key: const Key('ai-edit-request'),

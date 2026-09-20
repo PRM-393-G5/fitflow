@@ -12,6 +12,7 @@ import '../../../domain/workout_stats.dart';
 import '../../squat_form/presentation/squat_form_check_page.dart';
 import '../../workouts/presentation/schedule_page.dart';
 import '../../workouts/presentation/workout_detail_page.dart';
+import '../../../core/widgets/app_card.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -85,6 +86,7 @@ class HomePage extends StatelessWidget {
                           ),
                         ],
                       ),
+                      const SizedBox(height: AppSpacing.xs),
                       Text(
                         today?.name ?? 'No plan available',
                         style: textTheme.titleLarge?.copyWith(
@@ -162,6 +164,8 @@ class HomePage extends StatelessWidget {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               childAspectRatio: 1.1,
+              mainAxisSpacing: AppSpacing.md,
+              crossAxisSpacing: AppSpacing.md,
               children: [
                 StatCard(
                   icon: FLucideIcons.flame,
@@ -216,50 +220,47 @@ class _WeeklyGoalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final progress = (done / goal).clamp(0.0, 1.0);
     final colors = context.theme.colors;
-    return FCard(
+    return AppCard(
       clipBehavior: Clip.antiAlias,
       child: FTappable(
         onPress: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Weekly goal',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Weekly goal',
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
-                        Text(
-                          '$done/$goal',
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(color: colors.primary),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    FDeterminateProgress(value: progress),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      done >= goal
-                          ? 'Goal reached — nice work.'
-                          : '$done of $goal workouts done. Tap to change your goal.',
-                      style: Theme.of(context).textTheme.bodyMedium
-                          ?.copyWith(color: colors.mutedForeground),
-                    ),
-                  ],
-                ),
+                      ),
+                      Text(
+                        '$done/$goal',
+                        style: Theme.of(context).textTheme.labelLarge
+                            ?.copyWith(color: colors.primary),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  FDeterminateProgress(value: progress),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    done >= goal
+                        ? 'Goal reached — nice work.'
+                        : '$done of $goal workouts done. Tap to change your goal.',
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: colors.mutedForeground),
+                  ),
+                ],
               ),
-              const SizedBox(width: AppSpacing.md),
-              Icon(FLucideIcons.pencil, color: colors.mutedForeground),
-            ],
-          ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Icon(FLucideIcons.pencil, color: colors.mutedForeground),
+          ],
         ),
       ),
     );

@@ -33,6 +33,7 @@ class WorkoutDetailPage extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         Wrap(
           spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
           children: [
             FBadge(variant: .secondary, child: Text(workout.category)),
             FBadge(variant: .secondary, child: Text(workout.level)),

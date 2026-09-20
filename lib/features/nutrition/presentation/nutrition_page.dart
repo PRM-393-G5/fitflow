@@ -14,6 +14,7 @@ import '../../../data/openai_service.dart';
 import '../../../domain/body_metrics.dart';
 import '../../../domain/meal_plan.dart';
 import '../../metrics/presentation/body_metrics_page.dart';
+import '../../../core/widgets/app_card.dart';
 
 /// Suggestion-only nutrition: a daily calorie target from the user's
 /// profile and goal, plus an AI-generated meal plan cached per day.
@@ -358,7 +359,7 @@ class _NutritionPageState extends State<NutritionPage> {
           ),
           const SizedBox(height: AppSpacing.lg),
           if (!OpenAiService.configured)
-            const FCard(
+            const AppCard(
               child: Text(
                 'AI suggestions need an OpenAI API key '
                 '(.env file or --dart-define=OPENAI_API_KEY=…).',
@@ -397,6 +398,7 @@ class _NutritionPageState extends State<NutritionPage> {
               ),
             ),
           ),
+          const SizedBox(height: AppSpacing.sm),
           Align(
             alignment: Alignment.centerLeft,
             child: FButton(
@@ -464,7 +466,7 @@ class _NutritionPageState extends State<NutritionPage> {
 class _ProfileNeededCard extends StatelessWidget {
   const _ProfileNeededCard();
   @override
-  Widget build(BuildContext context) => FCard(
+  Widget build(BuildContext context) => AppCard(
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -507,7 +509,7 @@ class _TargetCard extends StatelessWidget {
       targetKcal: targetKcal,
       proteinG: proteinG,
     );
-    return FCard(
+    return AppCard(
       style: .delta(
         decoration: .boxDelta(
           color: context.theme.colors.secondary,
@@ -573,7 +575,12 @@ class _PlanView extends StatelessWidget {
         Text(plan.note, style: Theme.of(context).textTheme.bodySmall),
       ],
       const SizedBox(height: AppSpacing.md),
-      ...plan.meals.map((meal) => _MealCard(meal: meal)),
+      ...plan.meals.map(
+        (meal) => Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          child: _MealCard(meal: meal),
+        ),
+      ),
     ],
   );
 }
@@ -664,7 +671,7 @@ class _MealCard extends StatelessWidget {
   final VoidCallback? onRemove;
 
   @override
-  Widget build(BuildContext context) => FCard(
+  Widget build(BuildContext context) => AppCard(
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

@@ -14,6 +14,7 @@ import '../../achievements/presentation/achievements_page.dart';
 import '../../metrics/presentation/body_metrics_page.dart';
 import 'session_detail_page.dart';
 import 'share_summary_dialog.dart';
+import '../../../core/widgets/app_card.dart';
 
 class ProgressPage extends StatelessWidget {
   const ProgressPage({super.key});
@@ -43,6 +44,8 @@ class ProgressPage extends StatelessWidget {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               childAspectRatio: 1.1,
+              mainAxisSpacing: AppSpacing.md,
+              crossAxisSpacing: AppSpacing.md,
               children: [
                 StatCard(
                   icon: FLucideIcons.calendarCheck,
@@ -65,11 +68,11 @@ class ProgressPage extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'Activity'),
           const SizedBox(height: AppSpacing.sm),
-          FCard(child: _ActivityHeatmap(sessions: sessions)),
+          AppCard(child: _ActivityHeatmap(sessions: sessions)),
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'This week'),
           const SizedBox(height: AppSpacing.sm),
-          FCard(child: _WeekChart(sessions: sessions)),
+          AppCard(child: _WeekChart(sessions: sessions)),
           if (sessions.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.lg),
             const SectionHeader(title: 'Personal records'),
@@ -80,6 +83,8 @@ class ProgressPage extends StatelessWidget {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 childAspectRatio: 1.1,
+                mainAxisSpacing: AppSpacing.md,
+                crossAxisSpacing: AppSpacing.md,
                 children: [
                   StatCard(
                     icon: FLucideIcons.flame,
@@ -142,48 +147,29 @@ class ProgressPage extends StatelessWidget {
           Text('History', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: AppSpacing.sm),
           if (sessions.isEmpty)
-            const FCard(
+            const AppCard(
               child: Center(
                 child: Text('Complete a workout to begin tracking.'),
               ),
             )
           else
-            ...sessions.map(
-              (session) => FCard(
-                child: FTappable(
-                  onPress: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => SessionDetailPage(session: session),
+            FTileGroup(
+              children: [
+                for (final session in sessions)
+                  FTile(
+                    prefix: FAvatar.raw(child: const Icon(FLucideIcons.check)),
+                    title: Text(session.workoutName),
+                    subtitle: Text(
+                      '${_date(session.completedAt)} • ${session.durationMinutes} min • ${session.completedSets} sets',
+                    ),
+                    suffix: const Icon(FLucideIcons.chevronRight),
+                    onPress: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => SessionDetailPage(session: session),
+                      ),
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      FAvatar.raw(child: const Icon(FLucideIcons.check)),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              session.workoutName,
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                            Text(
-                              '${_date(session.completedAt)} • ${session.durationMinutes} min • ${session.completedSets} sets',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        FLucideIcons.chevronRight,
-                        color: context.theme.colors.mutedForeground,
-                        size: 18,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              ],
             ),
         ],
       ),

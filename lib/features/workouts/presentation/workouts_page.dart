@@ -8,6 +8,7 @@ import '../../../domain/models/workout.dart';
 import 'ai_workout_page.dart';
 import 'workout_builder_page.dart';
 import 'workout_detail_page.dart';
+import '../../../core/widgets/app_card.dart';
 
 class WorkoutsPage extends StatefulWidget {
   const WorkoutsPage({super.key});
@@ -155,7 +156,7 @@ class _WorkoutCard extends StatelessWidget {
     final colors = context.theme.colors;
     final textTheme = Theme.of(context).textTheme;
     final muted = textTheme.bodyMedium?.copyWith(color: colors.mutedForeground);
-    return FCard(
+    return AppCard(
       clipBehavior: Clip.antiAlias,
       child: FTappable(
         onPress: () => Navigator.of(context).push(

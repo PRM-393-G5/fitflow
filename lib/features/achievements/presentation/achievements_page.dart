@@ -5,6 +5,7 @@ import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/workout_stats.dart';
+import '../../../core/widgets/app_card.dart';
 
 class _Badge {
   const _Badge({
@@ -159,7 +160,7 @@ class _BadgeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.theme.colors;
-    return FCard(
+    return AppCard(
       child: Opacity(
         opacity: badge.unlocked ? 1 : 0.45,
         child: Column(

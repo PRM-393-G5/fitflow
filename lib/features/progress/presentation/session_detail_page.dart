@@ -5,6 +5,7 @@ import '../../../app/app_scope.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout_session.dart';
+import '../../../core/widgets/app_card.dart';
 
 class SessionDetailPage extends StatelessWidget {
   const SessionDetailPage({required this.session, super.key});
@@ -59,7 +60,9 @@ class SessionDetailPage extends StatelessWidget {
           Text('Exercises', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: AppSpacing.sm),
           if (session.exercises.isEmpty)
-            const FCard(child: Text('No exercises recorded for this session.'))
+            const AppCard(
+              child: Text('No exercises recorded for this session.'),
+            )
           else
             FTileGroup(
               children: [

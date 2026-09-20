@@ -76,6 +76,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
             children: [
               for (final item in _levels)
                 FButton(

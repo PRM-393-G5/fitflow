@@ -6,6 +6,7 @@ import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout.dart';
+import '../../../core/widgets/app_card.dart';
 
 class _ExerciseDraft {
   final name = TextEditingController();
@@ -118,6 +119,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
           const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
             children: [
               for (final category in _categories)
                 FButton(
@@ -134,6 +136,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
           const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
             children: [
               for (final level in _levels)
                 FButton(
@@ -149,40 +152,43 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
           Text('Exercises', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: AppSpacing.sm),
           ..._exercises.indexed.map(
-            (entry) => FCard(
-              key: ValueKey(entry.$2),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FTextField(
-                          control: .managed(controller: entry.$2.name),
-                          label: Text('Exercise ${entry.$1 + 1}'),
+            (entry) => Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: AppCard(
+                key: ValueKey(entry.$2),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FTextField(
+                            control: .managed(controller: entry.$2.name),
+                            label: Text('Exercise ${entry.$1 + 1}'),
+                          ),
                         ),
-                      ),
-                      FButton.icon(
-                        variant: .ghost,
-                        onPress: _exercises.length == 1
-                            ? null
-                            : () => setState(() {
-                                _exercises.remove(entry.$2);
-                                entry.$2.dispose();
-                              }),
-                        child: const Icon(FLucideIcons.trash2),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Row(
-                    children: [
-                      _number(entry.$2.sets, 'Sets'),
-                      _number(entry.$2.reps, 'Reps'),
-                      _number(entry.$2.rest, 'Rest (s)'),
-                      _number(entry.$2.weight, 'Kg'),
-                    ],
-                  ),
-                ],
+                        FButton.icon(
+                          variant: .ghost,
+                          onPress: _exercises.length == 1
+                              ? null
+                              : () => setState(() {
+                                  _exercises.remove(entry.$2);
+                                  entry.$2.dispose();
+                                }),
+                          child: const Icon(FLucideIcons.trash2),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Row(
+                      children: [
+                        _number(entry.$2.sets, 'Sets'),
+                        _number(entry.$2.reps, 'Reps'),
+                        _number(entry.$2.rest, 'Rest (s)'),
+                        _number(entry.$2.weight, 'Kg'),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
