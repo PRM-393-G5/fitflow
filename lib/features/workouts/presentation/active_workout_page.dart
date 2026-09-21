@@ -11,6 +11,7 @@ import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../../domain/personal_records.dart';
+import '../../../domain/progression.dart';
 import 'weight_units.dart';
 
 class ActiveWorkoutPage extends StatefulWidget {
@@ -65,6 +66,10 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   String _prefillWeightText = '';
   double _prefillWeightKg = 0;
 
+  /// Last-session hints per exercise index; drive the prefill of each
+  /// exercise's first set.
+  late final Map<int, ProgressionHint> _hints;
+
   final _amountCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
 
@@ -88,6 +93,17 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   void initState() {
     super.initState();
     _startedAt = widget.clock();
+    final step = _metric
+        ? Progression.metricStepKg
+        : Progression.imperialStepKg;
+    _hints = {
+      for (final (index, exercise) in _exercises.indexed)
+        index: ?Progression.forExercise(
+          widget.controller.sessions,
+          exercise,
+          weightStepKg: step,
+        ),
+    };
     final first = _exercises.indexWhere((item) => item.sets > 0);
     if (first >= 0) {
       _exerciseIndex = first;
@@ -104,11 +120,17 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   }
 
   /// Prefill inputs from [entry], else the last logged set of this
-  /// exercise, else the plan.
+  /// exercise, else the last session's suggestion, else the plan.
   void _prefill([SetEntry? entry]) {
     final logged = _entries[_exerciseIndex];
+    final hint = _hints[_exerciseIndex];
     final last =
-        entry ?? (logged == null || logged.isEmpty ? null : logged.last);
+        entry ??
+        (logged != null && logged.isNotEmpty
+            ? logged.last
+            : hint == null
+            ? null
+            : SetEntry(amount: hint.amount, weightKg: hint.weightKg));
     _amountCtrl.text =
         '${last?.amount ?? (_exercise.isTimed ? _exercise.durationSeconds : _exercise.reps)}';
     _prefillWeightKg = last?.weightKg ?? _exercise.weightKg;
@@ -578,6 +600,62 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     ),
   ];
 
+  String _weightLabel(double kg) =>
+      '${WeightUnits.format(kg, _metric)} ${WeightUnits.label(_metric)}';
+
+  /// "3 × 10 @ 12 kg", "10, 8, 7 reps @ 12 kg", "10 @ 12, 8 @ 10 kg".
+  String _lastSetsLabel(List<SetEntry> sets) {
+    final timed = _exercise.isTimed;
+    String amount(int value) => timed ? '${value}s' : '$value';
+    final weight = sets.first.weightKg;
+    final sameWeight = sets.every((set) => set.weightKg == weight);
+    if (!sameWeight) {
+      final parts = [
+        for (final set in sets)
+          '${amount(set.amount)} @ ${WeightUnits.format(set.weightKg, _metric)}',
+      ];
+      return '${parts.join(', ')} ${WeightUnits.label(_metric)}';
+    }
+    final load = weight > 0 ? ' @ ${_weightLabel(weight)}' : '';
+    if (sets.every((set) => set.amount == sets.first.amount)) {
+      return '${sets.length} × ${amount(sets.first.amount)}$load';
+    }
+    final amounts = sets.map((set) => amount(set.amount)).join(', ');
+    return timed ? '$amounts$load' : '$amounts reps$load';
+  }
+
+  String _stepUpLabel(ProgressionHint hint) {
+    if (_exercise.isTimed) {
+      return 'You held every set last time — try ${hint.amount}s today.';
+    }
+    final target = hint.weightKg > 0
+        ? _weightLabel(hint.weightKg)
+        : '${hint.amount} reps';
+    return 'You hit every rep last time — try $target today.';
+  }
+
+  List<Widget> _buildHint(BuildContext context, ProgressionHint hint) => [
+    const SizedBox(height: AppSpacing.xs),
+    Text(
+      'Last time: ${_lastSetsLabel(hint.lastSets)}',
+      key: const Key('last-time'),
+      textAlign: TextAlign.center,
+      style: TextStyle(color: context.theme.colors.mutedForeground),
+    ),
+    if (hint.stepUp) ...[
+      const SizedBox(height: AppSpacing.xs),
+      Text(
+        _stepUpLabel(hint),
+        key: const Key('step-up'),
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: context.theme.colors.primary,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ],
+  ];
+
   List<Widget> _buildSet(BuildContext context) => [
     Text(
       'Exercise ${_exerciseIndex + 1} of ${_exercises.length}',
@@ -596,6 +674,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       textAlign: TextAlign.center,
       style: Theme.of(context).textTheme.titleLarge,
     ),
+    if (_hints[_exerciseIndex] case final hint?) ..._buildHint(context, hint),
     const SizedBox(height: AppSpacing.md),
     Row(
       crossAxisAlignment: CrossAxisAlignment.start,
