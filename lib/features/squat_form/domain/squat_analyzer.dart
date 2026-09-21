@@ -94,6 +94,19 @@ enum FormExercise {
 
   const FormExercise(this.label);
   final String label;
+
+  /// The analyzer that can count a planned exercise, by name and kind, or
+  /// null when none fits. Variants the analyzers can't judge are left out:
+  /// split squats (one leg forward), side planks (not prone).
+  static FormExercise? match(String name, {required bool timed}) {
+    final lower = name.toLowerCase();
+    if (timed) {
+      return lower.contains('plank') && !lower.contains('side') ? plank : null;
+    }
+    if (RegExp(r'push[\s-]?ups?\b').hasMatch(lower)) return pushup;
+    if (lower.contains('squat') && !lower.contains('split')) return squat;
+    return null;
+  }
 }
 
 /// Telemetry for one completed rep — the data behind "was that rep

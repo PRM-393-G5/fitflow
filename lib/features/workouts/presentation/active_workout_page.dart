@@ -12,13 +12,23 @@ import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../../domain/personal_records.dart';
 import '../../../domain/progression.dart';
+import '../../squat_form/domain/squat_analyzer.dart';
+import '../../squat_form/presentation/squat_form_check_page.dart';
 import 'weight_units.dart';
+
+/// Opens the camera form check for one set; resolves to the counted reps
+/// (or hold seconds), or null when nothing was counted.
+typedef FormCheckLauncher = Future<int?> Function(
+  BuildContext context,
+  FormExercise exercise,
+);
 
 class ActiveWorkoutPage extends StatefulWidget {
   const ActiveWorkoutPage({
     required this.workout,
     required this.controller,
     this.clock = DateTime.now,
+    this.launchFormCheck,
     super.key,
   });
 
@@ -27,6 +37,9 @@ class ActiveWorkoutPage extends StatefulWidget {
 
   /// Time source for the session and timers; tests inject a fake clock.
   final DateTime Function() clock;
+
+  /// Replaces the camera page; tests inject a fake count.
+  final FormCheckLauncher? launchFormCheck;
 
   @override
   State<ActiveWorkoutPage> createState() => _ActiveWorkoutPageState();
@@ -271,6 +284,38 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     _logSet(
       SetEntry(amount: held < 1 ? 1 : held, weightKg: _holdWeightKg),
       finishing: finishing,
+    );
+  }
+
+  /// Counts the current set with the camera and puts the count in the
+  /// amount field; the user still confirms the set (and its weight).
+  Future<void> _checkForm(FormExercise exercise) async {
+    if (_done || _resting || _holding || _saving || _dialogOpen) return;
+    final launch =
+        widget.launchFormCheck ??
+        (context, exercise) => Navigator.of(context).push<int>(
+          MaterialPageRoute(
+            builder: (_) => SquatFormCheckPage(
+              controller: widget.controller,
+              forSet: exercise,
+            ),
+          ),
+        );
+    final counted = await _whilePaused(() => launch(context, exercise));
+    if (counted == null || counted < 1 || !mounted) return;
+    final timed = _exercise.isTimed;
+    final amount = counted.clamp(1, timed ? _maxSeconds : _maxReps);
+    setState(() {
+      _amountCtrl.text = '$amount';
+      _amountError = null;
+    });
+    showFToast(
+      context: context,
+      title: Text(
+        timed
+            ? 'Held ${amount}s — log the set to save it.'
+            : 'Counted $amount reps — complete the set to save it.',
+      ),
     );
   }
 
@@ -731,5 +776,18 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         prefix: const Icon(FLucideIcons.check),
         child: const Text('Complete set'),
       ),
+    if (FormExercise.match(_exercise.name, timed: _exercise.isTimed)
+        case final exercise?) ...[
+      const SizedBox(height: AppSpacing.sm),
+      FButton(
+        key: const Key('form-check-set'),
+        variant: .ghost,
+        onPress: () => _checkForm(exercise),
+        prefix: const Icon(FLucideIcons.accessibility),
+        child: Text(
+          _exercise.isTimed ? 'Time hold with camera' : 'Count with camera',
+        ),
+      ),
+    ],
   ];
 }
