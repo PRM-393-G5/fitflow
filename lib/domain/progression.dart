@@ -32,26 +32,31 @@ class ProgressionHint {
 ///
 /// - Loaded: every set at the top weight with the planned reps →
 ///   + one weight step at the planned reps; otherwise repeat the weight.
+///   Sets logged without weight on a loaded plan read as a blank field,
+///   not a switch to bodyweight: the plan's load is suggested again.
 /// - Bodyweight: the reps reached on every set ≥ the plan → one more rep;
 ///   otherwise the same reps again (at least the planned reps).
-/// - Timed: the same with hold seconds, [holdStepSeconds] at a time; any
-///   load is kept.
+/// - Timed: the same with hold seconds, [holdStepSeconds] at a time; the
+///   load is kept, and a lighter set blocks the step up as for lifts.
 abstract final class Progression {
   static const repStep = 1;
   static const holdStepSeconds = 5;
 
-  /// Weight steps: 2.5 kg, or 5 lb for imperial users.
+  /// Default weight step; imperial callers pass 5 lb in kg.
   static const metricStepKg = 2.5;
-  static const imperialStepKg = 5 * 0.453592;
 
   /// The hint for performing [planned] today, from the newest session that
   /// logged an exercise of the same name and kind. Camera form checks are
   /// skipped — a single test set says nothing about the planned sets.
-  /// Null when there is no history.
+  /// Suggestions are capped at [maxAmount] reps/seconds and [maxWeightKg],
+  /// the limits of the set form; a capped step that adds nothing is not a
+  /// step up. Null when there is no history.
   static ProgressionHint? forExercise(
     Iterable<WorkoutSession> sessions,
     Exercise planned, {
     double weightStepKg = metricStepKg,
+    int maxAmount = 1 << 30,
+    double maxWeightKg = double.infinity,
   }) {
     final last = _lastPerformance(sessions, planned);
     if (last == null) return null;
@@ -66,33 +71,46 @@ abstract final class Progression {
       (low, set) => set.amount < low ? set.amount : low,
     );
     final target = planned.isTimed ? planned.durationSeconds : planned.reps;
-    final allSets = sets.length >= planned.sets;
-    final hitTarget = allSets && lowestAmount >= target;
-
-    if (planned.isTimed || topWeight <= 0) {
-      final step = planned.isTimed ? holdStepSeconds : repStep;
-      // Without a step up, repeat what every set reached — but never
-      // suggest less than the plan.
-      return ProgressionHint(
-        lastSets: sets,
-        lastDate: date,
-        amount: hitTarget
-            ? lowestAmount + step
-            : (lowestAmount > target ? lowestAmount : target),
-        weightKg: topWeight,
-        stepUp: hitTarget,
-      );
-    }
     // A drop set below the top weight means the weight was not held for
     // every set yet.
     final heldWeight = sets.every((set) => set.weightKg >= topWeight);
-    final stepUp = hitTarget && heldWeight;
+    final hitTarget =
+        sets.length >= planned.sets && lowestAmount >= target && heldWeight;
+    final load = topWeight > 0 ? topWeight : planned.weightKg;
+
+    if (planned.isTimed || load <= 0) {
+      final step = planned.isTimed ? holdStepSeconds : repStep;
+      // Without a step up, repeat what every set reached — but never
+      // suggest less than the plan.
+      final raised = hitTarget
+          ? lowestAmount + step
+          : (lowestAmount > target ? lowestAmount : target);
+      final amount = raised > maxAmount ? maxAmount : raised;
+      return ProgressionHint(
+        lastSets: sets,
+        lastDate: date,
+        amount: amount,
+        weightKg: load,
+        stepUp: hitTarget && amount > lowestAmount,
+      );
+    }
+    if (topWeight <= 0) {
+      return ProgressionHint(
+        lastSets: sets,
+        lastDate: date,
+        amount: target,
+        weightKg: load,
+        stepUp: false,
+      );
+    }
+    final raised = hitTarget ? topWeight + weightStepKg : topWeight;
+    final weightKg = raised > maxWeightKg ? maxWeightKg : raised;
     return ProgressionHint(
       lastSets: sets,
       lastDate: date,
       amount: target,
-      weightKg: stepUp ? topWeight + weightStepKg : topWeight,
-      stepUp: stepUp,
+      weightKg: weightKg,
+      stepUp: weightKg > topWeight,
     );
   }
 

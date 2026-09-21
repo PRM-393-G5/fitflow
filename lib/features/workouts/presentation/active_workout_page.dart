@@ -93,15 +93,18 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   void initState() {
     super.initState();
     _startedAt = widget.clock();
+    // 2.5 kg, or 5 lb through the same conversion the form uses.
     final step = _metric
         ? Progression.metricStepKg
-        : Progression.imperialStepKg;
+        : WeightUnits.toKg(5, false);
     _hints = {
       for (final (index, exercise) in _exercises.indexed)
         index: ?Progression.forExercise(
           widget.controller.sessions,
           exercise,
           weightStepKg: step,
+          maxAmount: exercise.isTimed ? _maxSeconds : _maxReps,
+          maxWeightKg: WeightUnits.maxKg,
         ),
     };
     final first = _exercises.indexWhere((item) => item.sets > 0);
@@ -603,18 +606,23 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   String _weightLabel(double kg) =>
       '${WeightUnits.format(kg, _metric)} ${WeightUnits.label(_metric)}';
 
-  /// "3 × 10 @ 12 kg", "10, 8, 7 reps @ 12 kg", "10 @ 12, 8 @ 10 kg".
+  /// "3 × 10 @ 12 kg", "10, 8, 7 reps @ 12 kg",
+  /// "10 @ 12 kg, 8 @ bodyweight".
   String _lastSetsLabel(List<SetEntry> sets) {
     final timed = _exercise.isTimed;
     String amount(int value) => timed ? '${value}s' : '$value';
     final weight = sets.first.weightKg;
-    final sameWeight = sets.every((set) => set.weightKg == weight);
+    // Compared as shown, so lb conversion noise doesn't split equal sets.
+    final shown = WeightUnits.format(weight, _metric);
+    final sameWeight = sets.every(
+      (set) => WeightUnits.format(set.weightKg, _metric) == shown,
+    );
     if (!sameWeight) {
-      final parts = [
+      return [
         for (final set in sets)
-          '${amount(set.amount)} @ ${WeightUnits.format(set.weightKg, _metric)}',
-      ];
-      return '${parts.join(', ')} ${WeightUnits.label(_metric)}';
+          '${amount(set.amount)} @ '
+              '${set.weightKg > 0 ? _weightLabel(set.weightKg) : 'bodyweight'}',
+      ].join(', ');
     }
     final load = weight > 0 ? ' @ ${_weightLabel(weight)}' : '';
     if (sets.every((set) => set.amount == sets.first.amount)) {

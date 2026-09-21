@@ -101,10 +101,46 @@ void main() {
     final hint = Progression.forExercise(
       [done(DateTime(2026, 10, 1), row, sets(3, 10, 20))],
       row,
-      weightStepKg: Progression.imperialStepKg,
+      weightStepKg: 5 / 2.20462,
     )!;
 
-    expect(hint.weightKg, closeTo(20 + 2.26796, 1e-6));
+    expect(hint.weightKg, closeTo(20 + 5 / 2.20462, 1e-9));
+  });
+
+  test('a blank weight on a loaded plan suggests the plan load again', () {
+    final hint = Progression.forExercise([
+      done(DateTime(2026, 10, 1), row, sets(3, 10)),
+    ], row)!;
+
+    expect(hint.stepUp, isFalse);
+    expect(hint.weightKg, 10);
+    expect(hint.amount, 10);
+  });
+
+  test('suggestions stay within the form limits', () {
+    final plank = plan('Plank', sets: 1, seconds: 60);
+    final hold = Progression.forExercise(
+      [done(DateTime(2026, 10, 1), plank, sets(1, 3600))],
+      plank,
+      maxAmount: 3600,
+    )!;
+    final lift = Progression.forExercise(
+      [done(DateTime(2026, 10, 1), row, sets(3, 10, 999))],
+      row,
+      maxWeightKg: 1000,
+    )!;
+    final atCap = Progression.forExercise(
+      [done(DateTime(2026, 10, 1), row, sets(3, 10, 1000))],
+      row,
+      maxWeightKg: 1000,
+    )!;
+
+    expect(hold.amount, 3600);
+    expect(hold.stepUp, isFalse);
+    expect(lift.weightKg, 1000);
+    expect(lift.stepUp, isTrue);
+    expect(atCap.weightKg, 1000);
+    expect(atCap.stepUp, isFalse);
   });
 
   test('bodyweight adds a rep once every set reached the plan', () {
@@ -153,6 +189,20 @@ void main() {
     expect(hint.weightKg, 5);
   });
 
+  test('a lighter hold set blocks the step up and keeps the top load', () {
+    final plank = plan('Plank', sets: 2, seconds: 45);
+    final hint = Progression.forExercise([
+      done(DateTime(2026, 10, 1), plank, const [
+        SetEntry(amount: 45, weightKg: 10),
+        SetEntry(amount: 45, weightKg: 5),
+      ]),
+    ], plank)!;
+
+    expect(hint.stepUp, isFalse);
+    expect(hint.amount, 45);
+    expect(hint.weightKg, 10);
+  });
+
   test('uses the newest session, matching names case-insensitively', () {
     final hint = Progression.forExercise([
       done(DateTime(2026, 10, 1), row, sets(3, 10, 30)),
@@ -181,8 +231,9 @@ void main() {
     );
   });
 
-  testWidgets('active workout prefills from last session and shows hints', (
-    tester,
+  Future<AppController> pumpWorkout(
+    WidgetTester tester,
+    WorkoutSession last,
   ) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
@@ -191,9 +242,7 @@ void main() {
       preferences,
     );
     await controller.load();
-    await controller.addSession(
-      done(DateTime(2026, 10, 1), row, sets(3, 10, 12)),
-    );
+    await controller.addSession(last);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -215,6 +264,16 @@ void main() {
           controller: controller,
         ),
       ),
+    );
+    return controller;
+  }
+
+  testWidgets('active workout prefills from last session and shows hints', (
+    tester,
+  ) async {
+    final controller = await pumpWorkout(
+      tester,
+      done(DateTime(2026, 10, 1), row, sets(3, 10, 12)),
     );
 
     expect(find.text('Last time: 3 × 10 @ 12 kg'), findsOneWidget);
@@ -245,5 +304,18 @@ void main() {
       14.5,
       14.5,
     ]);
+  });
+
+  testWidgets('last-time label names bodyweight sets', (tester) async {
+    await pumpWorkout(
+      tester,
+      done(DateTime(2026, 10, 1), row, const [
+        SetEntry(amount: 10, weightKg: 12),
+        SetEntry(amount: 8),
+      ]),
+    );
+
+    expect(find.text('Last time: 10 @ 12 kg, 8 @ bodyweight'), findsOneWidget);
+    expect(find.byKey(const Key('step-up')), findsNothing);
   });
 }
