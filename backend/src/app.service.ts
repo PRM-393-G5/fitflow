@@ -1,8 +1,13 @@
 import { Injectable } from '@nestjs/common';
 
+export interface ApiInfo {
+  name: string;
+  version: string;
+}
+
 @Injectable()
 export class AppService {
-  getHello(): string {
-    return 'Hello World!';
+  getInfo(): ApiInfo {
+    return { name: 'FitFlow API', version: '0.1.0' };
   }
 }

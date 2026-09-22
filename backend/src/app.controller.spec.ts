@@ -14,9 +14,10 @@ describe('AppController', () => {
     appController = app.get<AppController>(AppController);
   });
 
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+  it('returns the API name and version', () => {
+    expect(appController.getInfo()).toEqual({
+      name: 'FitFlow API',
+      version: '0.1.0',
     });
   });
 });

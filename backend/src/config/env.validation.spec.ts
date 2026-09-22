@@ -4,7 +4,7 @@ describe('validateEnv', () => {
   it('applies defaults and converts types', () => {
     const env = validateEnv({ MONGODB_URI: 'mongodb://localhost/fitflow' });
     expect(env.NODE_ENV).toBe(NodeEnv.Development);
-    expect(env.PORT).toBe(3000);
+    expect(env.PORT).toBe(3001);
 
     expect(validateEnv({ MONGODB_URI: 'x', PORT: '4000' }).PORT).toBe(4000);
   });

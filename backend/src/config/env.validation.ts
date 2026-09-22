@@ -22,7 +22,7 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   @Max(65535)
-  PORT: number = 3000;
+  PORT: number = 3001;
 
   @IsString()
   MONGODB_URI: string;
