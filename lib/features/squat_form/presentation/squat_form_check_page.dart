@@ -23,9 +23,15 @@ import 'pose_overlay.dart';
 import 'pose_render_model.dart';
 
 class SquatFormCheckPage extends StatefulWidget {
-  const SquatFormCheckPage({required this.controller, super.key});
+  const SquatFormCheckPage({required this.controller, this.forSet, super.key});
 
   final AppController controller;
+
+  /// Set mode: opened from an active workout to count one set of this
+  /// exercise. The exercise can't be switched, nothing is saved as a
+  /// session, and the page pops with the counted reps (or hold seconds),
+  /// or null when nothing was counted.
+  final FormExercise? forSet;
 
   @override
   State<SquatFormCheckPage> createState() => _SquatFormCheckPageState();
@@ -42,8 +48,14 @@ typedef _FormResult = ({
 
 class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     with WidgetsBindingObserver {
-  FormExercise _exercise = FormExercise.squat;
-  RepAnalyzer _analyzer = SquatAnalyzer();
+  late FormExercise _exercise = widget.forSet ?? FormExercise.squat;
+  late RepAnalyzer _analyzer = _analyzerFor(_exercise);
+
+  static RepAnalyzer _analyzerFor(FormExercise exercise) => switch (exercise) {
+    FormExercise.squat => SquatAnalyzer(),
+    FormExercise.pushup => PushupAnalyzer(),
+    FormExercise.plank => PlankAnalyzer(),
+  };
   final _detector = PoseDetector(
     options: PoseDetectorOptions(
       model: PoseDetectionModel.base,
@@ -447,11 +459,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     final result = _snapshot();
     setState(() {
       _exercise = exercise;
-      _analyzer = switch (exercise) {
-        FormExercise.squat => SquatAnalyzer(),
-        FormExercise.pushup => PushupAnalyzer(),
-        FormExercise.plank => PlankAnalyzer(),
-      };
+      _analyzer = _analyzerFor(exercise);
       _analysis = null;
       if (_startedAt != null) _startedAt = DateTime.now();
       _poseModel.clear();
@@ -490,6 +498,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
       _reviewing = true;
     });
     var saved = false;
+    var amount = 0;
     try {
       _analyzer.pauseTiming();
       final result = _snapshot();
@@ -505,7 +514,9 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
         );
         if (!mounted) return;
       }
-      await _saveSession(result);
+      // In set mode the workout logs the count; no session of its own.
+      if (widget.forSet == null) await _saveSession(result);
+      amount = result.amount;
       saved = true;
     } catch (error) {
       if (!mounted) return;
@@ -524,7 +535,10 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
         });
       }
     }
-    if (saved && mounted) Navigator.of(context).pop();
+    if (saved && mounted) {
+      Navigator.of(context)
+          .pop(widget.forSet != null && amount > 0 ? amount : null);
+    }
   }
 
   @override
@@ -674,8 +688,10 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                 child: Row(
                   children: [
                     _CamButton(
-                      icon: FLucideIcons.x,
-                      tooltip: 'Close',
+                      icon: widget.forSet == null
+                          ? FLucideIcons.x
+                          : FLucideIcons.check,
+                      tooltip: widget.forSet == null ? 'Close' : 'Done',
                       onPress: _saveAndClose,
                     ),
                     const Spacer(),
@@ -762,38 +778,47 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
                     child: Column(
                       children: [
-                        FPopoverMenu.tiles(
-                          menuBuilder: (context, controller, menu) => [
-                            FTileGroup(
-                              children: [
-                                for (final item in FormExercise.values)
-                                  FTile(
-                                    title: Text(item.label),
-                                    onPress: () {
-                                      _selectExercise(item);
-                                      controller.hide();
-                                    },
-                                  ),
-                              ],
+                        if (widget.forSet != null)
+                          Text(
+                            _exercise.label,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
                             ),
-                          ],
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _exercise.label,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const Icon(
-                                FLucideIcons.chevronDown,
-                                color: Colors.white,
+                          )
+                        else
+                          FPopoverMenu.tiles(
+                            menuBuilder: (context, controller, menu) => [
+                              FTileGroup(
+                                children: [
+                                  for (final item in FormExercise.values)
+                                    FTile(
+                                      title: Text(item.label),
+                                      onPress: () {
+                                        _selectExercise(item);
+                                        controller.hide();
+                                      },
+                                    ),
+                                ],
                               ),
                             ],
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _exercise.label,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Icon(
+                                  FLucideIcons.chevronDown,
+                                  color: Colors.white,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
                         const SizedBox(height: 8),
                         Row(
                           children: [
