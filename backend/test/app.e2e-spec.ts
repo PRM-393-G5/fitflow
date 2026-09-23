@@ -39,4 +39,13 @@ describe('App (e2e)', () => {
   it('serves nothing outside the /api prefix', () => {
     return request(app.getHttpServer()).get('/').expect(404);
   });
+
+  it('returns the shared error body for unknown routes', async () => {
+    const res = await request(app.getHttpServer()).get('/api/nope').expect(404);
+    expect(res.body).toMatchObject({
+      statusCode: 404,
+      error: 'NOT_FOUND',
+      path: '/api/nope',
+    });
+  });
 });
