@@ -1,0 +1,25 @@
+# compiled output
+/dist
+/node_modules
+/build
+*.tsbuildinfo
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# Tests
+/coverage
+
+# IDEs and editors
+/.idea
+.vscode/*
+
+# dotenv environment variable files
+.env
+.env.*
+!.env.example
