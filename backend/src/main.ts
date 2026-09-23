@@ -11,6 +11,6 @@ async function bootstrap() {
   const config = app.get(ConfigService<EnvironmentVariables, true>);
   const port = config.get('PORT', { infer: true });
   await app.listen(port);
-  Logger.log(`FitFlow API listening on http://localhost:${port}/api`);
+  Logger.log(`FitFlow API listening on ${await app.getUrl()}/api`);
 }
 await bootstrap();

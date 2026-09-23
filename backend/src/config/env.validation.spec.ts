@@ -13,6 +13,10 @@ describe('validateEnv', () => {
     expect(() => validateEnv({})).toThrow(/MONGODB_URI/);
   });
 
+  it('rejects an empty MONGODB_URI', () => {
+    expect(() => validateEnv({ MONGODB_URI: '' })).toThrow(/MONGODB_URI/);
+  });
+
   it('rejects an out-of-range PORT', () => {
     expect(() => validateEnv({ MONGODB_URI: 'x', PORT: '70000' })).toThrow(
       /PORT/,

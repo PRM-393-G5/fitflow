@@ -19,7 +19,7 @@ describe('App (e2e)', () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    await app?.close();
   });
 
   it('GET /api returns the API info', () => {

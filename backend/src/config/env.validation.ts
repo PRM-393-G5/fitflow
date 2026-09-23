@@ -2,6 +2,7 @@ import { plainToInstance } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsString,
   Max,
   Min,
@@ -25,6 +26,7 @@ export class EnvironmentVariables {
   PORT: number = 3001;
 
   @IsString()
+  @IsNotEmpty()
   MONGODB_URI: string;
 }
 
@@ -33,7 +35,7 @@ export function validateEnv(config: Record<string, unknown>) {
   const env = plainToInstance(EnvironmentVariables, config, {
     enableImplicitConversion: true,
   });
-  const errors = validateSync(env, { skipMissingProperties: false });
+  const errors = validateSync(env);
   if (errors.length > 0) {
     const details = errors
       .flatMap((error) => Object.values(error.constraints ?? {}))

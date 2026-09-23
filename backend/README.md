@@ -8,7 +8,9 @@ then the API issues its own JWT and stores per-user sync data.
 
 - Node.js 24 and npm
 - MongoDB 7+ running locally (default URI assumes user `admin` / `123456`
-  authenticating against the `admin` database)
+  authenticating against the `admin` database). These are local development
+  credentials only — use your own user and password for any shared or
+  deployed database.
 
 ## Setup and run
 
