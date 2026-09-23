@@ -29,6 +29,13 @@ describe('App (e2e)', () => {
       .expect({ name: 'FitFlow API', version: '0.1.0' });
   });
 
+  it('GET /api/health reports the database as up', () => {
+    return request(app.getHttpServer())
+      .get('/api/health')
+      .expect(200)
+      .expect({ status: 'ok', database: 'up' });
+  });
+
   it('serves nothing outside the /api prefix', () => {
     return request(app.getHttpServer()).get('/').expect(404);
   });
