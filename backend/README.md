@@ -29,6 +29,17 @@ environment variable is missing or invalid (see `src/config/env.validation.ts`).
 | `NODE_ENV` | `development` | `development`, `production` or `test` |
 | `PORT` | `3001` | HTTP port |
 | `MONGODB_URI` | — (required) | MongoDB connection string |
+| `MONGODB_TEST_URI` | local `fitflow-test` DB | Database used by the test suites (never the dev DB); export it in the shell — `.env` is not read for it |
+
+## Endpoints
+
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api` | API name and version |
+| GET | `/api/health` | `200 {status, database}` when MongoDB answers a ping, `503` otherwise |
+
+Every error uses the same body:
+`{ statusCode, error, message, path, timestamp }`.
 
 ## Quality checks and tests
 
@@ -36,7 +47,7 @@ environment variable is missing or invalid (see `src/config/env.validation.ts`).
 npm run lint
 npx prettier --check "src/**/*.ts" "test/**/*.ts"
 npm test           # unit tests (Vitest)
-npm run test:e2e   # end-to-end tests against the HTTP app
+npm run test:e2e   # end-to-end tests (needs MongoDB running)
 npm run build
 ```
 
