@@ -10,8 +10,13 @@ import { EnvironmentVariables } from '../config/env.validation.js';
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
         uri: config.get('MONGODB_URI', { infer: true }),
-        // Fail requests quickly instead of buffering them while Mongo is down.
+        // While Mongo is down, fail queries within 5 s instead of queueing
+        // them (Mongoose buffering) or waiting on the driver indefinitely.
+        bufferCommands: false,
         serverSelectionTimeoutMS: 5000,
+        // Give up at startup after ~10 s rather than the default 9 retries.
+        retryAttempts: 1,
+        retryDelay: 1000,
       }),
     }),
   ],

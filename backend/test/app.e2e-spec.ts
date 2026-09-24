@@ -8,7 +8,7 @@ import { configureApp } from './../src/app.setup.js';
 describe('App (e2e)', () => {
   let app: INestApplication<App>;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -18,7 +18,7 @@ describe('App (e2e)', () => {
     await app.init();
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     await app?.close();
   });
 
@@ -36,6 +36,15 @@ describe('App (e2e)', () => {
       .expect({ status: 'ok', database: 'up' });
   });
 
+  it('answers malformed JSON with a 400 error body', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api')
+      .set('Content-Type', 'application/json')
+      .send('{bad json')
+      .expect(400);
+    expect(res.body).toMatchObject({ statusCode: 400, error: 'Bad Request' });
+  });
+
   it('serves nothing outside the /api prefix', () => {
     return request(app.getHttpServer()).get('/').expect(404);
   });
@@ -44,7 +53,7 @@ describe('App (e2e)', () => {
     const res = await request(app.getHttpServer()).get('/api/nope').expect(404);
     expect(res.body).toMatchObject({
       statusCode: 404,
-      error: 'NOT_FOUND',
+      error: 'Not Found',
       path: '/api/nope',
     });
   });

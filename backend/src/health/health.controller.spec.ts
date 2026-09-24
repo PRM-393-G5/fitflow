@@ -1,6 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { Connection } from 'mongoose';
-import { HealthController } from './health.controller.js';
+import { HealthController, PING_TIMEOUT_MS } from './health.controller.js';
 
 function fakeConnection(readyState: number, ping: () => Promise<unknown>) {
   return {
@@ -36,5 +36,21 @@ describe('HealthController', () => {
     await expect(controller.check()).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
+  });
+
+  it('returns 503 when the ping never answers', async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new HealthController(
+        fakeConnection(1, () => new Promise(() => {})),
+      );
+      const result = expect(controller.check()).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+      await vi.advanceTimersByTimeAsync(PING_TIMEOUT_MS);
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

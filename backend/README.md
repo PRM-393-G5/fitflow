@@ -29,7 +29,7 @@ environment variable is missing or invalid (see `src/config/env.validation.ts`).
 | `NODE_ENV` | `development` | `development`, `production` or `test` |
 | `PORT` | `3001` | HTTP port |
 | `MONGODB_URI` | — (required) | MongoDB connection string |
-| `MONGODB_TEST_URI` | local `fitflow-test` DB | Database used by the test suites (never the dev DB) |
+| `MONGODB_TEST_URI` | local `fitflow-test` DB | Database used by the test suites (never the dev DB); export it in the shell — `.env` is not read for it |
 
 ## Endpoints
 
