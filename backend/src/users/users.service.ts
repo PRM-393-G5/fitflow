@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { isValidObjectId, Model, mongo } from 'mongoose';
+import { isObjectIdOrHexString, Model, mongo } from 'mongoose';
 import { User, UserDocument } from './schemas/user.schema.js';
 
 /** Identity fields taken from a verified Google ID token. */
@@ -20,14 +20,27 @@ export interface UserProfile {
 }
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
   constructor(@InjectModel(User.name) private readonly users: Model<User>) {}
+
+  /**
+   * Builds the unique googleSub index before the app serves requests —
+   * autoIndex runs in the background, and without the index two racing
+   * first sign-ins would create duplicate accounts. Fails startup if the
+   * index cannot be built (e.g. duplicates already exist).
+   */
+  async onModuleInit() {
+    await this.users.createIndexes();
+  }
 
   /**
    * Finds the account for a Google identity, creating it on first sign-in.
    * Name, email and photo are refreshed from Google on every sign-in.
    */
   async upsertFromGoogle(profile: GoogleProfile): Promise<UserDocument> {
+    if (!profile.sub || !profile.email) {
+      throw new Error('Google profile needs both sub and email');
+    }
     const upsert = () =>
       this.users
         .findOneAndUpdate(
@@ -35,18 +48,29 @@ export class UsersService {
           {
             $set: {
               email: profile.email,
-              name: profile.name,
-              photoUrl: profile.photoUrl,
+              // null (not undefined, which Mongoose drops) so a name or
+              // photo removed on Google is cleared here too.
+              name: profile.name ?? null,
+              photoUrl: profile.photoUrl ?? null,
             },
           },
-          { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
+          {
+            upsert: true,
+            returnDocument: 'after',
+            setDefaultsOnInsert: true,
+            runValidators: true,
+          },
         )
         .orFail();
     try {
       return await upsert();
     } catch (error) {
       // Two first sign-ins raced to insert; the other one won — update it.
-      if (error instanceof mongo.MongoServerError && error.code === 11000) {
+      if (
+        error instanceof mongo.MongoServerError &&
+        error.code === 11000 &&
+        error.keyPattern?.googleSub !== undefined
+      ) {
         return upsert();
       }
       throw error;
@@ -55,13 +79,13 @@ export class UsersService {
 
   /** The user with [id], or null when absent or [id] is malformed. */
   async findById(id: string): Promise<UserDocument | null> {
-    if (!isValidObjectId(id)) return null;
+    if (!isObjectIdOrHexString(id)) return null;
     return this.users.findById(id).exec();
   }
 
   /** Deletes the account document; true when it existed. */
   async remove(id: string): Promise<boolean> {
-    if (!isValidObjectId(id)) return false;
+    if (!isObjectIdOrHexString(id)) return false;
     const result = await this.users.deleteOne({ _id: id }).exec();
     return result.deletedCount === 1;
   }
@@ -70,8 +94,8 @@ export class UsersService {
     return {
       id: user.id as string,
       email: user.email,
-      name: user.name ?? null,
-      photoUrl: user.photoUrl ?? null,
+      name: user.name,
+      photoUrl: user.photoUrl,
     };
   }
 }
