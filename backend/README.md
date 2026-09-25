@@ -38,6 +38,12 @@ environment variable is missing or invalid (see `src/config/env.validation.ts`).
 | GET | `/api` | API name and version |
 | GET | `/api/health` | `200 {status, database}` when MongoDB answers a ping, `503` otherwise |
 
+## Data model
+
+| Collection | Key fields | Notes |
+|---|---|---|
+| `users` | `googleSub` (unique), `email`, `name`, `photoUrl`, `meta`, `metaUpdatedAt` | Created on first Google sign-in; `meta` is the app's last-write-wins profile blob |
+
 Every error uses the same body:
 `{ statusCode, error, message, path, timestamp }`.
 
@@ -47,7 +53,8 @@ Every error uses the same body:
 npm run lint
 npx prettier --check "src/**/*.ts" "test/**/*.ts"
 npm test           # unit tests (Vitest)
-npm run test:e2e   # end-to-end tests (needs MongoDB running)
+npm run test:e2e   # HTTP + MongoDB integration tests (needs MongoDB running;
+                   # suites run one at a time on the fitflow-test database)
 npm run build
 ```
 
