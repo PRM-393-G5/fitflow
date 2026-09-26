@@ -38,6 +38,7 @@ environment variable is missing or invalid (see `src/config/env.validation.ts`).
 |---|---|---|
 | GET | `/api` | API name and version |
 | GET | `/api/health` | `200 {status, database}` when MongoDB answers a ping, `503` otherwise |
+| POST | `/api/auth/google` | Body `{idToken}` (Google Sign-In ID token) → `200 {user}`; creates the account on first sign-in; `401` if Google does not verify the token or the email |
 
 ## Data model
 
