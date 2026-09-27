@@ -29,6 +29,7 @@ environment variable is missing or invalid (see `src/config/env.validation.ts`).
 | `NODE_ENV` | `development` | `development`, `production` or `test` |
 | `PORT` | `3001` | HTTP port |
 | `MONGODB_URI` | — (required) | MongoDB connection string |
+| `GOOGLE_CLIENT_IDS` | — (required) | Comma-separated Google OAuth client IDs accepted as ID-token audience (the app's `serverClientId`) |
 | `MONGODB_TEST_URI` | local `fitflow-test` DB | Database used by the test suites (never the dev DB); export it in the shell — `.env` is not read for it |
 
 ## Endpoints
@@ -37,6 +38,7 @@ environment variable is missing or invalid (see `src/config/env.validation.ts`).
 |---|---|---|
 | GET | `/api` | API name and version |
 | GET | `/api/health` | `200 {status, database}` when MongoDB answers a ping, `503` otherwise |
+| POST | `/api/auth/google` | Body `{idToken}` (Google Sign-In ID token) → `200 {user}`; creates the account on first sign-in; `401` if Google does not verify the token or the email |
 
 ## Data model
 

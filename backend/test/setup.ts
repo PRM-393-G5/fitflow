@@ -8,3 +8,4 @@ process.env.NODE_ENV = 'test';
 process.env.MONGODB_URI =
   process.env.MONGODB_TEST_URI ||
   'mongodb://admin:123456@localhost:27017/fitflow-test?authSource=admin';
+process.env.GOOGLE_CLIENT_IDS ||= 'test-client-id.apps.googleusercontent.com';
