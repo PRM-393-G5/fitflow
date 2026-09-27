@@ -35,6 +35,14 @@ describe('validateEnv', () => {
   });
 });
 
+describe('validateEnv lists', () => {
+  it('rejects GOOGLE_CLIENT_IDS without any ID', () => {
+    expect(() =>
+      validateEnv({ ...required, GOOGLE_CLIENT_IDS: ' , ' }),
+    ).toThrow(/at least one ID/);
+  });
+});
+
 describe('splitList', () => {
   it('splits on commas and drops blanks', () => {
     expect(splitList(' a, b ,,c ')).toEqual(['a', 'b', 'c']);

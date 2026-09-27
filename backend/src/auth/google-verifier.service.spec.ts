@@ -1,4 +1,8 @@
-import { UnauthorizedException } from '@nestjs/common';
+import {
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { OAuth2Client, TokenPayload } from 'google-auth-library';
 import { GoogleVerifier } from './google-verifier.service.js';
@@ -58,8 +62,17 @@ describe('GoogleVerifier', () => {
 
   it('rejects a token without email', async () => {
     const verify = ticket({ ...verified, email: undefined });
+    await expect(verifierWith(verify).verify('t')).rejects.toThrow(/no email/);
+  });
+
+  it('answers 503 when Google keys cannot be fetched', async () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    const network = Object.assign(new Error('getaddrinfo ENOTFOUND'), {
+      code: 'ENOTFOUND',
+    });
+    const verify = vi.fn().mockRejectedValue(network);
     await expect(verifierWith(verify).verify('t')).rejects.toBeInstanceOf(
-      UnauthorizedException,
+      ServiceUnavailableException,
     );
   });
 });

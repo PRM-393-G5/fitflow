@@ -1,4 +1,4 @@
-import { INestApplication, UnauthorizedException } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import type { Model } from 'mongoose';
@@ -6,10 +6,10 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
-import { GoogleVerifier } from '../src/auth/google-verifier.service.js';
+import { OAuth2Client } from 'google-auth-library';
 import { User } from '../src/users/schemas/user.schema.js';
 
-/** A syntactically valid JWT; the fake verifier decides if it is "good". */
+/** Syntactically valid JWTs; the fake Google client decides which is "good". */
 const GOOD_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJnb29kIn0.c2ln';
 const BAD_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJiYWQifQ.c2ln';
 
@@ -19,16 +19,24 @@ describe('Auth (e2e)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(GoogleVerifier)
+      // Only Google's network call is faked: the real GoogleVerifier runs,
+      // including the audience parsed from GOOGLE_CLIENT_IDS.
+      .overrideProvider(OAuth2Client)
       .useValue({
-        verify: (idToken: string) => {
-          if (idToken !== GOOD_TOKEN) {
-            return Promise.reject(new UnauthorizedException());
+        verifyIdToken: (options: { idToken: string; audience: string[] }) => {
+          const audienceOk = options.audience.includes(
+            process.env.GOOGLE_CLIENT_IDS!,
+          );
+          if (options.idToken !== GOOD_TOKEN || !audienceOk) {
+            return Promise.reject(new Error('Wrong recipient'));
           }
           return Promise.resolve({
-            sub: 'google-e2e',
-            email: 'e2e@example.com',
-            name: 'E2E',
+            getPayload: () => ({
+              sub: 'google-e2e',
+              email: 'e2e@example.com',
+              email_verified: true,
+              name: 'E2E',
+            }),
           });
         },
       })

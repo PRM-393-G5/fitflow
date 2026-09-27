@@ -58,5 +58,10 @@ export function validateEnv(config: Record<string, unknown>) {
       .join('\n  ');
     throw new Error(`Invalid environment:\n  ${details}`);
   }
+  if (splitList(env.GOOGLE_CLIENT_IDS).length === 0) {
+    throw new Error(
+      'Invalid environment:\n  GOOGLE_CLIENT_IDS must list at least one ID',
+    );
+  }
   return env;
 }
