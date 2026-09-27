@@ -30,6 +30,9 @@ environment variable is missing or invalid (see `src/config/env.validation.ts`).
 | `PORT` | `3001` | HTTP port |
 | `MONGODB_URI` | — (required) | MongoDB connection string |
 | `GOOGLE_CLIENT_IDS` | — (required) | Comma-separated Google OAuth client IDs accepted as ID-token audience (the app's `serverClientId`) |
+| `JWT_ACCESS_SECRET` | — (required, ≥ 32 chars) | HMAC secret for access tokens |
+| `ACCESS_TOKEN_TTL_SECONDS` | `900` | Access token lifetime |
+| `REFRESH_TOKEN_TTL_DAYS` | `30` | Refresh token lifetime |
 | `MONGODB_TEST_URI` | local `fitflow-test` DB | Database used by the test suites (never the dev DB); export it in the shell — `.env` is not read for it |
 
 ## Endpoints

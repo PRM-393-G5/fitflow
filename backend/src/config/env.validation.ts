@@ -4,6 +4,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsString,
+  MinLength,
   Max,
   Min,
   validateSync,
@@ -36,6 +37,21 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   GOOGLE_CLIENT_IDS: string;
+
+  /** HMAC secret for access tokens; at least 32 characters. */
+  @IsString()
+  @MinLength(32)
+  JWT_ACCESS_SECRET: string;
+
+  /** Access token lifetime in seconds (default 15 minutes). */
+  @IsInt()
+  @Min(60)
+  ACCESS_TOKEN_TTL_SECONDS: number = 900;
+
+  /** Refresh token lifetime in days (default 30). */
+  @IsInt()
+  @Min(1)
+  REFRESH_TOKEN_TTL_DAYS: number = 30;
 }
 
 /** Splits a comma-separated variable, dropping blanks. */
