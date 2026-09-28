@@ -1,6 +1,10 @@
 import { NodeEnv, splitList, validateEnv } from './env.validation.js';
 
-const required = { MONGODB_URI: 'x', GOOGLE_CLIENT_IDS: 'client' };
+const required = {
+  MONGODB_URI: 'x',
+  GOOGLE_CLIENT_IDS: 'client',
+  JWT_ACCESS_SECRET: 'x'.repeat(32),
+};
 
 describe('validateEnv', () => {
   it('applies defaults and converts types', () => {
@@ -29,9 +33,23 @@ describe('validateEnv', () => {
   });
 
   it('requires GOOGLE_CLIENT_IDS', () => {
-    expect(() => validateEnv({ MONGODB_URI: 'x' })).toThrow(
-      /GOOGLE_CLIENT_IDS/,
-    );
+    expect(() =>
+      validateEnv({ ...required, GOOGLE_CLIENT_IDS: undefined }),
+    ).toThrow(/GOOGLE_CLIENT_IDS/);
+  });
+});
+
+describe('validateEnv JWT settings', () => {
+  it('defaults token lifetimes', () => {
+    const env = validateEnv(required);
+    expect(env.ACCESS_TOKEN_TTL_SECONDS).toBe(900);
+    expect(env.REFRESH_TOKEN_TTL_DAYS).toBe(30);
+  });
+
+  it('rejects a short JWT secret', () => {
+    expect(() =>
+      validateEnv({ ...required, JWT_ACCESS_SECRET: 'short' }),
+    ).toThrow(/JWT_ACCESS_SECRET/);
   });
 });
 
