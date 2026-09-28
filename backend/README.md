@@ -41,13 +41,27 @@ environment variable is missing or invalid (see `src/config/env.validation.ts`).
 |---|---|---|
 | GET | `/api` | API name and version |
 | GET | `/api/health` | `200 {status, database}` when MongoDB answers a ping, `503` otherwise |
-| POST | `/api/auth/google` | Body `{idToken}` (Google Sign-In ID token) → `200 {user}`; creates the account on first sign-in; `401` if Google does not verify the token or the email |
+| POST | `/api/auth/google` | Body `{idToken}` (Google Sign-In ID token) → `200 {accessToken, expiresIn, refreshToken, user}`; creates the account on first sign-in; `401` if Google does not verify the token or the email |
+| POST | `/api/auth/refresh` | Body `{refreshToken}` → new `{accessToken, expiresIn, refreshToken}`; the old refresh token stops working |
+| POST | `/api/auth/logout` | Body `{refreshToken}` → `204`; revokes that session |
+| GET | `/api/me` | 🔒 Profile `{id, email, name, photoUrl}` of the caller |
+
+🔒 = needs `Authorization: Bearer <accessToken>`.
+
+### Sessions
+
+Access tokens are HS256 JWTs (`sub` = user id) valid for
+`ACCESS_TOKEN_TTL_SECONDS`. Refresh tokens are 32 random bytes
+(base64url), stored only as SHA-256 hashes in `refreshtokens` with a TTL
+index, and single-use: every refresh consumes the token atomically and
+returns a new pair.
 
 ## Data model
 
 | Collection | Key fields | Notes |
 |---|---|---|
 | `users` | `googleSub` (unique), `email`, `name`, `photoUrl`, `meta`, `metaUpdatedAt` | Created on first Google sign-in; `meta` is the app's last-write-wins profile blob |
+| `refreshtokens` | `userId`, `tokenHash` (unique), `expiresAt` (TTL) | One per open session |
 
 Every error uses the same body:
 `{ statusCode, error, message, path, timestamp }`.
