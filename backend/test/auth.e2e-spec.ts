@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Logger } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test } from '@nestjs/testing';
 import type { Model } from 'mongoose';
@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { OAuth2Client } from 'google-auth-library';
 import { RefreshToken } from '../src/auth/tokens/refresh-token.schema.js';
+import { REUSE_GRACE_MS } from '../src/auth/tokens/tokens.service.js';
 import { User } from '../src/users/schemas/user.schema.js';
 
 /** Syntactically valid JWTs; the fake Google client decides which is "good". */
@@ -53,6 +54,10 @@ describe('Auth (e2e)', () => {
   beforeEach(async () => {
     await users.deleteMany({});
     await refreshTokens.deleteMany({});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   afterAll(async () => {
@@ -127,13 +132,50 @@ describe('Auth (e2e)', () => {
     await refresh(rotated.refreshToken).expect(200);
   });
 
-  it('lets only one of two concurrent refreshes succeed', async () => {
+  it('lets only one of two concurrent refreshes succeed, keeping the session', async () => {
     const session = (await signIn({ idToken: GOOD_TOKEN }).expect(200)).body;
     const results = await Promise.all([
       refresh(session.refreshToken),
       refresh(session.refreshToken),
     ]);
     expect(results.map((res) => res.status).sort()).toEqual([200, 401]);
+    // Within the grace window the replay is a retry, not theft.
+    const winner = results.find((res) => res.status === 200)!.body;
+    await refresh(winner.refreshToken).expect(200);
+  });
+
+  it('revokes the whole session when a used token is replayed later', async () => {
+    const session = (await signIn({ idToken: GOOD_TOKEN }).expect(200)).body;
+    const other = (await signIn({ idToken: GOOD_TOKEN }).expect(200)).body;
+    const rotated = (await refresh(session.refreshToken).expect(200)).body;
+    // Pretend the first token was used beyond the grace window.
+    await refreshTokens.updateMany(
+      { usedAt: { $ne: null } },
+      { usedAt: new Date(Date.now() - REUSE_GRACE_MS - 1000) },
+    );
+
+    await refresh(session.refreshToken).expect(401);
+    await refresh(rotated.refreshToken).expect(401);
+    // Other sessions (devices) are untouched.
+    await refresh(other.refreshToken).expect(200);
+  });
+
+  it('keeps the session when issuing the new pair fails', async () => {
+    const session = (await signIn({ idToken: GOOD_TOKEN }).expect(200)).body;
+    const create = vi
+      .spyOn(refreshTokens, 'create')
+      .mockRejectedValueOnce(new Error('transient'));
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    await refresh(session.refreshToken).expect(500);
+    create.mockRestore();
+    await refresh(session.refreshToken).expect(200);
+  });
+
+  it('refuses to refresh once the account is gone', async () => {
+    const session = (await signIn({ idToken: GOOD_TOKEN }).expect(200)).body;
+    await users.deleteMany({});
+    await refresh(session.refreshToken).expect(401);
+    expect(await refreshTokens.countDocuments()).toBe(0);
   });
 
   it('rejects an expired refresh token even before the TTL sweep', async () => {
@@ -142,13 +184,15 @@ describe('Auth (e2e)', () => {
     await refresh(session.refreshToken).expect(401);
   });
 
-  it('logs out by revoking the refresh token', async () => {
+  it('logs out by revoking the session', async () => {
     const session = (await signIn({ idToken: GOOD_TOKEN }).expect(200)).body;
+    const rotated = (await refresh(session.refreshToken).expect(200)).body;
     await request(app.getHttpServer())
       .post('/api/auth/logout')
-      .send({ refreshToken: session.refreshToken })
+      .send({ refreshToken: rotated.refreshToken })
       .expect(204);
-    await refresh(session.refreshToken).expect(401);
+    await refresh(rotated.refreshToken).expect(401);
+    expect(await refreshTokens.countDocuments()).toBe(0);
   });
 
   it('answers 401 on /api/me once the account is gone', async () => {

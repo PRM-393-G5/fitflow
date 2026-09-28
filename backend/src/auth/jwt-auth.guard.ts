@@ -22,14 +22,18 @@ export class JwtAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const [scheme, token] = request.headers.authorization?.split(' ') ?? [];
-    if (scheme !== 'Bearer' || !token) {
+    const [scheme, token, ...rest] =
+      request.headers.authorization?.trim().split(/\s+/) ?? [];
+    if (scheme?.toLowerCase() !== 'bearer' || !token || rest.length > 0) {
       throw new UnauthorizedException('Missing bearer token');
     }
     let payload: AccessTokenPayload;
     try {
       payload = await this.jwt.verifyAsync<AccessTokenPayload>(token);
     } catch {
+      throw new UnauthorizedException('Invalid or expired access token');
+    }
+    if (typeof payload.sub !== 'string' || payload.sub.length === 0) {
       throw new UnauthorizedException('Invalid or expired access token');
     }
     request.user = { userId: payload.sub };

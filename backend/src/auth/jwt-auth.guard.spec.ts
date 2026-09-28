@@ -27,7 +27,20 @@ describe('JwtAuthGuard', () => {
     expect(request.user).toEqual({ userId: 'user-1' });
   });
 
-  it.each([undefined, 'Basic abc', 'Bearer', 'Bearer not-a-jwt'])(
+  it('accepts a lowercase scheme and extra spaces', async () => {
+    const token = await jwt.signAsync({ sub: 'user-1' });
+    const { context } = contextWith(`bearer   ${token} `);
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
+
+  it('rejects a token without a subject', async () => {
+    const token = await jwt.signAsync({ purpose: 'other' });
+    await expect(
+      guard.canActivate(contextWith(`Bearer ${token}`).context),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it.each([undefined, 'Basic abc', 'Bearer', 'Bearer not-a-jwt', 'Bearer a b'])(
     'rejects authorization header %s',
     async (header) => {
       await expect(

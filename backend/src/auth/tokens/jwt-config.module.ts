@@ -3,6 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { EnvironmentVariables } from '../../config/env.validation.js';
 
+export const ACCESS_TOKEN_ISSUER = 'fitflow-api';
+export const ACCESS_TOKEN_AUDIENCE = 'fitflow-app';
+
 /**
  * Access-token signing, available app-wide so any module's routes can use
  * JwtAuthGuard without importing AuthModule.
@@ -17,8 +20,15 @@ import { EnvironmentVariables } from '../../config/env.validation.js';
         signOptions: {
           algorithm: 'HS256',
           expiresIn: config.get('ACCESS_TOKEN_TTL_SECONDS', { infer: true }),
+          issuer: ACCESS_TOKEN_ISSUER,
+          audience: ACCESS_TOKEN_AUDIENCE,
         },
-        verifyOptions: { algorithms: ['HS256'] },
+        // Only our access tokens: same secret alone is not enough.
+        verifyOptions: {
+          algorithms: ['HS256'],
+          issuer: ACCESS_TOKEN_ISSUER,
+          audience: ACCESS_TOKEN_AUDIENCE,
+        },
       }),
     }),
   ],
