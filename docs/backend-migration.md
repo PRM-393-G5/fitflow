@@ -1,9 +1,27 @@
 # Chuyển FitFlow từ Firebase sang NestJS + MongoDB
 
 Mục tiêu: bỏ hẳn Firebase (Auth + Firestore) khỏi app Flutter, thay bằng backend
-NestJS (`backend/`) dùng MongoDB + Mongoose. Google Sign-In vẫn ở client; backend
+NestJS dùng MongoDB + Mongoose. Google Sign-In vẫn ở client; backend
 verify Google ID token rồi cấp JWT riêng. Giữ nguyên hành vi **local-first**:
 ghi local trước, sync nền, merge theo id, xoá bằng tombstone, meta last-write-wins.
+
+## Hai repository
+
+| Repo | Nội dung |
+|---|---|
+| [`PRM-393-G5/fitflow`](https://github.com/PRM-393-G5/fitflow) | App Flutter (repo này) |
+| [`PRM-393-G5/fitflow-api`](https://github.com/PRM-393-G5/fitflow-api) | Backend NestJS + MongoDB |
+
+Khi phát triển local, clone hai repo cạnh nhau:
+
+```sh
+git clone https://github.com/PRM-393-G5/fitflow.git
+git clone https://github.com/PRM-393-G5/fitflow-api.git
+```
+
+Backend ban đầu được làm trong thư mục `backend/` của repo này (PR #13–#17),
+sau đó được tách sang `fitflow-api` kèm toàn bộ lịch sử commit; các PR đó được
+làm lại ở `fitflow-api` (#1–#5) để review và lịch sử nằm cùng chỗ với code.
 
 ## Thiết kế backend
 
@@ -47,11 +65,11 @@ ghi local trước, sync nền, merge theo id, xoá bằng tombstone, meta last-
 ## Lộ trình PR
 
 Mỗi PR 3–4 commit, quy trình: branch → PR → review (comment trên PR) → fix → merge commit.
-`main` luôn build/chạy được sau mỗi PR.
+`main` luôn build/chạy được sau mỗi PR. PR 1–9 nằm ở `fitflow-api`, PR 10–15 ở `fitflow`.
 
 | # | Branch | Nội dung |
 |---|---|---|
-| 1 | `chore/backend-scaffold` | Scaffold NestJS · validate env · prefix `/api` + ValidationPipe · README + tài liệu này |
+| 1 | `chore/backend-scaffold` | Scaffold NestJS · validate env · prefix `/api` + ValidationPipe · README |
 | 2 | `feat/backend-database` | Kết nối Mongoose · `/health` có ping DB · exception filter chung · test |
 | 3 | `feat/backend-users` | `User` schema · `UsersService` (findOrCreate theo `googleSub`) · module · unit test |
 | 4 | `feat/backend-google-auth` | `GoogleVerifier` · `POST /auth/google` · DTO · test (mock verify) |
