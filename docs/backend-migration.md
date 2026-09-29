@@ -65,9 +65,10 @@ làm lại ở `fitflow-api` (#1–#5) để review và lịch sử nằm cùng 
 ## Lộ trình PR
 
 Mỗi PR 3–4 commit, quy trình: branch → PR → review (comment trên PR) → fix → merge commit.
-`main` luôn build/chạy được sau mỗi PR. PR 1–9 nằm ở `fitflow-api`, PR 10–15 ở `fitflow`.
+`main` luôn build/chạy được sau mỗi PR. Cột **Bước** là số thứ tự trong kế hoạch, **không phải**
+số PR trên GitHub: bước 1–9 làm ở `fitflow-api` (bước N = `fitflow-api` PR #N), bước 10–15 làm ở `fitflow`.
 
-| # | Branch | Nội dung |
+| Bước | Branch | Nội dung |
 |---|---|---|
 | 1 | `chore/backend-scaffold` | Scaffold NestJS · validate env · prefix `/api` + ValidationPipe · README |
 | 2 | `feat/backend-database` | Kết nối Mongoose · `/health` có ping DB · exception filter chung · test |
