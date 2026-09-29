@@ -72,6 +72,15 @@ For a distributable Android release, configure a production application ID and r
 - Metric/imperial preference
 - Responsive Material UI for phone and wider layouts
 
+## Backend API
+
+The app is moving off Firebase to its own REST API, developed in a separate
+repository: [PRM-393-G5/fitflow-api](https://github.com/PRM-393-G5/fitflow-api)
+(NestJS + MongoDB). Clone it next to this repository and follow its README
+to run it locally. The migration plan and PR roadmap are in
+[`docs/backend-migration.md`](docs/backend-migration.md); until the app is
+switched over (PR 14–15), it still uses Firebase as described below.
+
 ## Firestore rules
 
 Security rules live in `firestore.rules` (templates public read-only, each user limited to `users/{uid}`). Deploy them with `firebase deploy --only firestore:rules`.
