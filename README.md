@@ -72,6 +72,15 @@ For a distributable Android release, configure a production application ID and r
 - Metric/imperial preference
 - Responsive Material UI for phone and wider layouts
 
+## Backend API
+
+The app is moving off Firebase to its own REST API, developed in a separate
+repository: [PRM-393-G5/fitflow-api](https://github.com/PRM-393-G5/fitflow-api)
+(NestJS + MongoDB). Clone it next to this repository and follow its README
+to run it locally. The migration plan and PR roadmap are in
+[`docs/backend-migration.md`](docs/backend-migration.md); until the app is
+switched over (plan steps 14–15), it still uses Firebase as described below.
+
 ## Firestore rules
 
 Security rules live in `firestore.rules` (templates public read-only, each user limited to `users/{uid}`). Deploy them with `firebase deploy --only firestore:rules`.
@@ -93,14 +102,14 @@ The project separates app composition, domain rules, persistence, and feature UI
 
 ## Local storage
 
-FitFlow uses `shared_preferences` only; no data is sent to a server.
+FitFlow stores everything locally in `shared_preferences` first; when signed in, data is also synced to the cloud (see below).
 
 - Bundled workouts are seeded on first access and stored as JSON under `workouts_v1`.
 - Completed sessions are stored as JSON under `sessions_v1`.
 - Body weight entries are stored as JSON under `body_weights_v1`.
 - Theme and unit choices are stored under `theme_mode` and `unit_system`.
 - Data is scoped to the app installation and may be removed when the app is uninstalled or its storage is cleared.
-- There is currently no sync, export, migration UI, encryption layer, or cross-device recovery.
+- Without signing in there is no sync or cross-device recovery; there is no encryption layer.
 
 `shared_preferences` is appropriate for this MVP's small local dataset, but it is not intended for sensitive data or large relational datasets.
 
@@ -131,8 +140,7 @@ The checksum must match before relying on the archive. Do not extract it over `/
 
 ## Current limitations
 
-- Offline-only: there is no backend API or cloud synchronization.
-- No authentication, accounts, or multi-user separation.
+- Cloud sync and accounts currently rely on Firebase; the move to the fitflow-api backend is in progress.
 - Workout plans are bundled seed data plus locally created custom workouts; there is no remote catalog.
 - Local preferences are not a secure store and are not backed up by FitFlow.
 - No push notifications, social features, subscriptions, or wearable integrations.

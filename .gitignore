@@ -54,3 +54,6 @@ postman
 .env
 the-hinh-3.jpg
 test/failures/
+
+# Backend now lives in PRM-393-G5/fitflow-api
+/backend/
