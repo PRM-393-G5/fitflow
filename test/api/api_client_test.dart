@@ -129,4 +129,82 @@ void main() {
       throwsA(isA<ApiException>().having((e) => e.isNetwork, 'network', true)),
     );
   });
+
+  group('session refresh', () {
+    /// A fake API: `me` needs `Bearer <valid>`; `auth/refresh` rotates.
+    ({ApiClient client, MemoryTokenStore store, List<String> calls}) fakeApi({
+      required String valid,
+      String acceptedRefresh = 'refresh-1',
+      int refreshStatus = 200,
+    }) {
+      final calls = <String>[];
+      final store = MemoryTokenStore(session);
+      final client = ApiClient(
+        baseUrl: Uri.parse('http://api.test/api/'),
+        tokens: store,
+        httpClient: MockClient((request) async {
+          final path = request.url.path;
+          calls.add(path);
+          if (path == '/api/auth/refresh') {
+            final body = jsonDecode(request.body) as Map;
+            if (refreshStatus != 200 ||
+                body['refreshToken'] != acceptedRefresh) {
+              return jsonResponse({
+                'message': 'no',
+              }, refreshStatus == 200 ? 401 : refreshStatus);
+            }
+            return jsonResponse({
+              'accessToken': 'access-2',
+              'expiresIn': 900,
+              'refreshToken': 'refresh-2',
+            });
+          }
+          final ok = request.headers['Authorization'] == 'Bearer $valid';
+          return ok ? jsonResponse({'id': 'u1'}) : jsonResponse({}, 401);
+        }),
+      );
+      return (client: client, store: store, calls: calls);
+    }
+
+    test('renews an expired access token and retries once', () async {
+      final api = fakeApi(valid: 'access-2');
+      expect(await api.client.get('me'), {'id': 'u1'});
+      expect(api.calls, ['/api/me', '/api/auth/refresh', '/api/me']);
+      expect((await api.store.read())?.refreshToken, 'refresh-2');
+    });
+
+    test('concurrent 401s share a single refresh', () async {
+      final api = fakeApi(valid: 'access-2');
+      final results = await Future.wait(
+        List.generate(3, (_) => api.client.get('me')),
+      );
+      expect(results, everyElement({'id': 'u1'}));
+      expect(
+        api.calls.where((call) => call == '/api/auth/refresh'),
+        hasLength(1),
+      );
+    });
+
+    test('a rejected refresh token ends the session', () async {
+      final api = fakeApi(valid: 'access-2', acceptedRefresh: 'other');
+      final expired = expectLater(api.client.onSessionExpired, emits(null));
+      await expectLater(
+        api.client.get('me'),
+        throwsA(
+          isA<ApiException>().having((e) => e.isUnauthorized, '401', true),
+        ),
+      );
+      await expired;
+      expect(await api.store.read(), isNull);
+    });
+
+    test('a refresh that fails otherwise keeps the session', () async {
+      final api = fakeApi(valid: 'access-2', refreshStatus: 503);
+      await expectLater(
+        api.client.get('me'),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 503)),
+      );
+      expect((await api.store.read())?.refreshToken, 'refresh-1');
+    });
+  });
 }

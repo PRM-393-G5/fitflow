@@ -28,7 +28,8 @@ class ApiException implements Exception {
 /// (`.../api/`). Authenticated calls send the stored access token; when it
 /// has expired (401) the client refreshes the session once and retries.
 /// If the refresh token is rejected too, the session is cleared and
-/// [onSessionExpired] fires.
+/// [onSessionExpired] fires. A refresh that fails for any other reason
+/// (offline, 5xx) keeps the session and surfaces the error.
 class ApiClient {
   ApiClient({
     required this.baseUrl,
@@ -70,13 +71,59 @@ class ApiClient {
     if (auth && session == null) {
       throw const ApiException(401, 'Not signed in');
     }
-    final response = await _raw(
+    var response = await _raw(
       method,
       path,
       body: body,
       accessToken: session?.accessToken,
     );
+    if (session != null && response.statusCode == 401) {
+      final renewed = await _refresh(session);
+      if (renewed != null) {
+        response = await _raw(
+          method,
+          path,
+          body: body,
+          accessToken: renewed.accessToken,
+        );
+      }
+    }
     return _decode(response);
+  }
+
+  Future<ApiTokens?>? _refreshing;
+
+  /// Renews the session that just got a 401. Concurrent callers share one
+  /// refresh: the server rotates refresh tokens, so a second refresh with
+  /// the same token would be rejected. Null when the session is over.
+  Future<ApiTokens?> _refresh(ApiTokens stale) {
+    return _refreshing ??= _doRefresh(stale)
+        .whenComplete(() => _refreshing = null);
+  }
+
+  Future<ApiTokens?> _doRefresh(ApiTokens stale) async {
+    final current = await tokens.read();
+    if (current == null) return null;
+    // Another request already renewed the session while ours was in flight.
+    if (current.accessToken != stale.accessToken) return current;
+
+    final response = await _raw(
+      'POST',
+      'auth/refresh',
+      body: {'refreshToken': current.refreshToken},
+    );
+    if (response.statusCode == 401) {
+      await tokens.clear();
+      _sessionExpired.add(null);
+      return null;
+    }
+    final json = _decode(response) as Map<String, dynamic>;
+    final renewed = ApiTokens(
+      accessToken: json['accessToken'] as String,
+      refreshToken: json['refreshToken'] as String,
+    );
+    await tokens.write(renewed);
+    return renewed;
   }
 
   Future<http.Response> _raw(
