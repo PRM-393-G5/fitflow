@@ -30,6 +30,13 @@ class ApiException implements Exception {
 /// If the refresh token is rejected too, the session is cleared and
 /// [onSessionExpired] fires. A refresh that fails for any other reason
 /// (offline, 5xx) keeps the session and surfaces the error.
+///
+/// Create one ApiClient per app and share it: refresh tokens are
+/// single-use, so two clients refreshing the same session would race.
+///
+/// Known limit: if the server spends a refresh token but its answer is
+/// lost (timeout mid-response), the next refresh is rejected and the user
+/// has to sign in again.
 class ApiClient {
   ApiClient({
     required this.baseUrl,
@@ -107,21 +114,35 @@ class ApiClient {
     // Another request already renewed the session while ours was in flight.
     if (current.accessToken != stale.accessToken) return current;
 
+    final sent = current.refreshToken;
     final response = await _raw(
       'POST',
       'auth/refresh',
-      body: {'refreshToken': current.refreshToken},
+      body: {'refreshToken': sent},
     );
-    if (response.statusCode == 401) {
-      await tokens.clear();
-      _sessionExpired.add(null);
+    // Signed out or switched account meanwhile: leave the new state alone.
+    Future<bool> stillCurrent() async =>
+        (await tokens.read())?.refreshToken == sent;
+
+    // 401 = spent/expired, 400/403 = a token the server will never accept.
+    if (const {400, 401, 403}.contains(response.statusCode)) {
+      if (await stillCurrent()) {
+        await tokens.clear();
+        if (!_sessionExpired.isClosed) _sessionExpired.add(null);
+      }
       return null;
     }
-    final json = _decode(response) as Map<String, dynamic>;
+    final json = _decode(response);
+    final accessToken = json is Map ? json['accessToken'] : null;
+    final refreshToken = json is Map ? json['refreshToken'] : null;
+    if (accessToken is! String || refreshToken is! String) {
+      throw ApiException(response.statusCode, 'Malformed server response');
+    }
     final renewed = ApiTokens(
-      accessToken: json['accessToken'] as String,
-      refreshToken: json['refreshToken'] as String,
+      accessToken: accessToken,
+      refreshToken: refreshToken,
     );
+    if (!await stillCurrent()) return null;
     await tokens.write(renewed);
     return renewed;
   }
@@ -132,7 +153,9 @@ class ApiClient {
     Object? body,
     String? accessToken,
   }) async {
-    final request = http.Request(method, baseUrl.resolve(path))
+    // A leading slash would resolve from the host root and drop `/api/`.
+    final relative = path.startsWith('/') ? path.substring(1) : path;
+    final request = http.Request(method, baseUrl.resolve(relative))
       ..headers['Accept'] = 'application/json';
     if (accessToken != null) {
       request.headers['Authorization'] = 'Bearer $accessToken';
@@ -142,8 +165,11 @@ class ApiClient {
       request.body = jsonEncode(body);
     }
     try {
-      final streamed = await _http.send(request).timeout(timeout);
-      return await http.Response.fromStream(streamed).timeout(timeout);
+      // One budget for headers and body together.
+      return await _http
+          .send(request)
+          .then(http.Response.fromStream)
+          .timeout(timeout);
     } on TimeoutException {
       throw const ApiException(null, 'The server took too long to answer');
     } on SocketException catch (e) {
@@ -167,11 +193,12 @@ class ApiClient {
     }
     if (response.statusCode >= 200 && response.statusCode < 300) return json;
     final message = json is Map ? json['message'] : null;
+    final error = json is Map ? json['error'] : null;
     throw ApiException(response.statusCode, switch (message) {
       String text => text,
       List list => list.join(', '),
       _ => 'Request failed (${response.statusCode})',
-    }, error: json is Map ? json['error'] as String? : null);
+    }, error: error is String ? error : null);
   }
 
   void close() {

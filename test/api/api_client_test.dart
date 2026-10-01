@@ -42,6 +42,26 @@ void main() {
     expect(jsonDecode(seen.body), {'updatedAt': 1});
   });
 
+  test('a leading slash keeps the API prefix', () async {
+    late http.Request seen;
+    final client = clientWith((request) async {
+      seen = request;
+      return jsonResponse({});
+    });
+    await client.get('/me');
+    expect(seen.url.path, '/api/me');
+  });
+
+  test('a non-string error field does not crash decoding', () async {
+    final client = clientWith(
+      (_) async => jsonResponse({'message': 'x', 'error': 42}, 409),
+    );
+    await expectLater(
+      client.get('me'),
+      throwsA(isA<ApiException>().having((e) => e.error, 'error', isNull)),
+    );
+  });
+
   test('public calls send no token, and work signed out', () async {
     late http.Request seen;
     final client = clientWith((request) async {
@@ -136,6 +156,8 @@ void main() {
       required String valid,
       String acceptedRefresh = 'refresh-1',
       int refreshStatus = 200,
+      Object? refreshBody,
+      Future<void> Function()? beforeRefreshAnswer,
     }) {
       final calls = <String>[];
       final store = MemoryTokenStore(session);
@@ -146,6 +168,7 @@ void main() {
           final path = request.url.path;
           calls.add(path);
           if (path == '/api/auth/refresh') {
+            await beforeRefreshAnswer?.call();
             final body = jsonDecode(request.body) as Map;
             if (refreshStatus != 200 ||
                 body['refreshToken'] != acceptedRefresh) {
@@ -153,11 +176,14 @@ void main() {
                 'message': 'no',
               }, refreshStatus == 200 ? 401 : refreshStatus);
             }
-            return jsonResponse({
-              'accessToken': 'access-2',
-              'expiresIn': 900,
-              'refreshToken': 'refresh-2',
-            });
+            return jsonResponse(
+              refreshBody ??
+                  {
+                    'accessToken': 'access-2',
+                    'expiresIn': 900,
+                    'refreshToken': 'refresh-2',
+                  },
+            );
           }
           final ok = request.headers['Authorization'] == 'Bearer $valid';
           return ok ? jsonResponse({'id': 'u1'}) : jsonResponse({}, 401);
@@ -205,6 +231,67 @@ void main() {
         throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 503)),
       );
       expect((await api.store.read())?.refreshToken, 'refresh-1');
+    });
+
+    test('a malformed (400) or forbidden (403) refresh also ends it', () async {
+      for (final status in [400, 403]) {
+        final api = fakeApi(valid: 'access-2', refreshStatus: status);
+        await expectLater(api.client.get('me'), throwsA(isA<ApiException>()));
+        expect(await api.store.read(), isNull, reason: 'status $status');
+      }
+    });
+
+    test('a malformed refresh answer is an ApiException', () async {
+      final api = fakeApi(valid: 'access-2', refreshBody: {'accessToken': 1});
+      await expectLater(
+        api.client.get('me'),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.message,
+            'message',
+            contains('Malformed'),
+          ),
+        ),
+      );
+      expect((await api.store.read())?.refreshToken, 'refresh-1');
+    });
+
+    test('signing out during a refresh is not undone', () async {
+      late MemoryTokenStore store;
+      final api = fakeApi(
+        valid: 'access-2',
+        beforeRefreshAnswer: () => store.clear(),
+      );
+      store = api.store;
+      await expectLater(api.client.get('me'), throwsA(isA<ApiException>()));
+      expect(await api.store.read(), isNull);
+    });
+
+    test('a rejected refresh does not wipe a newer sign-in', () async {
+      late MemoryTokenStore store;
+      const other = ApiTokens(
+        accessToken: 'b-access',
+        refreshToken: 'b-refresh',
+      );
+      final api = fakeApi(
+        valid: 'access-2',
+        acceptedRefresh: 'nope',
+        beforeRefreshAnswer: () => store.write(other),
+      );
+      store = api.store;
+      await expectLater(api.client.get('me'), throwsA(isA<ApiException>()));
+      expect((await api.store.read())?.refreshToken, 'b-refresh');
+    });
+
+    test('closing during a refresh does not throw', () async {
+      late ApiClient client;
+      final api = fakeApi(
+        valid: 'access-2',
+        acceptedRefresh: 'nope',
+        beforeRefreshAnswer: () async => client.close(),
+      );
+      client = api.client;
+      await expectLater(api.client.get('me'), throwsA(isA<ApiException>()));
     });
   });
 }
