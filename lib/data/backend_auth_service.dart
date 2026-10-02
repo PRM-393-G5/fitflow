@@ -21,7 +21,9 @@ class BackendAuthService {
     required this._tokens,
     required this._preferences,
     required this._google,
-  });
+  }) {
+    _expiry = _api.onSessionExpired.listen((_) => _onSessionExpired());
+  }
 
   static const _userKey = 'auth_user_v1';
 
@@ -31,7 +33,7 @@ class BackendAuthService {
   final GoogleIdTokens _google;
 
   final _changes = StreamController<AppUser?>.broadcast();
-  StreamSubscription<void>? _expiry;
+  late final StreamSubscription<void> _expiry;
   AppUser? _user;
 
   /// Emits on every sign-in and sign-out (including an expired session).
@@ -46,25 +48,38 @@ class BackendAuthService {
     if (session != null && cached != null) {
       _user = cached;
     } else {
+      // Half a session is unusable; revoke what the server still knows.
+      if (session != null) await _revoke(session);
       await _forget();
     }
-    _expiry ??= _api.onSessionExpired.listen((_) => _forget(notify: true));
   }
 
+  /// Signs in with Google. Signing in while another account is signed in
+  /// ends that session first, so listeners always see a sign-out between
+  /// two accounts.
   Future<AppUser> signInWithGoogle() async {
     final idToken = await _google.signIn();
+    if (_user != null || await _tokens.read() != null) await signOut();
     final json = await _api.post(
       'auth/google',
       body: {'idToken': idToken},
       auth: false,
-    ) as Map<String, dynamic>;
-    await _tokens.write(
-      ApiTokens(
-        accessToken: json['accessToken'] as String,
-        refreshToken: json['refreshToken'] as String,
-      ),
     );
-    final user = AppUser.fromJson(json['user'] as Map<String, dynamic>);
+    // Parse everything before storing anything: a malformed answer must
+    // not leave tokens behind without a user.
+    final ApiTokens tokens;
+    final AppUser user;
+    try {
+      final map = json as Map<String, dynamic>;
+      tokens = ApiTokens(
+        accessToken: map['accessToken'] as String,
+        refreshToken: map['refreshToken'] as String,
+      );
+      user = AppUser.fromJson(map['user'] as Map<String, dynamic>);
+    } on TypeError {
+      throw const ApiException(200, 'Malformed sign-in response');
+    }
+    await _tokens.write(tokens);
     await _remember(user);
     return user;
   }
@@ -73,17 +88,7 @@ class BackendAuthService {
   /// expires) and on this device.
   Future<void> signOut() async {
     final session = await _tokens.read();
-    if (session != null) {
-      try {
-        await _api.post(
-          'auth/logout',
-          body: {'refreshToken': session.refreshToken},
-          auth: false,
-        );
-      } on ApiException catch (e) {
-        debugPrint('Logout request failed: $e');
-      }
-    }
+    if (session != null) await _revoke(session);
     try {
       await _google.signOut();
     } catch (_) {
@@ -101,10 +106,47 @@ class BackendAuthService {
   /// [ApiException] without signing out when the server refuses or is
   /// unreachable, so the account stays intact and usable.
   Future<void> deleteAccount(String idToken) async {
-    await _api.delete('me', body: {'idToken': idToken});
+    try {
+      await _api.delete('me', body: {'idToken': idToken});
+    } on ApiException catch (e) {
+      // The server may have deleted the account and then failed (or the
+      // answer got lost): if the account is gone, finish locally.
+      final ambiguous = e.statusCode == 401 || (e.statusCode ?? 0) >= 500;
+      if (!ambiguous || !await _accountGone()) rethrow;
+    }
     try {
       await _google.signOut();
     } catch (_) {}
+    await _forget(notify: true);
+  }
+
+  Future<bool> _accountGone() async {
+    try {
+      await _api.get('me');
+      return false;
+    } on ApiException catch (e) {
+      return e.isUnauthorized;
+    }
+  }
+
+  /// Revokes [session] on the server; failures (offline, TLS, …) are
+  /// ignored — the session then simply expires.
+  Future<void> _revoke(ApiTokens session) async {
+    try {
+      await _api.post(
+        'auth/logout',
+        body: {'refreshToken': session.refreshToken},
+        auth: false,
+      );
+    } catch (e) {
+      debugPrint('Logout request failed: $e');
+    }
+  }
+
+  /// ApiClient already cleared the rejected session. Forget the user only
+  /// if no new session was created before this event arrived.
+  Future<void> _onSessionExpired() async {
+    if (await _tokens.read() != null) return;
     await _forget(notify: true);
   }
 
@@ -121,7 +163,7 @@ class BackendAuthService {
   Future<void> _remember(AppUser user) async {
     await _preferences.setString(_userKey, jsonEncode(user.toJson()));
     _user = user;
-    _changes.add(user);
+    if (!_changes.isClosed) _changes.add(user);
   }
 
   Future<void> _forget({bool notify = false}) async {
@@ -129,11 +171,11 @@ class BackendAuthService {
     await _preferences.remove(_userKey);
     final hadUser = _user != null;
     _user = null;
-    if (notify && hadUser) _changes.add(null);
+    if (notify && hadUser && !_changes.isClosed) _changes.add(null);
   }
 
   void dispose() {
-    _expiry?.cancel();
+    _expiry.cancel();
     _changes.close();
   }
 }
