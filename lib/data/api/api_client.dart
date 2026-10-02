@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'token_store.dart';
@@ -200,6 +201,10 @@ class ApiClient {
       _ => 'Request failed (${response.statusCode})',
     }, error: error is String ? error : null);
   }
+
+  /// Simulates the server rejecting the session — for tests.
+  @visibleForTesting
+  void debugEmitSessionExpired() => _sessionExpired.add(null);
 
   void close() {
     _http.close();
