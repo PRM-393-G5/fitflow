@@ -92,6 +92,22 @@ class BackendAuthService {
     await _forget(notify: true);
   }
 
+  /// A fresh Google ID token proving the user is present — the API only
+  /// deletes an account with one issued within the last few minutes.
+  Future<String> reauthenticate() => _google.signIn();
+
+  /// Deletes the account and all its cloud data (the API does both), then
+  /// signs out locally. [idToken] comes from [reauthenticate]. Throws
+  /// [ApiException] without signing out when the server refuses or is
+  /// unreachable, so the account stays intact and usable.
+  Future<void> deleteAccount(String idToken) async {
+    await _api.delete('me', body: {'idToken': idToken});
+    try {
+      await _google.signOut();
+    } catch (_) {}
+    await _forget(notify: true);
+  }
+
   AppUser? _readCachedUser() {
     final raw = _preferences.getString(_userKey);
     if (raw == null) return null;

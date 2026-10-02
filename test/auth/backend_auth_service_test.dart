@@ -132,6 +132,61 @@ void main() {
     expect(await backend.tokens.read(), isNull);
   });
 
+  group('account deletion', () {
+    test('re-authenticates with Google and deletes through the API', () async {
+      final backend = FakeBackend({
+        'POST /api/auth/google': signInResponse,
+        'DELETE /api/me': (_) => FakeBackend.json(null, 204),
+      });
+      final auth = serviceFor(backend);
+      await auth.init();
+      await auth.signInWithGoogle();
+      google.idToken = 'fresh-token';
+
+      final idToken = await auth.reauthenticate();
+      await auth.deleteAccount(idToken);
+
+      final request = backend.requests.last;
+      expect('${request.method} ${request.url.path}', 'DELETE /api/me');
+      expect(request.headers['Authorization'], 'Bearer access-1');
+      expect(jsonDecode(request.body), {'idToken': 'fresh-token'});
+      expect(auth.currentUser, isNull);
+      expect(await backend.tokens.read(), isNull);
+    });
+
+    test('keeps the account usable when the server refuses', () async {
+      final backend = FakeBackend({
+        'POST /api/auth/google': signInResponse,
+        'DELETE /api/me': (_) => FakeBackend.json({'message': 'old'}, 403),
+      });
+      final auth = serviceFor(backend);
+      await auth.init();
+      await auth.signInWithGoogle();
+
+      await expectLater(
+        auth.deleteAccount('stale-token'),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 403)),
+      );
+      expect(auth.currentUser, isNotNull);
+      expect(await backend.tokens.read(), isNotNull);
+    });
+
+    test('a cancelled Google prompt deletes nothing', () async {
+      final backend = FakeBackend({'POST /api/auth/google': signInResponse});
+      final auth = serviceFor(backend);
+      await auth.init();
+      await auth.signInWithGoogle();
+      google.error = const GoogleSignInException(
+        code: GoogleSignInExceptionCode.canceled,
+      );
+      await expectLater(
+        auth.reauthenticate(),
+        throwsA(isA<GoogleSignInException>()),
+      );
+      expect(backend.calls, ['POST /api/auth/google']);
+    });
+  });
+
   group('describeAuthError', () {
     test('explains Google and API failures', () {
       expect(
