@@ -10,6 +10,7 @@ import '../domain/models/workout.dart';
 import '../domain/models/workout_session.dart';
 import '../domain/repositories/workout_repository.dart';
 import 'local_workout_repository.dart';
+import 'sync_merge.dart';
 
 /// Workout templates come from the global `workouts` collection (cached in
 /// SharedPreferences, bundled seeds before the first fetch). Per-user data
@@ -46,44 +47,18 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
     return _firestore.collection('users').doc(currentUid).collection(name);
   }
 
-  /// Union of two id-keyed lists; [remote] wins on id conflicts.
   static List<T> mergeById<T>(
     Iterable<T> local,
     Iterable<T> remote,
     String Function(T) idOf,
-  ) {
-    final byId = {for (final item in remote) idOf(item): item};
-    for (final item in local) {
-      byId.putIfAbsent(idOf(item), () => item);
-    }
-    return byId.values.toList();
-  }
+  ) => SyncMerge.mergeById(local, remote, idOf);
 
-  /// Applies local changes made while a sync was in flight to its result:
-  /// [merged] was computed from [before]; [after] is the local state now.
-  /// Items added or edited since (a different object than in [before])
-  /// keep the local copy; items deleted since are dropped; untouched items
-  /// take the merged copy (or disappear if the cloud tombstoned them).
   static List<T> reconcile<T>(
     List<T> merged,
     List<T> before,
     List<T> after,
     String Function(T) idOf,
-  ) {
-    final beforeById = {for (final item in before) idOf(item): item};
-    final afterById = {for (final item in after) idOf(item): item};
-    final result = <String, T>{};
-    for (final item in merged) {
-      final id = idOf(item);
-      if (beforeById.containsKey(id) && !afterById.containsKey(id)) continue;
-      result[id] = item;
-    }
-    for (final MapEntry(key: id, value: item) in afterById.entries) {
-      final previous = beforeById[id];
-      if (previous == null || !identical(previous, item)) result[id] = item;
-    }
-    return result.values.toList();
-  }
+  ) => SyncMerge.reconcile(merged, before, after, idOf);
 
   /// Merges [local] JSON docs (each with an `id`) into `users/{uid}/[name]`:
   /// remote wins on conflicts, tombstoned ids are dropped, local-only docs
@@ -101,27 +76,11 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
     } catch (_) {
       return null;
     }
-    final deleted = <String>{};
-    final remote = <Map<String, dynamic>>[];
-    for (final doc in snapshot.docs) {
-      final data = doc.data();
-      if (data['deleted'] == true) {
-        deleted.add(doc.id);
-      } else {
-        remote.add({...data, 'id': doc.id});
-      }
-    }
-    final merged = mergeById(
-      local.where((item) => !deleted.contains(item['id'])),
-      remote,
-      (item) => item['id'] as String,
-    );
-    final remoteIds = {for (final item in remote) item['id']};
-    _pushAll(
-      collection,
-      merged.where((item) => !remoteIds.contains(item['id'])),
-    );
-    return merged;
+    final result = SyncMerge.mergeDocs(local, [
+      for (final doc in snapshot.docs) {...doc.data(), 'id': doc.id},
+    ]);
+    _pushAll(collection, result.toUpload);
+    return result.merged;
   }
 
   /// Uploads docs in batches (Firestore caps a batch at 500 writes).
