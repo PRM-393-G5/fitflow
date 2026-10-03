@@ -45,6 +45,11 @@ class FakeBackend {
     }),
   );
 
+  /// Stores a session so authenticated calls carry a bearer token.
+  Future<void> signIn() => tokens.write(
+    const ApiTokens(accessToken: 'access-1', refreshToken: 'refresh-1'),
+  );
+
   List<String> get calls =>
       requests.map((r) => '${r.method} ${r.url.path}').toList();
 

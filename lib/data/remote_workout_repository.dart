@@ -9,6 +9,7 @@ import '../domain/models/workout_session.dart';
 import '../domain/repositories/workout_repository.dart';
 import 'api/api_client.dart';
 import 'local_workout_repository.dart';
+import 'sync_merge.dart';
 
 /// Workout data backed by the FitFlow API (replaces
 /// FirestoreWorkoutRepository, with the same local-first behaviour).
@@ -28,6 +29,9 @@ class RemoteWorkoutRepository implements WorkoutRepository {
 
   static const _cacheKey = 'workouts_remote_v1';
 
+  /// The API accepts at most 500 documents per bulk upload.
+  static const _batchLimit = 500;
+
   final ApiClient _api;
   final LocalWorkoutRepository _local;
   final SharedPreferences _preferences;
@@ -37,6 +41,63 @@ class RemoteWorkoutRepository implements WorkoutRepository {
   String? get uid => _currentUserId();
 
   bool get signedIn => uid != null;
+
+  /// Merges [local] JSON docs (each with an `id`) with the server's
+  /// `/api/me/docs/[name]`: remote wins on conflicts, tombstoned ids are
+  /// dropped, local-only docs are uploaded. Returns the merged docs, or
+  /// null when signed out or unreachable (callers keep their local data).
+  Future<List<Map<String, dynamic>>?> syncDocs(
+    String name,
+    List<Map<String, dynamic>> local,
+  ) async {
+    if (!signedIn) return null;
+    final List<Map<String, dynamic>> remote;
+    try {
+      final json = await _api.get('me/docs/$name');
+      remote = [
+        for (final doc in json as List) Map<String, dynamic>.from(doc as Map),
+      ];
+    } on ApiException catch (e) {
+      debugPrint('Sync of $name failed: $e');
+      return null;
+    }
+    final result = SyncMerge.mergeDocs(local, remote);
+    _pushAll(name, result.toUpload);
+    return result.merged;
+  }
+
+  /// Uploads docs in background batches of at most [_batchLimit].
+  void _pushAll(String name, List<Map<String, dynamic>> docs) {
+    for (var start = 0; start < docs.length; start += _batchLimit) {
+      final batch = docs.skip(start).take(_batchLimit).toList();
+      unawaited(
+        _api
+            .put('me/docs/$name', body: {'docs': batch})
+            .catchError((Object e) => debugPrint('Sync upload failed: $e')),
+      );
+    }
+  }
+
+  /// Sends a doc write in the background — the UI never waits on it.
+  void putDoc(String name, String id, Map<String, Object?> json) {
+    if (!signedIn) return;
+    unawaited(
+      _api
+          .put('me/docs/$name/${Uri.encodeComponent(id)}', body: json)
+          .catchError((Object e) => debugPrint('Cloud write failed: $e')),
+    );
+  }
+
+  /// Deletes [id] on the server, which keeps a tombstone so another
+  /// device's merge cannot resurrect it.
+  void deleteDoc(String name, String id) {
+    if (!signedIn) return;
+    unawaited(
+      _api
+          .delete('me/docs/$name/${Uri.encodeComponent(id)}')
+          .catchError((Object e) => debugPrint('Cloud delete failed: $e')),
+    );
+  }
 
   List<Workout>? _cachedTemplates() {
     final raw = _preferences.getString(_cacheKey);
@@ -101,19 +162,33 @@ class RemoteWorkoutRepository implements WorkoutRepository {
   }
 
   @override
-  Future<void> saveWorkout(Workout workout) => _local.saveWorkout(workout);
+  Future<void> saveWorkout(Workout workout) async {
+    await _local.saveWorkout(workout);
+    // Only custom plans sync; templates are the server's.
+    if (workout.id.startsWith('custom-')) {
+      putDoc('workouts', workout.id, workout.toJson());
+    }
+  }
 
   @override
-  Future<void> deleteWorkout(String id) => _local.deleteWorkout(id);
+  Future<void> deleteWorkout(String id) async {
+    await _local.deleteWorkout(id);
+    if (id.startsWith('custom-')) deleteDoc('workouts', id);
+  }
 
   @override
   Future<List<WorkoutSession>> getRecentSessions() =>
       _local.getRecentSessions();
 
   @override
-  Future<void> saveSession(WorkoutSession session) =>
-      _local.saveSession(session);
+  Future<void> saveSession(WorkoutSession session) async {
+    await _local.saveSession(session);
+    putDoc('sessions', session.id, session.toJson());
+  }
 
   @override
-  Future<void> deleteSession(String id) => _local.deleteSession(id);
+  Future<void> deleteSession(String id) async {
+    await _local.deleteSession(id);
+    deleteDoc('sessions', id);
+  }
 }
