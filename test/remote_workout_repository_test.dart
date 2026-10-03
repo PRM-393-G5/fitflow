@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:prm/data/api/api_client.dart';
 import 'package:prm/data/local_workout_repository.dart';
 import 'package:prm/data/remote_workout_repository.dart';
 import 'package:prm/data/seed_workouts.dart';
@@ -179,6 +180,55 @@ void main() {
       await pumpEventQueue();
       expect(backend.requests, isEmpty);
       expect(await repo.getWorkout('custom-1'), isNotNull);
+    });
+  });
+
+  group('meta', () {
+    test('pullMeta returns the Firestore-shaped blob', () async {
+      final backend = FakeBackend({
+        'GET /api/me/meta': (_) => FakeBackend.json({
+          'updatedAt': 42,
+          'meta': {'weeklyGoal': 4},
+        }),
+      });
+      await backend.signIn();
+      expect(await repositoryFor(backend).pullMeta(), {
+        'weeklyGoal': 4,
+        'updatedAt': 42,
+      });
+    });
+
+    test('pullMeta is null before the first push or when signed out', () async {
+      final backend = FakeBackend({
+        'GET /api/me/meta': (_) =>
+            FakeBackend.json({'updatedAt': 0, 'meta': null}),
+      });
+      await backend.signIn();
+      expect(await repositoryFor(backend).pullMeta(), isNull);
+      expect(await repositoryFor(backend, userId: null).pullMeta(), isNull);
+    });
+
+    test('pullMeta throws offline so the caller skips merging', () async {
+      final backend = FakeBackend({
+        'GET /api/me/meta': (_) => throw http.ClientException('offline'),
+      });
+      await backend.signIn();
+      await expectLater(
+        repositoryFor(backend).pullMeta(),
+        throwsA(isA<ApiException>()),
+      );
+    });
+
+    test('pushMeta sends the timestamped blob and ignores failures', () async {
+      final backend = FakeBackend({
+        'PUT /api/me/meta': (_) => FakeBackend.json({}, 500),
+      });
+      await backend.signIn();
+      await repositoryFor(backend).pushMeta({'weeklyGoal': 4}, 1000);
+      expect(jsonDecode(backend.requests.single.body), {
+        'updatedAt': 1000,
+        'meta': {'weeklyGoal': 4},
+      });
     });
   });
 }

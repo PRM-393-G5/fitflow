@@ -99,6 +99,29 @@ class RemoteWorkoutRepository implements WorkoutRepository {
     );
   }
 
+  /// Pulls the meta blob in the shape the app used with Firestore:
+  /// `{...meta, updatedAt}`, or null when never written or signed out.
+  /// Throws [ApiException] when unreachable so callers skip the merge.
+  Future<Map<String, dynamic>?> pullMeta() async {
+    if (!signedIn) return null;
+    final json = await _api.get('me/meta');
+    final meta = json is Map ? json['meta'] : null;
+    if (meta is! Map) return null;
+    return {...Map<String, dynamic>.from(meta), 'updatedAt': json['updatedAt']};
+  }
+
+  /// Pushes the meta blob; the server keeps it only if [updatedAt] is
+  /// newer than its copy (last write wins). Failures are ignored — the
+  /// next sync pushes again.
+  Future<void> pushMeta(Map<String, Object?> meta, int updatedAt) async {
+    if (!signedIn) return;
+    try {
+      await _api.put('me/meta', body: {'updatedAt': updatedAt, 'meta': meta});
+    } on ApiException catch (e) {
+      debugPrint('Meta push failed: $e');
+    }
+  }
+
   List<Workout>? _cachedTemplates() {
     final raw = _preferences.getString(_cacheKey);
     if (raw == null) return null;
