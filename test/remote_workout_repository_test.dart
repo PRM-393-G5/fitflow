@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -141,6 +142,25 @@ void main() {
       expect(sizes, [500, 500, 1]);
     });
 
+    test('syncDocs survives TLS errors and unexpected payloads', () async {
+      for (final handler in <http.Response Function(http.Request)>[
+        (_) => throw const HandshakeException('captive portal'),
+        (_) => FakeBackend.json({'not': 'a list'}),
+        (_) => FakeBackend.json([1, 2]),
+      ]) {
+        final backend = FakeBackend({'GET /api/me/docs/sessions': handler});
+        await backend.signIn();
+        expect(await repositoryFor(backend).syncDocs('sessions', []), isNull);
+      }
+      final templates = repositoryFor(
+        FakeBackend({
+          'GET /api/templates': (_) => throw const HandshakeException('x'),
+        }),
+      );
+      await templates.refreshTemplates();
+      expect(await templates.getWorkouts(), hasLength(seedWorkouts.length));
+    });
+
     test('syncDocs returns null signed out or offline', () async {
       final signedOut = repositoryFor(FakeBackend({}), userId: null);
       expect(await signedOut.syncDocs('sessions', []), isNull);
@@ -217,6 +237,21 @@ void main() {
         repositoryFor(backend).pullMeta(),
         throwsA(isA<ApiException>()),
       );
+    });
+
+    test('pushMeta returns the newer server blob when it lost', () async {
+      final backend = FakeBackend({
+        'PUT /api/me/meta': (_) => FakeBackend.json({
+          'applied': false,
+          'updatedAt': 2000,
+          'meta': {'weeklyGoal': 5},
+        }),
+      });
+      await backend.signIn();
+      expect(await repositoryFor(backend).pushMeta({'weeklyGoal': 4}, 1000), {
+        'weeklyGoal': 5,
+        'updatedAt': 2000,
+      });
     });
 
     test('pushMeta sends the timestamped blob and ignores failures', () async {

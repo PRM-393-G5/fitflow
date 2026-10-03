@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/auth_service.dart';
 import '../data/firestore_workout_repository.dart';
+import '../data/sync_merge.dart';
 import '../data/local_workout_repository.dart';
 import '../data/reminder_service.dart';
 import '../domain/models/body_weight_entry.dart';
@@ -217,7 +218,7 @@ class AppController extends ChangeNotifier {
       if (stale()) return;
       final custom = mergedWorkouts == null
           ? workouts.where(isCustomWorkout).toList()
-          : FirestoreWorkoutRepository.reconcile(
+          : SyncMerge.reconcile(
               LocalWorkoutRepository.decodeList(
                 jsonEncode(mergedWorkouts),
                 Workout.fromJson,
@@ -241,7 +242,7 @@ class AppController extends ChangeNotifier {
       );
       if (stale()) return;
       if (mergedSessions != null) {
-        sessions = FirestoreWorkoutRepository.reconcile(
+        sessions = SyncMerge.reconcile(
           LocalWorkoutRepository.decodeList(
             jsonEncode(mergedSessions),
             WorkoutSession.fromJson,
@@ -260,7 +261,7 @@ class AppController extends ChangeNotifier {
       );
       if (stale()) return;
       if (mergedWeights != null) {
-        weightEntries = FirestoreWorkoutRepository.reconcile(
+        weightEntries = SyncMerge.reconcile(
           LocalWorkoutRepository.decodeList(
             jsonEncode(mergedWeights),
             BodyWeightEntry.fromJson,
@@ -325,7 +326,7 @@ class AppController extends ChangeNotifier {
         BodyWeightEntry.fromJson,
       );
       // Local entries win: they are newer than the legacy blob.
-      weightEntries = FirestoreWorkoutRepository.mergeById(
+      weightEntries = SyncMerge.mergeById(
         legacy,
         weightEntries,
         (item) => item.id,

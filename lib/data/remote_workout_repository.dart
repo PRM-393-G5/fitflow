@@ -57,7 +57,9 @@ class RemoteWorkoutRepository implements WorkoutRepository {
       remote = [
         for (final doc in json as List) Map<String, dynamic>.from(doc as Map),
       ];
-    } on ApiException catch (e) {
+    } catch (e) {
+      // Offline, TLS trouble or an unexpected payload: skip this
+      // collection only; the rest of the sync goes on.
       debugPrint('Sync of $name failed: $e');
       return null;
     }
@@ -111,14 +113,30 @@ class RemoteWorkoutRepository implements WorkoutRepository {
   }
 
   /// Pushes the meta blob; the server keeps it only if [updatedAt] is
-  /// newer than its copy (last write wins). Failures are ignored — the
-  /// next sync pushes again.
-  Future<void> pushMeta(Map<String, Object?> meta, int updatedAt) async {
-    if (!signedIn) return;
+  /// newer than its copy (last write wins). Returns the server's newer
+  /// blob (same shape as [pullMeta]) when this push lost, so the caller
+  /// can adopt it; null when applied or on failure — the next sync then
+  /// pushes again.
+  Future<Map<String, dynamic>?> pushMeta(
+    Map<String, Object?> meta,
+    int updatedAt,
+  ) async {
+    if (!signedIn) return null;
     try {
-      await _api.put('me/meta', body: {'updatedAt': updatedAt, 'meta': meta});
-    } on ApiException catch (e) {
+      final json = await _api.put(
+        'me/meta',
+        body: {'updatedAt': updatedAt, 'meta': meta},
+      );
+      if (json is! Map || json['applied'] != false) return null;
+      final newer = json['meta'];
+      if (newer is! Map) return null;
+      return {
+        ...Map<String, dynamic>.from(newer),
+        'updatedAt': json['updatedAt'],
+      };
+    } catch (e) {
       debugPrint('Meta push failed: $e');
+      return null;
     }
   }
 
@@ -147,7 +165,7 @@ class RemoteWorkoutRepository implements WorkoutRepository {
         _cacheKey,
         jsonEncode(workouts.map((item) => item.toJson()).toList()),
       );
-    } on ApiException catch (e) {
+    } catch (e) {
       // Offline or server trouble — keep the cached (or bundled) templates.
       debugPrint('Template refresh failed: $e');
     }

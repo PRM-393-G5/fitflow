@@ -47,19 +47,6 @@ class FirestoreWorkoutRepository implements WorkoutRepository {
     return _firestore.collection('users').doc(currentUid).collection(name);
   }
 
-  static List<T> mergeById<T>(
-    Iterable<T> local,
-    Iterable<T> remote,
-    String Function(T) idOf,
-  ) => SyncMerge.mergeById(local, remote, idOf);
-
-  static List<T> reconcile<T>(
-    List<T> merged,
-    List<T> before,
-    List<T> after,
-    String Function(T) idOf,
-  ) => SyncMerge.reconcile(merged, before, after, idOf);
-
   /// Merges [local] JSON docs (each with an `id`) into `users/{uid}/[name]`:
   /// remote wins on conflicts, tombstoned ids are dropped, local-only docs
   /// are uploaded. Returns the merged docs, or null when signed out or
