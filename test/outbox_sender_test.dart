@@ -97,14 +97,64 @@ void main() {
     expect(outbox.entries.single.id, 'x');
   });
 
-  test('never sends another account\'s writes', () async {
+  test('never sends another account\'s writes, but keeps them', () async {
     await outbox.addAll([put('mine'), put('theirs', owner: 'u2')]);
     final (sender, backend) = await senderWith({
       'PUT /api/me/docs/sessions/mine': ok,
+      'PUT /api/me/docs/sessions/theirs': ok,
     });
     expect(await sender.flush(), isTrue);
     expect(backend.calls, ['PUT /api/me/docs/sessions/mine']);
+    expect(outbox.entries.single.owner, 'u2');
+
+    user = 'u2'; // that account signs in again later
+    expect(await sender.flush(), isTrue);
     expect(outbox.isEmpty, isTrue);
+  });
+
+  test(
+    'a rejected batch is retried per document; only bad ones drop',
+    () async {
+      await outbox.addAll([put('a'), put('bad'), put('c')]);
+      final (sender, backend) = await senderWith({
+        'PUT /api/me/docs/sessions': (_) =>
+            FakeBackend.json({'message': 'bad id'}, 400),
+        'PUT /api/me/docs/sessions/a': ok,
+        'PUT /api/me/docs/sessions/bad': (_) => FakeBackend.json({}, 400),
+        'PUT /api/me/docs/sessions/c': ok,
+      });
+      expect(await sender.flush(), isTrue);
+      expect(backend.calls, [
+        'PUT /api/me/docs/sessions',
+        'PUT /api/me/docs/sessions/a',
+        'PUT /api/me/docs/sessions/bad',
+        'PUT /api/me/docs/sessions/c',
+      ]);
+      expect(outbox.isEmpty, isTrue);
+    },
+  );
+
+  test('a too-large batch (413) is split instead of dropped', () async {
+    await outbox.addAll([put('a'), put('b')]);
+    final (sender, _) = await senderWith({
+      'PUT /api/me/docs/sessions': (_) => FakeBackend.json({}, 413),
+      'PUT /api/me/docs/sessions/a': ok,
+      'PUT /api/me/docs/sessions/b': ok,
+    });
+    expect(await sender.flush(), isTrue);
+    expect(outbox.isEmpty, isTrue);
+  });
+
+  test('408 and 409 are retried later, not dropped', () async {
+    for (final status in [408, 409]) {
+      await outbox.clear();
+      await outbox.add(put('a'));
+      final (sender, _) = await senderWith({
+        'PUT /api/me/docs/sessions/a': (_) => FakeBackend.json({}, status),
+      });
+      expect(await sender.flush(), isFalse, reason: '$status');
+      expect(outbox.entries, hasLength(1));
+    }
   });
 
   test('stops when the account changes mid-flush', () async {

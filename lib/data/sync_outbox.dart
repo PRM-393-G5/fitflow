@@ -70,18 +70,19 @@ class SyncOutbox {
       if (entry.owner == owner && entry.kind == kind) entry,
   ];
 
-  Future<void> add(OutboxEntry entry) async {
-    _entries.removeWhere((pending) => _sameDoc(pending, entry));
-    _entries.add(entry);
-    await _save();
-  }
+  Future<void> add(OutboxEntry entry) => addAll([entry]);
 
-  Future<void> addAll(Iterable<OutboxEntry> entries) async {
-    for (final entry in entries) {
-      _entries.removeWhere((pending) => _sameDoc(pending, entry));
-      _entries.add(entry);
-    }
-    await _save();
+  Future<void> addAll(Iterable<OutboxEntry> entries) {
+    final added = entries.toList();
+    if (added.isEmpty) return Future.value();
+    final keys = {for (final entry in added) _docKey(entry)};
+    _entries.removeWhere((pending) => keys.contains(_docKey(pending)));
+    // Later duplicates within [added] win too.
+    final latest = <String, OutboxEntry>{
+      for (final entry in added) _docKey(entry): entry,
+    };
+    _entries.addAll(latest.values);
+    return _save();
   }
 
   /// Removes [delivered] — but only if it is still the pending write for
@@ -92,25 +93,25 @@ class SyncOutbox {
     await _save();
   }
 
-  /// Drops every write not made by [owner] (another account's leftovers).
-  Future<void> dropOthers(String owner) async {
-    final before = _entries.length;
-    _entries.removeWhere((entry) => entry.owner != owner);
-    if (_entries.length != before) await _save();
-  }
-
   Future<void> clear() async {
     _entries.clear();
-    await _preferences.remove(_key);
+    await _save();
   }
 
-  static bool _sameDoc(OutboxEntry a, OutboxEntry b) =>
-      a.owner == b.owner && a.kind == b.kind && a.id == b.id;
+  static String _docKey(OutboxEntry entry) =>
+      '${entry.owner}\u0000${entry.kind}\u0000${entry.id}';
 
-  Future<void> _save() => _preferences.setString(
-    _key,
-    jsonEncode([for (final entry in _entries) entry.toJson()]),
-  );
+  Future<void>? _pendingSave;
+
+  /// Persists the queue at most once per microtask turn, however many
+  /// writes were queued in it (bulk imports queue thousands).
+  Future<void> _save() => _pendingSave ??= Future.microtask(() async {
+    _pendingSave = null;
+    await _preferences.setString(
+      _key,
+      jsonEncode([for (final entry in _entries) entry.toJson()]),
+    );
+  });
 
   static List<OutboxEntry> _load(SharedPreferences preferences) {
     final raw = preferences.getString(_key);

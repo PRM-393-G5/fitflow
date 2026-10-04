@@ -53,12 +53,24 @@ void main() {
     },
   );
 
-  test('separates accounts and can drop the others', () async {
+  test('keeps accounts apart', () async {
     final outbox = SyncOutbox(preferences);
     await outbox.addAll([put('a', 1, 'u1'), put('a', 1, 'u2')]);
     expect(outbox.pendingFor('u1', 'sessions'), hasLength(1));
-    await outbox.dropOthers('u2');
-    expect(outbox.entries.single.owner, 'u2');
+    expect(outbox.entries, hasLength(2));
+  });
+
+  test('later duplicates in one batch win', () async {
+    final outbox = SyncOutbox(preferences);
+    await outbox.addAll([put('a', 1), put('a', 2)]);
+    expect(outbox.entries.single.body?['v'], 2);
+  });
+
+  test('clear empties the stored queue', () async {
+    final outbox = SyncOutbox(preferences);
+    await outbox.add(put('a'));
+    await outbox.clear();
+    expect(SyncOutbox(preferences).isEmpty, isTrue);
   });
 
   test('ignores a corrupt stored queue', () {

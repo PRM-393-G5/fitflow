@@ -58,7 +58,9 @@ class RemoteWorkoutRepository implements WorkoutRepository {
   ) async {
     final owner = uid;
     if (owner == null) return null;
-    await _sender.flush();
+    // Deliver this kind's pending writes first so the server copy is
+    // current; skip the round trip when there are none.
+    if (_outbox.pendingFor(owner, name).isNotEmpty) await _sender.flush();
     final List<Map<String, dynamic>> remote;
     try {
       final json = await _api.get('me/docs/$name');
@@ -137,8 +139,9 @@ class RemoteWorkoutRepository implements WorkoutRepository {
 
   /// Tries to deliver every pending write. False when some are still
   /// pending after [timeout] (offline) — signing out then would lose them.
+  /// The default leaves room for a large bulk upload on a slow network.
   Future<bool> flushPendingWrites({
-    Duration timeout = const Duration(seconds: 5),
+    Duration timeout = const Duration(seconds: 20),
   }) async {
     if (!signedIn) return true;
     try {

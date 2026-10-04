@@ -9,9 +9,14 @@ import 'sync_outbox.dart';
 /// queue order (so a delete never overtakes the save before it).
 /// Consecutive saves of one kind go out as a single bulk request.
 ///
-/// Delivery stops at the first transient failure (offline, 5xx, 429, an
-/// expired session) and resumes on the next [flush]; a write the server
-/// rejects as invalid (other 4xx) is dropped so it cannot block the rest.
+/// Delivery stops at the first transient failure (offline, 5xx, 408, 409,
+/// 429, an expired session) and resumes on the next [flush]. A bulk
+/// request the server rejects (4xx, e.g. one bad document or 413) is
+/// retried one document at a time, and only the documents rejected on
+/// their own are dropped, so one bad write cannot block or sink the rest.
+///
+/// Writes of another account stay queued (they go out when that account
+/// signs in again) but are never sent with the current session.
 class OutboxSender {
   OutboxSender(this._outbox, this._api, {required this._currentUserId});
 
@@ -25,33 +30,64 @@ class OutboxSender {
   Future<bool>? _running;
 
   /// Sends what can be sent. True when nothing of the current account is
-  /// left pending. Concurrent calls share one run.
-  Future<bool> flush() =>
-      _running ??= _flush().whenComplete(() => _running = null);
+  /// left pending. Concurrent calls share a run; a write queued while a
+  /// run was finishing triggers another one before this returns.
+  Future<bool> flush() async {
+    while (true) {
+      final delivered = await (_running ??= _flush().whenComplete(
+        () => _running = null,
+      ));
+      if (!delivered) return false;
+      final owner = _currentUserId();
+      if (owner == null || !_hasPending(owner)) return true;
+    }
+  }
+
+  bool _hasPending(String owner) =>
+      _outbox.entries.any((entry) => entry.owner == owner);
 
   Future<bool> _flush() async {
     final owner = _currentUserId();
     if (owner == null) return true;
-    // Another account's writes must never go out with this session.
-    await _outbox.dropOthers(owner);
     while (true) {
       if (_currentUserId() != owner) return false; // switched mid-flush
       final group = _nextGroup(owner);
       if (group.isEmpty) return true;
-      try {
-        await _send(group);
-        await _outbox.remove(group);
-      } on ApiException catch (e) {
-        if (_isTransient(e)) {
-          debugPrint('Outbox paused: $e');
-          return false;
+      final outcome = await _deliver(group);
+      if (outcome == _Outcome.paused) return false;
+      if (outcome == _Outcome.rejected && group.length > 1) {
+        // Find the bad document(s) instead of dropping the whole batch.
+        for (final entry in group) {
+          if (_currentUserId() != owner) return false;
+          final single = await _deliver([entry]);
+          if (single == _Outcome.paused) return false;
+          if (single == _Outcome.rejected) {
+            debugPrint('Outbox dropped rejected write ${entry.id}');
+          }
+          await _outbox.remove([entry]);
         }
-        debugPrint('Outbox dropped ${group.length} rejected write(s): $e');
-        await _outbox.remove(group);
-      } catch (e) {
-        debugPrint('Outbox paused: $e');
-        return false;
+        continue;
       }
+      if (outcome == _Outcome.rejected) {
+        debugPrint('Outbox dropped rejected write ${group.single.id}');
+      }
+      await _outbox.remove(group);
+    }
+  }
+
+  Future<_Outcome> _deliver(List<OutboxEntry> group) async {
+    try {
+      await _send(group);
+      return _Outcome.sent;
+    } on ApiException catch (e) {
+      if (_isTransient(e)) {
+        debugPrint('Outbox paused: $e');
+        return _Outcome.paused;
+      }
+      return _Outcome.rejected;
+    } catch (e) {
+      debugPrint('Outbox paused: $e');
+      return _Outcome.paused;
     }
   }
 
@@ -94,6 +130,10 @@ class OutboxSender {
 
   static bool _isTransient(ApiException e) {
     final status = e.statusCode;
-    return status == null || status == 401 || status == 429 || status >= 500;
+    return status == null ||
+        const {401, 408, 409, 429}.contains(status) ||
+        status >= 500;
   }
 }
+
+enum _Outcome { sent, paused, rejected }
