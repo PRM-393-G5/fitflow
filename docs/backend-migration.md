@@ -62,6 +62,22 @@ làm lại ở `fitflow-api` (#1–#5) để review và lịch sử nằm cùng 
   `flushPendingWrites()` đẩy outbox (giữ logic chặn sign-out khi còn dữ liệu chưa sync).
 - Xoá `firebase_options.dart`, `firebase.json`, `firestore.rules`, `google-services.json`, plugin google-services.
 
+## Đồng bộ offline (outbox)
+
+Firestore tự xếp hàng các lệnh ghi khi offline; REST thì không, nên app có
+`SyncOutbox` (lưu trong SharedPreferences) + `OutboxSender`:
+
+- Mỗi lệnh ghi (`PUT`/`DELETE /api/me/docs/...`) vào outbox trước, gửi nền sau.
+- Chỉ giữ lệnh mới nhất cho mỗi document; gửi **tuần tự, đúng thứ tự** (DELETE
+  không bao giờ vượt PUT trước nó); các PUT liên tiếp cùng loại gộp thành bulk ≤ 500.
+- Lỗi tạm thời (offline, 5xx, 429, phiên hết hạn) → dừng, giữ lại, gửi tiếp ở lần
+  sync sau; lỗi 4xx khác (dữ liệu bị server từ chối) → bỏ lệnh đó.
+- Mỗi lệnh ghi nhớ tài khoản tạo ra nó; lệnh của tài khoản khác không bao giờ
+  được gửi bằng phiên hiện tại.
+- `syncDocs` gửi outbox trước khi tải về, và áp các lệnh còn treo lên bản server
+  nên chỉnh sửa offline không bị "remote wins" ghi đè.
+- `flushPendingWrites()` giữ nguyên hành vi chặn sign-out khi còn dữ liệu chưa sync.
+
 ## Lộ trình PR
 
 Mỗi PR 3–4 commit, quy trình: branch → PR → review (comment trên PR) → fix → merge commit.
