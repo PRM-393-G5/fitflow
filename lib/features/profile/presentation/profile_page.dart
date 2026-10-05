@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -12,7 +11,9 @@ import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
-import '../../../data/auth_service.dart';
+import '../../../data/api/api_client.dart';
+import '../../../data/backend_auth_service.dart';
+import '../../../domain/models/app_user.dart';
 import '../../auth/presentation/login_page.dart';
 import '../../onboarding/presentation/onboarding_page.dart';
 import '../../workouts/presentation/schedule_page.dart';
@@ -36,12 +37,12 @@ class ProfilePage extends StatelessWidget {
           Center(
             child: Column(
               children: [
-                user?.photoURL == null
+                user?.photoUrl == null
                     ? FAvatar.raw(
                         size: 88,
                         child: const Icon(FLucideIcons.user, size: 36),
                       )
-                    : FAvatar(image: NetworkImage(user!.photoURL!), size: 88),
+                    : FAvatar(image: NetworkImage(user!.photoUrl!), size: 88),
                 const SizedBox(height: AppSpacing.md),
                 Text(
                   user?.displayName ?? 'FitFlow Athlete',
@@ -315,7 +316,7 @@ class _AccountSection extends StatelessWidget {
   const _AccountSection({required this.controller, required this.user});
 
   final AppController controller;
-  final User? user;
+  final AppUser? user;
 
   Future<bool> _confirm(
     BuildContext context, {
@@ -388,7 +389,7 @@ class _AccountSection extends StatelessWidget {
           context: context,
           title: const Text('Could not delete the account'),
           description: Text(
-            e is FirebaseAuthException
+            e is ApiException && !e.isNetwork
                 ? describeAuthError(e)
                 : 'Check your connection and try again.',
           ),
@@ -426,7 +427,7 @@ class _AccountSection extends StatelessWidget {
           FTile(
             prefix: const Icon(FLucideIcons.logOut),
             title: const Text('Sign out'),
-            subtitle: Text(user!.email ?? ''),
+            subtitle: Text(user!.email),
             onPress: () => _signOut(context),
           ),
           FTile(

@@ -3,7 +3,7 @@ import 'package:forui/forui.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../../app/app_scope.dart';
-import '../../../data/auth_service.dart';
+import '../../../data/backend_auth_service.dart';
 
 class LoginPage extends StatefulWidget {
   /// [popOnSuccess]: pushed from Profile (vs. shown as the welcome gate).

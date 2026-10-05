@@ -1,30 +1,22 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app/app_controller.dart';
 import 'app/workout_app.dart';
-import 'data/auth_service.dart';
-import 'data/firestore_workout_repository.dart';
+import 'data/api/api_client.dart';
+import 'data/api/api_config.dart';
+import 'data/api/token_store.dart';
+import 'data/backend_auth_service.dart';
+import 'data/google_id_tokens.dart';
 import 'data/local_workout_repository.dart';
 import 'data/reminder_service.dart';
-import 'firebase_options.dart';
+import 'data/remote_workout_repository.dart';
+import 'data/sync_outbox.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(isOptional: true);
-  var firebaseReady = false;
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    firebaseReady = true;
-  } catch (e) {
-    // Firebase không khả dụng (thiếu config/mạng) — app vẫn chạy local-first.
-    debugPrint('Firebase khởi tạo thất bại: $e');
-  }
   ReminderService? reminders;
   try {
     reminders = ReminderService();
@@ -35,25 +27,41 @@ Future<void> main() async {
   }
   final preferences = await SharedPreferences.getInstance();
   final local = LocalWorkoutRepository(preferences);
-  final auth = firebaseReady ? AuthService() : null;
+
+  // One API client for the whole app: refresh tokens are single-use.
+  final tokens = SecureTokenStore();
+  final api = ApiClient(baseUrl: ApiConfig.baseUrl, tokens: tokens);
+  final auth = BackendAuthService(
+    api: api,
+    tokens: tokens,
+    preferences: preferences,
+    google: GoogleSignInIdTokens(),
+  );
+  try {
+    await auth.init();
+  } catch (e) {
+    // Secure storage unavailable — start signed out; local data still works.
+    debugPrint('Khôi phục phiên đăng nhập thất bại: $e');
+  }
+
   final controller = AppController(
-    firebaseReady
-        ? FirestoreWorkoutRepository(
-            FirebaseFirestore.instance,
-            local,
-            preferences,
-          )
-        : local,
+    RemoteWorkoutRepository(
+      api,
+      local,
+      preferences,
+      SyncOutbox(preferences),
+      currentUserId: () => auth.currentUser?.id,
+    ),
     preferences,
     reminders: reminders,
     auth: auth,
   );
   await controller.load();
   // Re-sync cloud data when the user signs in after startup.
-  var lastUid = auth?.currentUser?.uid;
-  auth?.userChanges.listen((user) {
-    if (user != null && user.uid != lastUid) controller.load();
-    lastUid = user?.uid;
+  var lastUid = auth.currentUser?.id;
+  auth.userChanges.listen((user) {
+    if (user != null && user.id != lastUid) controller.load();
+    lastUid = user?.id;
   });
   runApp(WorkoutApp(controller: controller));
 }

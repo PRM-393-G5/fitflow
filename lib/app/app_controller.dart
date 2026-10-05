@@ -4,11 +4,11 @@ import 'dart:convert';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../data/auth_service.dart';
-import '../data/firestore_workout_repository.dart';
+import '../data/backend_auth_service.dart';
 import '../data/sync_merge.dart';
 import '../data/local_workout_repository.dart';
 import '../data/reminder_service.dart';
+import '../data/remote_workout_repository.dart';
 import '../domain/models/body_weight_entry.dart';
 import '../domain/models/workout.dart';
 import '../domain/models/workout_session.dart';
@@ -51,7 +51,7 @@ class AppController extends ChangeNotifier {
   final WorkoutRepository repository;
   final SharedPreferences preferences;
   final ReminderService? reminders;
-  final AuthService? auth;
+  final BackendAuthService? auth;
 
   List<Workout> workouts = [];
   List<WorkoutSession> sessions = [];
@@ -91,7 +91,7 @@ class AppController extends ChangeNotifier {
 
   bool get signedIn {
     final repo = repository;
-    return repo is FirestoreWorkoutRepository && repo.signedIn;
+    return repo is RemoteWorkoutRepository && repo.signedIn;
   }
 
   Future<void>? _loadChain;
@@ -163,7 +163,7 @@ class AppController extends ChangeNotifier {
       await preferences.remove(key);
     }
     final repo = repository;
-    if (repo is FirestoreWorkoutRepository) {
+    if (repo is RemoteWorkoutRepository) {
       await repo.clearLocalData();
     } else if (repo is LocalWorkoutRepository) {
       await repo.clearAll();
@@ -179,7 +179,7 @@ class AppController extends ChangeNotifier {
   /// itself, so this only catches switches that bypassed it.
   Future<void> _guardAccountSwitch() async {
     final repo = repository;
-    if (repo is! FirestoreWorkoutRepository) return;
+    if (repo is! RemoteWorkoutRepository) return;
     final uid = repo.uid;
     if (uid == null) return;
     final lastUid = preferences.getString(_syncUidKey);
@@ -198,7 +198,7 @@ class AppController extends ChangeNotifier {
   /// are reconciled with edits made in the meantime, then stored.
   Future<void> sync() async {
     final repo = repository;
-    if (repo is! FirestoreWorkoutRepository || !repo.signedIn || syncing) {
+    if (repo is! RemoteWorkoutRepository || !repo.signedIn || syncing) {
       return;
     }
     final uid = repo.uid;
@@ -290,7 +290,7 @@ class AppController extends ChangeNotifier {
   /// then only defaults or a guest's data, and must not overwrite an
   /// existing profile.
   Future<void> _mergeMeta(
-    FirestoreWorkoutRepository repo,
+    RemoteWorkoutRepository repo,
     Map<String, dynamic>? remote,
   ) async {
     final firstPull = preferences.getString(_metaPulledKey) != repo.uid;
@@ -360,7 +360,7 @@ class AppController extends ChangeNotifier {
     final ts = DateTime.now().millisecondsSinceEpoch;
     await preferences.setInt(_metaTsKey, ts);
     final repo = repository;
-    if (repo is FirestoreWorkoutRepository &&
+    if (repo is RemoteWorkoutRepository &&
         repo.signedIn &&
         preferences.getString(_metaPulledKey) == repo.uid) {
       unawaited(repo.pushMeta(_metaSnapshot(), ts));
@@ -429,7 +429,7 @@ class AppController extends ChangeNotifier {
     weightEntries.sort((a, b) => a.date.compareTo(b.date));
     await _saveWeights();
     final repo = repository;
-    if (repo is FirestoreWorkoutRepository) {
+    if (repo is RemoteWorkoutRepository) {
       repo.putDoc('weights', entry.id, entry.toJson());
     }
     notifyListeners();
@@ -439,7 +439,7 @@ class AppController extends ChangeNotifier {
     weightEntries.removeWhere((item) => item.id == entry.id);
     await _saveWeights();
     final repo = repository;
-    if (repo is FirestoreWorkoutRepository) {
+    if (repo is RemoteWorkoutRepository) {
       repo.deleteDoc('weights', entry.id);
     }
     notifyListeners();
@@ -794,10 +794,10 @@ class AppController extends ChangeNotifier {
   /// drop them.
   Future<bool> signOut({bool force = false}) async {
     final repo = repository;
-    if (!force &&
-        repo is FirestoreWorkoutRepository &&
-        !await repo.flushPendingWrites()) {
-      return false;
+    if (repo is RemoteWorkoutRepository) {
+      if (!force && !await repo.flushPendingWrites()) return false;
+      // Forced: undelivered writes must not reach the account later.
+      await repo.discardPendingWrites();
     }
     await auth?.signOut();
     await _clearUserData();
@@ -809,13 +809,15 @@ class AppController extends ChangeNotifier {
 
   /// Permanently deletes the account. Re-authenticates first, so a
   /// cancelled or failed Google prompt aborts before anything is deleted;
-  /// then cloud data (fails offline, leaving the account intact), then the
-  /// Firebase user, then local data.
+  /// then the API deletes the account with all its cloud data (fails
+  /// offline, leaving the account intact), then local data goes.
   Future<void> deleteAccount() async {
-    await auth?.reauthenticate();
+    final auth = this.auth;
+    if (auth == null) return;
+    final idToken = await auth.reauthenticate();
+    await auth.deleteAccount(idToken);
     final repo = repository;
-    if (repo is FirestoreWorkoutRepository) await repo.deleteCloudData();
-    await auth?.deleteAccount();
+    if (repo is RemoteWorkoutRepository) await repo.discardPendingWrites();
     await _clearUserData();
     await preferences.remove(_syncUidKey);
     await preferences.remove(_skipSignInKey);
