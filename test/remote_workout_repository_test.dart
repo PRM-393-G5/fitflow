@@ -7,6 +7,7 @@ import 'package:prm/data/api/api_client.dart';
 import 'package:prm/data/local_workout_repository.dart';
 import 'package:prm/data/remote_workout_repository.dart';
 import 'package:prm/data/seed_workouts.dart';
+import 'package:prm/data/sync_outbox.dart';
 import 'package:prm/domain/models/workout.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -30,6 +31,7 @@ void main() {
     backend.api,
     LocalWorkoutRepository(preferences),
     preferences,
+    SyncOutbox(preferences),
     currentUserId: () => userId,
   );
 
@@ -90,6 +92,8 @@ void main() {
   });
 
   group('documents', () {
+    http.Response ok(http.Request _) => FakeBackend.json(null, 204);
+
     test(
       'syncDocs merges with the server and uploads local-only docs',
       () async {
@@ -99,7 +103,7 @@ void main() {
             {'id': 'remote-only', 'v': 2},
             {'id': 'gone', 'deleted': true},
           ]),
-          'PUT /api/me/docs/sessions': (_) => FakeBackend.json(null, 204),
+          'PUT /api/me/docs/sessions/local-only': ok,
         });
         await backend.signIn();
         final repo = repositoryFor(backend);
@@ -109,18 +113,16 @@ void main() {
           {'id': 'local-only', 'v': 1},
           {'id': 'gone', 'v': 1},
         ]);
-        await pumpEventQueue();
+        expect(await repo.flushPendingWrites(), isTrue);
 
         expect(
           merged!.map((doc) => doc['id']),
           unorderedEquals(['shared', 'remote-only', 'local-only']),
         );
-        final upload = backend.requests.last;
-        expect(upload.method, 'PUT');
-        expect(jsonDecode(upload.body), {
-          'docs': [
-            {'id': 'local-only', 'v': 1},
-          ],
+        expect(backend.calls.last, 'PUT /api/me/docs/sessions/local-only');
+        expect(jsonDecode(backend.requests.last.body), {
+          'id': 'local-only',
+          'v': 1,
         });
       },
     );
@@ -128,18 +130,64 @@ void main() {
     test('syncDocs uploads in batches of 500', () async {
       final backend = FakeBackend({
         'GET /api/me/docs/sessions': (_) => FakeBackend.json([]),
-        'PUT /api/me/docs/sessions': (_) => FakeBackend.json(null, 204),
+        'PUT /api/me/docs/sessions': ok,
+        'PUT /api/me/docs/sessions/s1000': ok,
       });
       await backend.signIn();
-      final local = [
+      final repo = repositoryFor(backend);
+      await repo.syncDocs('sessions', [
         for (var i = 0; i < 1001; i++) {'id': 's$i'},
-      ];
-      await repositoryFor(backend).syncDocs('sessions', local);
+      ]);
+      expect(await repo.flushPendingWrites(), isTrue);
+      final puts = backend.requests.where((r) => r.method == 'PUT').toList();
+      expect(puts.map((r) => r.url.path), [
+        '/api/me/docs/sessions',
+        '/api/me/docs/sessions',
+        '/api/me/docs/sessions/s1000',
+      ]);
+      expect((jsonDecode(puts.first.body)['docs'] as List).length, 500);
+    });
+
+    test('pending local edits win over the server copy', () async {
+      var online = false;
+      final backend = FakeBackend({
+        'GET /api/me/docs/sessions': (_) => FakeBackend.json([
+          {'id': 'edited', 'v': 'old'},
+          {'id': 'deleted', 'v': 'old'},
+        ]),
+        'PUT /api/me/docs/sessions/edited': (r) =>
+            online ? ok(r) : FakeBackend.json({}, 503),
+        'DELETE /api/me/docs/sessions/deleted': (r) =>
+            online ? ok(r) : FakeBackend.json({}, 503),
+      });
+      await backend.signIn();
+      final repo = repositoryFor(backend);
+      repo.putDoc('sessions', 'edited', {'id': 'edited', 'v': 'new'});
+      repo.deleteDoc('sessions', 'deleted');
+      expect(await repo.flushPendingWrites(), isFalse);
+
+      final merged = await repo.syncDocs('sessions', []);
+      expect(merged, [
+        {'id': 'edited', 'v': 'new'},
+      ]);
+
+      online = true;
+      expect(await repo.flushPendingWrites(), isTrue);
+    });
+
+    test('offline writes survive a restart and are sent later', () async {
+      final offline = FakeBackend({
+        'PUT /api/me/docs/sessions/s1': (_) =>
+            throw http.ClientException('offline'),
+      });
+      await offline.signIn();
+      repositoryFor(offline).putDoc('sessions', 's1', {'id': 's1'});
       await pumpEventQueue();
-      final sizes = backend.requests
-          .where((r) => r.method == 'PUT')
-          .map((r) => (jsonDecode(r.body)['docs'] as List).length);
-      expect(sizes, [500, 500, 1]);
+
+      final online = FakeBackend({'PUT /api/me/docs/sessions/s1': ok});
+      await online.signIn();
+      expect(await repositoryFor(online).flushPendingWrites(), isTrue);
+      expect(online.calls, ['PUT /api/me/docs/sessions/s1']);
     });
 
     test('syncDocs survives TLS errors and unexpected payloads', () async {
@@ -172,12 +220,10 @@ void main() {
       expect(await repositoryFor(backend).syncDocs('sessions', []), isNull);
     });
 
-    test('saving and deleting sync custom workouts and sessions', () async {
+    test('saving and deleting sync custom workouts, in order', () async {
       final backend = FakeBackend({
-        'PUT /api/me/docs/workouts/custom-1': (_) =>
-            FakeBackend.json(null, 204),
-        'DELETE /api/me/docs/workouts/custom-1': (_) =>
-            FakeBackend.json(null, 204),
+        'PUT /api/me/docs/workouts/custom-1': ok,
+        'DELETE /api/me/docs/workouts/custom-1': ok,
       });
       await backend.signIn();
       final repo = repositoryFor(backend);
@@ -185,21 +231,36 @@ void main() {
       await repo.saveWorkout(customWorkout('custom-1'));
       await repo.saveWorkout(seedWorkouts.first); // template: local only
       await repo.deleteWorkout('custom-1');
-      await pumpEventQueue();
+      expect(await repo.flushPendingWrites(), isTrue);
 
-      expect(backend.calls, [
-        'PUT /api/me/docs/workouts/custom-1',
-        'DELETE /api/me/docs/workouts/custom-1',
-      ]);
+      // The delete is always last (the save may have been coalesced away).
+      expect(backend.calls.last, 'DELETE /api/me/docs/workouts/custom-1');
+      expect(
+        backend.calls.where((call) => call.contains(seedWorkouts.first.id)),
+        isEmpty,
+      );
     });
 
-    test('nothing is sent while signed out', () async {
+    test('nothing is queued or sent while signed out', () async {
       final backend = FakeBackend({});
       final repo = repositoryFor(backend, userId: null);
       await repo.saveWorkout(customWorkout('custom-1'));
       await pumpEventQueue();
       expect(backend.requests, isEmpty);
+      expect(SyncOutbox(preferences).isEmpty, isTrue);
       expect(await repo.getWorkout('custom-1'), isNotNull);
+    });
+
+    test('discardPendingWrites forgets undelivered writes', () async {
+      final backend = FakeBackend({
+        'PUT /api/me/docs/sessions/s1': (_) => FakeBackend.json({}, 503),
+      });
+      await backend.signIn();
+      final repo = repositoryFor(backend);
+      repo.putDoc('sessions', 's1', {'id': 's1'});
+      expect(await repo.flushPendingWrites(), isFalse);
+      await repo.discardPendingWrites();
+      expect(await repo.flushPendingWrites(), isTrue);
     });
   });
 

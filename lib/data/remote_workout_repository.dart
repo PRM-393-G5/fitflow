@@ -9,6 +9,8 @@ import '../domain/models/workout_session.dart';
 import '../domain/repositories/workout_repository.dart';
 import 'api/api_client.dart';
 import 'local_workout_repository.dart';
+import 'outbox_sender.dart';
+import 'sync_outbox.dart';
 import 'sync_merge.dart';
 
 /// Workout data backed by the FitFlow API (replaces
@@ -23,19 +25,21 @@ class RemoteWorkoutRepository implements WorkoutRepository {
   RemoteWorkoutRepository(
     this._api,
     this._local,
-    this._preferences, {
+    this._preferences,
+    this._outbox, {
     required this._currentUserId,
-  });
+  }) {
+    _sender = OutboxSender(_outbox, _api, currentUserId: _currentUserId);
+  }
 
   static const _cacheKey = 'workouts_remote_v1';
-
-  /// The API accepts at most 500 documents per bulk upload.
-  static const _batchLimit = 500;
 
   final ApiClient _api;
   final LocalWorkoutRepository _local;
   final SharedPreferences _preferences;
   final String? Function() _currentUserId;
+  final SyncOutbox _outbox;
+  late final OutboxSender _sender;
 
   /// Currently signed-in account id, or null when signed out.
   String? get uid => _currentUserId();
@@ -44,13 +48,19 @@ class RemoteWorkoutRepository implements WorkoutRepository {
 
   /// Merges [local] JSON docs (each with an `id`) with the server's
   /// `/api/me/docs/[name]`: remote wins on conflicts, tombstoned ids are
-  /// dropped, local-only docs are uploaded. Returns the merged docs, or
-  /// null when signed out or unreachable (callers keep their local data).
+  /// dropped, local-only docs are queued for upload. Writes still pending
+  /// in the outbox are newer than the server copy, so they are delivered
+  /// first and win over it. Returns the merged docs, or null when signed
+  /// out or unreachable (callers keep their local data).
   Future<List<Map<String, dynamic>>?> syncDocs(
     String name,
     List<Map<String, dynamic>> local,
   ) async {
-    if (!signedIn) return null;
+    final owner = uid;
+    if (owner == null) return null;
+    // Deliver this kind's pending writes first so the server copy is
+    // current; skip the round trip when there are none.
+    if (_outbox.pendingFor(owner, name).isNotEmpty) await _sender.flush();
     final List<Map<String, dynamic>> remote;
     try {
       final json = await _api.get('me/docs/$name');
@@ -64,42 +74,86 @@ class RemoteWorkoutRepository implements WorkoutRepository {
       return null;
     }
     final result = SyncMerge.mergeDocs(local, remote);
-    _pushAll(name, result.toUpload);
-    return result.merged;
+    final merged = _withPending(owner, name, result.merged);
+    await _enqueue([
+      for (final doc in result.toUpload)
+        OutboxEntry(
+          owner: owner,
+          kind: name,
+          id: doc['id'] as String,
+          body: doc,
+        ),
+    ]);
+    return merged;
   }
 
-  /// Uploads docs in background batches of at most [_batchLimit].
-  void _pushAll(String name, List<Map<String, dynamic>> docs) {
-    for (var start = 0; start < docs.length; start += _batchLimit) {
-      final batch = docs.skip(start).take(_batchLimit).toList();
-      unawaited(
-        _api
-            .put('me/docs/$name', body: {'docs': batch})
-            .catchError((Object e) => debugPrint('Sync upload failed: $e')),
-      );
+  /// Applies writes the server has not received yet on top of [merged].
+  List<Map<String, dynamic>> _withPending(
+    String owner,
+    String name,
+    List<Map<String, dynamic>> merged,
+  ) {
+    final pending = _outbox.pendingFor(owner, name);
+    if (pending.isEmpty) return merged;
+    final byId = {for (final doc in merged) doc['id'] as String: doc};
+    for (final entry in pending) {
+      if (entry.isDelete) {
+        byId.remove(entry.id);
+      } else {
+        byId[entry.id] = {...entry.body!, 'id': entry.id};
+      }
+    }
+    return byId.values.toList();
+  }
+
+  /// Queues a doc write and sends it in the background — the UI never
+  /// waits on the network; offline it is retried on the next sync.
+  void putDoc(String name, String id, Map<String, Object?> json) {
+    final owner = uid;
+    if (owner == null) return;
+    unawaited(
+      _enqueue([
+        OutboxEntry(
+          owner: owner,
+          kind: name,
+          id: id,
+          body: Map<String, dynamic>.from(json),
+        ),
+      ]),
+    );
+  }
+
+  /// Queues a delete; the server keeps a tombstone so another device's
+  /// merge cannot resurrect the doc.
+  void deleteDoc(String name, String id) {
+    final owner = uid;
+    if (owner == null) return;
+    unawaited(_enqueue([OutboxEntry(owner: owner, kind: name, id: id)]));
+  }
+
+  Future<void> _enqueue(List<OutboxEntry> entries) async {
+    if (entries.isEmpty) return;
+    await _outbox.addAll(entries);
+    unawaited(_sender.flush());
+  }
+
+  /// Tries to deliver every pending write. False when some are still
+  /// pending after [timeout] (offline) — signing out then would lose them.
+  /// The default leaves room for a large bulk upload on a slow network.
+  Future<bool> flushPendingWrites({
+    Duration timeout = const Duration(seconds: 20),
+  }) async {
+    if (!signedIn) return true;
+    try {
+      return await _sender.flush().timeout(timeout);
+    } on TimeoutException {
+      return false;
     }
   }
 
-  /// Sends a doc write in the background — the UI never waits on it.
-  void putDoc(String name, String id, Map<String, Object?> json) {
-    if (!signedIn) return;
-    unawaited(
-      _api
-          .put('me/docs/$name/${Uri.encodeComponent(id)}', body: json)
-          .catchError((Object e) => debugPrint('Cloud write failed: $e')),
-    );
-  }
-
-  /// Deletes [id] on the server, which keeps a tombstone so another
-  /// device's merge cannot resurrect it.
-  void deleteDoc(String name, String id) {
-    if (!signedIn) return;
-    unawaited(
-      _api
-          .delete('me/docs/$name/${Uri.encodeComponent(id)}')
-          .catchError((Object e) => debugPrint('Cloud delete failed: $e')),
-    );
-  }
+  /// Forgets writes that were never delivered (forced sign-out, account
+  /// deletion).
+  Future<void> discardPendingWrites() => _outbox.clear();
 
   /// Pulls the meta blob in the shape the app used with Firestore:
   /// `{...meta, updatedAt}`, or null when never written or signed out.
