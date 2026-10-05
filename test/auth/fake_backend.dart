@@ -29,9 +29,12 @@ class FakeGoogle implements GoogleIdTokens {
 /// A scripted API: [handlers] map "METHOD /path" to a response; every
 /// request is recorded in [requests].
 class FakeBackend {
-  FakeBackend(this.handlers);
+  FakeBackend(this.handlers, {this.fallback});
 
   final Map<String, http.Response Function(http.Request)> handlers;
+
+  /// Answers requests no exact handler matches (dynamic paths).
+  final http.Response? Function(http.Request)? fallback;
   final requests = <http.Request>[];
   final tokens = MemoryTokenStore();
 
@@ -41,7 +44,9 @@ class FakeBackend {
     httpClient: MockClient((request) async {
       requests.add(request);
       final handler = handlers['${request.method} ${request.url.path}'];
-      return handler?.call(request) ?? json({'message': 'not found'}, 404);
+      return handler?.call(request) ??
+          fallback?.call(request) ??
+          json({'message': 'not found'}, 404);
     }),
   );
 
