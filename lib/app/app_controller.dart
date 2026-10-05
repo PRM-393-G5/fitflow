@@ -285,7 +285,7 @@ class AppController extends ChangeNotifier {
   }
 
   /// Last-write-wins meta sync (profile, schedule, onboarding, weekly goal)
-  /// against the `users/{uid}` doc. Until this device has pulled the doc
+  /// against `/api/me/meta`. Until this device has pulled the doc
   /// once for the account, the cloud copy wins outright: local values are
   /// then only defaults or a guest's data, and must not overwrite an
   /// existing profile.
@@ -363,7 +363,18 @@ class AppController extends ChangeNotifier {
     if (repo is RemoteWorkoutRepository &&
         repo.signedIn &&
         preferences.getString(_metaPulledKey) == repo.uid) {
-      unawaited(repo.pushMeta(_metaSnapshot(), ts));
+      final uid = repo.uid;
+      final epoch = dataEpoch;
+      unawaited(
+        repo.pushMeta(_metaSnapshot(), ts).then((newer) async {
+          // Another device wrote a newer profile meanwhile: adopt it,
+          // unless the account or local data changed since.
+          if (newer == null || repo.uid != uid || dataEpoch != epoch) return;
+          if (preferences.getInt(_metaTsKey) != ts) return;
+          await _applyRemoteMeta(newer);
+          notifyListeners();
+        }),
+      );
     }
   }
 
