@@ -265,7 +265,7 @@ void main() {
   });
 
   group('meta', () {
-    test('pullMeta returns the Firestore-shaped blob', () async {
+    test('pullMeta returns the flattened meta blob', () async {
       final backend = FakeBackend({
         'GET /api/me/meta': (_) => FakeBackend.json({
           'updatedAt': 42,

@@ -10,7 +10,7 @@ import 'api/api_client.dart';
 import 'api/token_store.dart';
 import 'google_id_tokens.dart';
 
-/// Sign-in against the FitFlow API (replaces Firebase Auth): Google gives
+/// Sign-in against the FitFlow API: Google gives
 /// an ID token, the API verifies it and returns its own session.
 ///
 /// The profile is cached in SharedPreferences so [currentUser] is known
