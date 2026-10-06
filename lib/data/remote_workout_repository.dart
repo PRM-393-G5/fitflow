@@ -151,9 +151,9 @@ class RemoteWorkoutRepository implements WorkoutRepository {
     }
   }
 
-  /// Forgets writes that were never delivered (forced sign-out, account
-  /// deletion).
-  Future<void> discardPendingWrites() => _outbox.clear();
+  /// Forgets [owner]'s writes that were never delivered (forced sign-out,
+  /// account deletion). Other accounts' queued writes are kept.
+  Future<void> discardPendingWrites(String owner) => _outbox.clearOwner(owner);
 
   /// Pulls the meta blob in the shape the app used with Firestore:
   /// `{...meta, updatedAt}`, or null when never written or signed out.

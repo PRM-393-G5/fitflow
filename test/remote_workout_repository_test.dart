@@ -259,7 +259,7 @@ void main() {
       final repo = repositoryFor(backend);
       repo.putDoc('sessions', 's1', {'id': 's1'});
       expect(await repo.flushPendingWrites(), isFalse);
-      await repo.discardPendingWrites();
+      await repo.discardPendingWrites('u1');
       expect(await repo.flushPendingWrites(), isTrue);
     });
   });

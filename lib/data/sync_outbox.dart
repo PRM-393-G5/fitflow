@@ -93,6 +93,12 @@ class SyncOutbox {
     await _save();
   }
 
+  /// Forgets [owner]'s undelivered writes; other accounts' stay queued.
+  Future<void> clearOwner(String owner) async {
+    _entries.removeWhere((entry) => entry.owner == owner);
+    await _save();
+  }
+
   Future<void> clear() async {
     _entries.clear();
     await _save();

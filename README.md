@@ -27,6 +27,10 @@ flutter run
 fails on the missing asset entry, so create it even if empty.
 `--dart-define=OPENAI_API_KEY=sk-...` also works.
 
+Accounts and sync need the FitFlow API running (see **Backend API**
+below). The app works fully offline without it; only sign-in and cloud
+sync are unavailable.
+
 Select a target explicitly when needed, for example `flutter run -d <device-id>`. Android and iOS currently use the existing `com.zcode9211.prm` application identifier.
 
 ## Quality checks and tests
@@ -74,12 +78,27 @@ For a distributable Android release, configure a production application ID and r
 
 ## Backend API
 
-The app is moving off Firebase to its own REST API, developed in a separate
+Sign-in and sync use the FitFlow REST API, developed in a separate
 repository: [PRM-393-G5/fitflow-api](https://github.com/PRM-393-G5/fitflow-api)
-(NestJS + MongoDB). Clone it next to this repository and follow its README
-to run it locally. The migration plan and PR roadmap are in
-[`docs/backend-migration.md`](docs/backend-migration.md); until the app is
-switched over (plan steps 14–15), it still uses Firebase as described below.
+(NestJS + MongoDB). Clone it next to this repository and start it:
+
+```sh
+cd ../fitflow-api && npm install && cp .env.example .env
+npm run build && npm run seed && npm run start:dev   # http://localhost:3001/api
+```
+
+The app finds it at `http://10.0.2.2:3001/api` on the Android emulator and
+`http://localhost:3001/api` elsewhere. On a physical phone set your
+computer's LAN address in `.env` (`API_BASE_URL=http://192.168.x.y:3001/api`)
+or pass `--dart-define=API_BASE_URL=...`. Debug builds allow plain HTTP;
+release builds need HTTPS.
+
+How it works: Google Sign-In gives an ID token, the API verifies it and
+returns its own session (stored in secure storage). Writes land locally
+first and go out through a persisted outbox, so offline edits are not
+lost. Details and the migration plan: [`docs/backend-migration.md`](docs/backend-migration.md).
+The Firebase files below are no longer used by the app and are removed in
+plan step 15.
 
 ## Firestore rules
 
