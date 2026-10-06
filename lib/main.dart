@@ -57,10 +57,12 @@ Future<void> main() async {
     auth: auth,
   );
   await controller.load();
-  // Re-sync cloud data when the user signs in after startup.
+  // Reload when the account changes after startup: a sign-in merges its
+  // cloud data; an expired session (signed out by the server) refreshes
+  // every screen that showed the account.
   var lastUid = auth.currentUser?.id;
   auth.userChanges.listen((user) {
-    if (user != null && user.id != lastUid) controller.load();
+    if (user?.id != lastUid) controller.load();
     lastUid = user?.id;
   });
   runApp(WorkoutApp(controller: controller));

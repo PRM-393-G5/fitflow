@@ -217,6 +217,32 @@ void main() {
     expect(server.docs['sessions']?.containsKey('offline') ?? false, isFalse);
   });
 
+  test('forced sign-out keeps another account\'s queued writes', () async {
+    final theirs = jsonEncode([
+      const OutboxEntry(
+        owner: 'someone-else',
+        kind: 'sessions',
+        id: 'x',
+      ).toJson(),
+    ]);
+    final (app, auth) = await device(prefs: {'sync_outbox_v1': theirs});
+    await auth.signInWithGoogle();
+    await app.load();
+    await syncNow(app);
+    server.online = false;
+    await app.addSession(session('mine', 6));
+
+    expect(await app.signOut(force: true), isTrue);
+
+    final left = SyncOutbox(await SharedPreferences.getInstance()).entries;
+    expect(left.map((e) => e.owner), ['someone-else']);
+  });
+
+  test('deleting without an account is an error, not a success', () async {
+    final (app, _) = await device();
+    await expectLater(app.deleteAccount(), throwsStateError);
+  });
+
   test('account deletion goes through the API and clears the device', () async {
     final (app, auth) = await device();
     await auth.signInWithGoogle();

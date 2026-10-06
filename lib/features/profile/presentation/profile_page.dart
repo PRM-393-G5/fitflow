@@ -388,11 +388,7 @@ class _AccountSection extends StatelessWidget {
         showFToast(
           context: context,
           title: const Text('Could not delete the account'),
-          description: Text(
-            e is ApiException && !e.isNetwork
-                ? describeAuthError(e)
-                : 'Check your connection and try again.',
-          ),
+          description: Text(describeDeleteError(e)),
         );
       }
     }
@@ -460,4 +456,21 @@ class _AccountSection extends StatelessWidget {
       ],
     );
   }
+}
+
+/// A user-facing reason why account deletion failed.
+@visibleForTesting
+String describeDeleteError(Object error) {
+  if (error is ApiException && !error.isNetwork) {
+    if (error.statusCode == 403) {
+      return error.message.contains('does not match')
+          ? 'Choose the same Google account you signed in with.'
+          : 'Confirm with Google again, then retry right away.';
+    }
+    if (error.statusCode == 429) {
+      return 'Too many attempts — try again in a minute.';
+    }
+    return 'The server could not delete the account — try again later.';
+  }
+  return 'Check your connection and try again.';
 }

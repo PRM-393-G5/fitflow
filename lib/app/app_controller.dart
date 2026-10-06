@@ -368,11 +368,16 @@ class AppController extends ChangeNotifier {
       unawaited(
         repo.pushMeta(_metaSnapshot(), ts).then((newer) async {
           // Another device wrote a newer profile meanwhile: adopt it,
-          // unless the account or local data changed since.
+          // unless the account, local data or meta changed since, or a
+          // sync is merging meta right now (it will pick the newer copy).
           if (newer == null || repo.uid != uid || dataEpoch != epoch) return;
-          if (preferences.getInt(_metaTsKey) != ts) return;
-          await _applyRemoteMeta(newer);
-          notifyListeners();
+          if (preferences.getInt(_metaTsKey) != ts || syncing) return;
+          try {
+            await _applyRemoteMeta(newer);
+            notifyListeners();
+          } catch (e) {
+            debugPrint('Could not apply newer profile: $e');
+          }
         }),
       );
     }
@@ -806,9 +811,12 @@ class AppController extends ChangeNotifier {
   Future<bool> signOut({bool force = false}) async {
     final repo = repository;
     if (repo is RemoteWorkoutRepository) {
-      if (!force && !await repo.flushPendingWrites()) return false;
-      // Forced: undelivered writes must not reach the account later.
-      await repo.discardPendingWrites();
+      final uid = repo.uid;
+      if (!await repo.flushPendingWrites()) {
+        if (!force) return false;
+        // Forced: undelivered writes must not reach the account later.
+        if (uid != null) await repo.discardPendingWrites(uid);
+      }
     }
     await auth?.signOut();
     await _clearUserData();
@@ -824,11 +832,14 @@ class AppController extends ChangeNotifier {
   /// offline, leaving the account intact), then local data goes.
   Future<void> deleteAccount() async {
     final auth = this.auth;
-    if (auth == null) return;
+    final uid = auth?.currentUser?.id;
+    if (auth == null || uid == null) {
+      throw StateError('Not signed in');
+    }
     final idToken = await auth.reauthenticate();
     await auth.deleteAccount(idToken);
     final repo = repository;
-    if (repo is RemoteWorkoutRepository) await repo.discardPendingWrites();
+    if (repo is RemoteWorkoutRepository) await repo.discardPendingWrites(uid);
     await _clearUserData();
     await preferences.remove(_syncUidKey);
     await preferences.remove(_skipSignInKey);

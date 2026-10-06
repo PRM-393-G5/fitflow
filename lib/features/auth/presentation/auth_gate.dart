@@ -1,4 +1,3 @@
-import 'package:forui/forui.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../app/app_scope.dart';
@@ -17,15 +16,13 @@ class AuthGate extends StatelessWidget {
     final controller = AppScope.of(context);
     final auth = controller.auth;
     if (auth == null) return const AppShell();
+    // The service knows the restored session synchronously, and its
+    // stream only reports later changes — so start from currentUser
+    // instead of waiting for a first event.
     return StreamBuilder<AppUser?>(
       stream: auth.userChanges,
       initialData: auth.currentUser,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            auth.currentUser == null &&
-            !controller.signInSkipped) {
-          return const FScaffold(child: Center(child: FCircularProgress()));
-        }
         final signedIn = snapshot.data != null;
         return signedIn || controller.signInSkipped
             ? const AppShell()
