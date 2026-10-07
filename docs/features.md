@@ -7,7 +7,7 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 | Tính năng | Mô tả | Trạng thái |
 |---|---|---|
 | Onboarding | Lần đầu mở app: chọn mục tiêu (tăng cơ / giảm mỡ / vận động) + trình độ → cá nhân hoá gợi ý workout và filter mặc định | ✅ |
-| Thư viện workout | Template có sẵn trong app (fallback khi offline/chưa có Firestore) + template từ Firestore; search theo tên/bài/nhóm cơ/level, filter category + level; chi tiết có "last performed", thêm vào lịch | ✅ |
+| Thư viện workout | Template có sẵn trong app (fallback khi offline/chưa có API) + template từ FitFlow API (`GET /api/templates`); search theo tên/bài/nhóm cơ/level, filter category + level; chi tiết có "last performed", thêm vào lịch | ✅ |
 | Màn tập (active workout) | Tick từng set, nhập reps + tạ theo đơn vị người dùng (kg/lb, chấp nhận dấu phẩy), undo set, đếm ngược rest/hold theo mốc thời gian (đúng cả khi app ở nền) + rung/âm báo, preview bài kế tiếp; không lưu buổi 0 set | ✅ |
 | Today's workout | Home hiển thị workout theo lịch tuần hoặc theo goal onboarding | ✅ |
 | Workout builder | Tạo / **sửa / xoá** plan riêng: tên, category, level, exercise động (reps hoặc giây, nhóm cơ, rest, tạ), validate từng field, tự estimate thời lượng | ✅ |
@@ -61,14 +61,14 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 
 | Tính năng | Mô tả | Trạng thái |
 |---|---|---|
-| Local-first | Mọi dữ liệu lưu local, đọc/ghi không chờ mạng; **không bắt buộc đăng nhập** ("Continue without an account"); Firebase lỗi/chưa cấu hình (iOS) → chạy local-only | ✅ |
+| Local-first | Mọi dữ liệu lưu local, đọc/ghi không chờ mạng; **không bắt buộc đăng nhập** ("Continue without an account"); không kết nối được API → vẫn chạy local-only | ✅ |
 | Export / Import JSON | Xuất backup (plans riêng, sessions, cân nặng, profile, lịch, goal, settings) ra file/copy; import merge theo id | ✅ |
 | Sign-in | Đăng nhập Google tuỳ chọn — mở khoá cloud sync; đăng xuất chờ dữ liệu sync xong (cảnh báo nếu còn thay đổi chưa lên cloud) rồi xoá dữ liệu trên máy; **xoá tài khoản** + dữ liệu cloud | ✅ |
-| Cloud sync | Firestore `users/{uid}`: sessions, custom plans, cân nặng merge theo id với tombstone khi xoá; profile/lịch/onboarding last-write-wins; dữ liệu khách được gộp vào tài khoản khi đăng nhập; đổi tài khoản xoá sạch dữ liệu người trước; rules trong `firestore.rules` | ✅ |
+| Cloud sync | FitFlow API (`fitflow-api`, NestJS + MongoDB): sessions, custom plans, cân nặng merge theo id với tombstone khi xoá; profile/lịch/onboarding last-write-wins; ghi offline qua outbox, gửi lại khi có mạng; dữ liệu khách được gộp vào tài khoản khi đăng nhập; đổi tài khoản xoá sạch dữ liệu người trước | ✅ |
 | Multi-device | Nhiều thiết bị cùng account thấy cùng dữ liệu (sync khi mở app + mỗi lần ghi) | ✅ |
 
 ## Ưu tiên triển khai tiếp
 
-1. Chuyển OpenAI key ra backend (Cloud Function) — hiện key vẫn nằm trong APK
-2. Cấu hình Firebase cho iOS (`flutterfire configure`) — iOS hiện chạy local-only
+1. Chuyển OpenAI key ra backend (`fitflow-api`) — hiện key vẫn nằm trong APK
+2. Đưa `fitflow-api` lên server HTTPS để bản release dùng được cloud sync
 3. Bài tập form check mới / số đo cơ thể — nếu dư thời gian

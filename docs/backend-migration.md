@@ -1,5 +1,8 @@
 # Chuyển FitFlow từ Firebase sang NestJS + MongoDB
 
+> **Trạng thái: hoàn thành** — 15/15 bước đã merge (fitflow-api #1–#9, fitflow #18–#24).
+> App không còn phụ thuộc Firebase.
+
 Mục tiêu: bỏ hẳn Firebase (Auth + Firestore) khỏi app Flutter, thay bằng backend
 NestJS dùng MongoDB + Mongoose. Google Sign-In vẫn ở client; backend
 verify Google ID token rồi cấp JWT riêng. Giữ nguyên hành vi **local-first**:

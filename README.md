@@ -1,6 +1,6 @@
 # FitFlow
 
-FitFlow is a Flutter workout-tracking MVP. It ships with built-in workout plans, guides a local workout session, and records progress on the device without requiring an account or network connection. Signing in with Google is optional and adds Firestore backup and multi-device sync.
+FitFlow is a Flutter workout-tracking MVP. It ships with built-in workout plans, guides a local workout session, and records progress on the device without requiring an account or network connection. Signing in with Google is optional and adds cloud backup and multi-device sync through the FitFlow API.
 
 ## Toolchain
 
@@ -70,7 +70,7 @@ For a distributable Android release, configure a production application ID and r
 - Weekly schedule that pins a plan to each day
 - AI form check for squat, push-up, and plank via on-device pose detection
 - Reminder preferences, JSON export/import backup, and a shareable summary image
-- Optional Google sign-in with Firestore sync, sign-out and account deletion
+- Optional Google sign-in with cloud sync via the FitFlow API, sign-out and account deletion
 - Session detail view per completed workout
 - Theme selection (system, light, or dark)
 - Metric/imperial preference
@@ -96,13 +96,9 @@ release builds need HTTPS.
 How it works: Google Sign-In gives an ID token, the API verifies it and
 returns its own session (stored in secure storage). Writes land locally
 first and go out through a persisted outbox, so offline edits are not
-lost. Details and the migration plan: [`docs/backend-migration.md`](docs/backend-migration.md).
-The Firebase files below are no longer used by the app and are removed in
-plan step 15.
-
-## Firestore rules
-
-Security rules live in `firestore.rules` (templates public read-only, each user limited to `users/{uid}`). Deploy them with `firebase deploy --only firestore:rules`.
+lost. Access rules (public templates, each user limited to their own
+data) are enforced by the API. Details and the migration history:
+[`docs/backend-migration.md`](docs/backend-migration.md).
 
 ## Architecture and directories
 
@@ -159,8 +155,8 @@ The checksum must match before relying on the archive. Do not extract it over `/
 
 ## Current limitations
 
-- Cloud sync and accounts currently rely on Firebase; the move to the fitflow-api backend is in progress.
-- Workout plans are bundled seed data plus locally created custom workouts; there is no remote catalog.
+- Cloud sync needs a reachable FitFlow API; release builds need it served over HTTPS.
+- Workout templates are a small built-in catalog (bundled, refreshed from the API), plus locally created custom workouts.
 - Local preferences are not a secure store and are not backed up by FitFlow.
 - No push notifications, social features, subscriptions, or wearable integrations.
 - Release signing and store distribution are not configured; the documented APK is a debug build.
