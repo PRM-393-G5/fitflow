@@ -1,7 +1,7 @@
 # Chuyển FitFlow từ Firebase sang NestJS + MongoDB
 
-> **Trạng thái: hoàn thành** — 15/15 bước đã merge (fitflow-api #1–#9, fitflow #18–#24).
-> App không còn phụ thuộc Firebase.
+> **Trạng thái:** 15 bước — fitflow-api #1–#9, fitflow #18–#24. Sau bước 15 app
+> không còn phụ thuộc Firebase. Xem "Việc còn lại" ở cuối tài liệu.
 
 Mục tiêu: bỏ hẳn Firebase (Auth + Firestore) khỏi app Flutter, thay bằng backend
 NestJS dùng MongoDB + Mongoose. Google Sign-In vẫn ở client; backend
@@ -104,3 +104,16 @@ số PR trên GitHub: bước 1–9 làm ở `fitflow-api` (bước N = `fitflow
 | 13 | `feat/flutter-sync-outbox` | Outbox offline · `flushPendingWrites` · `deleteCloudData` · test |
 | 14 | `feat/flutter-wire-backend` | `main.dart` · `AppController` · `AuthGate`/`LoginPage` · `ProfilePage` |
 | 15 | `chore/remove-firebase` | Gỡ package + file + Gradle plugin Firebase · cập nhật README/docs |
+
+## Việc còn lại (ngoài code)
+
+- **Dữ liệu cũ trên Firestore không được chuyển sang MongoDB.** Người dùng từng sync
+  qua Firebase sẽ thấy tài khoản trống khi đăng nhập bằng API (dữ liệu trên máy vẫn
+  còn và sẽ được upload khi đăng nhập). Nếu cần giữ dữ liệu cloud cũ: export từ
+  Firebase console (hoặc script `firebase-admin` với service account) rồi import vào
+  collection `userdocs`/`users` của `fitflow-api`.
+- **Project Firebase `fitflow-cbbcb` vẫn hoạt động.** Gỡ file khỏi repo không thu hồi
+  API key (vẫn còn trong lịch sử git) và không xoá dữ liệu/rules đã deploy. Sau khi
+  không cần dữ liệu cũ nữa: tắt Firestore/Auth hoặc xoá project trong Firebase console.
+- **Google Sign-In trên iOS chưa cấu hình** (`GIDClientID` + URL scheme trong
+  `ios/Runner/Info.plist`); iOS hiện chạy local-only.

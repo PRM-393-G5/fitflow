@@ -61,7 +61,7 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 
 | Tính năng | Mô tả | Trạng thái |
 |---|---|---|
-| Local-first | Mọi dữ liệu lưu local, đọc/ghi không chờ mạng; **không bắt buộc đăng nhập** ("Continue without an account"); không kết nối được API → vẫn chạy local-only | ✅ |
+| Local-first | Mọi dữ liệu lưu local, đọc/ghi không chờ mạng; **không bắt buộc đăng nhập** ("Continue without an account"); không kết nối được API → vẫn chạy local-only; iOS chưa cấu hình Google Sign-In → chạy local-only | ✅ |
 | Export / Import JSON | Xuất backup (plans riêng, sessions, cân nặng, profile, lịch, goal, settings) ra file/copy; import merge theo id | ✅ |
 | Sign-in | Đăng nhập Google tuỳ chọn — mở khoá cloud sync; đăng xuất chờ dữ liệu sync xong (cảnh báo nếu còn thay đổi chưa lên cloud) rồi xoá dữ liệu trên máy; **xoá tài khoản** + dữ liệu cloud | ✅ |
 | Cloud sync | FitFlow API (`fitflow-api`, NestJS + MongoDB): sessions, custom plans, cân nặng merge theo id với tombstone khi xoá; profile/lịch/onboarding last-write-wins; ghi offline qua outbox, gửi lại khi có mạng; dữ liệu khách được gộp vào tài khoản khi đăng nhập; đổi tài khoản xoá sạch dữ liệu người trước | ✅ |
@@ -71,4 +71,5 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 
 1. Chuyển OpenAI key ra backend (`fitflow-api`) — hiện key vẫn nằm trong APK
 2. Đưa `fitflow-api` lên server HTTPS để bản release dùng được cloud sync
+3. Cấu hình Google Sign-In cho iOS (`GIDClientID` + reversed client ID URL scheme trong `ios/Runner/Info.plist`) — iOS hiện chạy local-only
 3. Bài tập form check mới / số đo cơ thể — nếu dư thời gian

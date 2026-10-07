@@ -49,8 +49,8 @@ class OutboxEntry {
 }
 
 /// Writes that have not reached the server yet, persisted so they survive
-/// going offline and app restarts (as Firestore's offline queue did
-/// before). Only the latest write per document is kept: a newer save or
+/// going offline and app restarts. Only the latest write per document is
+/// kept: a newer save or
 /// delete of the same document replaces the pending one and moves to the
 /// end, so the server always ends with the last local state.
 class SyncOutbox {
