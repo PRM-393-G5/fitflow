@@ -13,8 +13,7 @@ import 'outbox_sender.dart';
 import 'sync_outbox.dart';
 import 'sync_merge.dart';
 
-/// Workout data backed by the FitFlow API (replaces
-/// FirestoreWorkoutRepository, with the same local-first behaviour).
+/// Workout data backed by the FitFlow API, local-first.
 ///
 /// Templates come from `GET /api/templates` (cached in SharedPreferences,
 /// bundled seeds before the first fetch). Per-user data syncs through
@@ -155,7 +154,7 @@ class RemoteWorkoutRepository implements WorkoutRepository {
   /// account deletion). Other accounts' queued writes are kept.
   Future<void> discardPendingWrites(String owner) => _outbox.clearOwner(owner);
 
-  /// Pulls the meta blob in the shape the app used with Firestore:
+  /// Pulls the meta blob in the shape AppController merges:
   /// `{...meta, updatedAt}`, or null when never written or signed out.
   /// Throws [ApiException] when unreachable so callers skip the merge.
   Future<Map<String, dynamic>?> pullMeta() async {

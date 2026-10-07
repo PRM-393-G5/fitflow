@@ -1,5 +1,4 @@
-/// Merge rules shared by the cloud repositories (Firestore today, the
-/// FitFlow API next): documents merge by id, the server copy wins.
+/// Cloud merge rules: documents merge by id, the server copy wins.
 class SyncMerge {
   const SyncMerge._();
 
