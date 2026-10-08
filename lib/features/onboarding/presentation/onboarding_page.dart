@@ -92,17 +92,32 @@ class _OnboardingPageState extends State<OnboardingPage> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: AppSpacing.sm),
-            Wrap(
+            Row(
               spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
               children: [
                 for (final item in _levels)
-                  FButton(
-                    variant: _level == item ? .primary : .outline,
-                    size: .sm,
-                    mainAxisSize: .min,
-                    onPress: () => setState(() => _level = item),
-                    child: Text(item),
+                  Expanded(
+                    child: FButton(
+                      variant: _level == item ? .primary : .outline,
+                      size: .sm,
+                      // Smaller text and side padding so all three labels fit
+                      // a third of a phone width at the same size.
+                      style: const .delta(
+                        contentStyle: .delta(
+                          padding: .add(EdgeInsets.symmetric(horizontal: -4)),
+                        ),
+                      ),
+                      onPress: () => setState(() => _level = item),
+                      child: Flexible(
+                        child: FittedBox(
+                          fit: .scaleDown,
+                          child: Text(
+                            item,
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),
