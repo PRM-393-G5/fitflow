@@ -67,13 +67,78 @@ void main() {
       ..add(day, meal('Eggs', 150, protein: 12))
       ..add(day, meal('Oats', 300, protein: 10));
 
-    log.replace(day, 0, log.mealsOn(day).first.withKcal(300));
+    final eggs = log.entriesOn(day).first;
+    final before = log.entriesOn(day).last;
+    expect(log.replace(eggs.id, eggs.meal.withKcal(300))?.id, eggs.id);
     final totals = FoodLog.totals(log.mealsOn(day));
     expect(totals.kcal, 600);
     expect(totals.proteinG, closeTo(34, 0.01));
+    // Untouched entries keep their identity (sync relies on it).
+    expect(identical(log.entriesOn(day).last, before), isTrue);
 
-    log.removeAt(day, 0);
-    log.removeAt(day, 0);
+    expect(log.remove(eggs.id), isNotNull);
+    expect(log.remove(eggs.id), isNull, reason: 'already gone');
+    expect(log.replace(eggs.id, eggs.meal), isNull);
+    log.remove(before.id);
     expect(log.days, isEmpty);
+  });
+
+  test('entry ids are day-prefixed, unique and in logging order', () {
+    final day = DateTime(2026, 4, 8);
+    final at = DateTime(2026, 4, 8, 12);
+    final log = FoodLog();
+    final first = log.add(day, meal('Eggs', 150), now: at);
+    final second = log.add(day, meal('Oats', 300), now: at);
+    expect(first.id, startsWith('2026-04-08:'));
+    expect(second.id, isNot(first.id));
+    expect(FoodEntry.isId(first.id) && FoodEntry.isId(second.id), isTrue);
+    expect(log.mealsOn(day).map((m) => m.items.single.name), ['Eggs', 'Oats']);
+
+    final decoded = FoodLog.decode(jsonEncode(log.toJson()));
+    expect(decoded.entriesOn(day).map((e) => e.id), [first.id, second.id]);
+  });
+
+  test('older formats get per-device ids in logging order', () {
+    final raw = jsonEncode({
+      'version': 2,
+      'days': {
+        '2026-04-08': [
+          for (var i = 0; i < 11; i++) meal('Dish $i', 100).toJson(),
+          {'label': 'Lunch', 'items': <Object>[]},
+        ],
+      },
+    });
+    expect(FoodLog.isCurrentFormat(raw), isFalse);
+    final log = FoodLog.decode(raw, nonce: 'phone');
+    final ids = log.entries.map((e) => e.id).toList();
+    expect(ids.first, '2026-04-08:0-phone-0000');
+    expect(ids, hasLength(11), reason: 'a meal without dishes is dropped');
+    // 11+ meals keep their order (zero-padded index).
+    expect(log.mealsOn(DateTime(2026, 4, 8)).last.items.single.name, 'Dish 10');
+    // Another device's old log never produces the same ids.
+    final other = FoodLog.decode(raw, nonce: 'tablet');
+    expect(
+      other.entries.map((e) => e.id).toSet().intersection(ids.toSet()),
+      isEmpty,
+    );
+    expect(FoodLog.isCurrentFormat(jsonEncode(log.toJson())), isTrue);
+  });
+
+  test('picks the meal slot from the time of day', () {
+    DateTime at(int h, int m) => DateTime(2026, 10, 16, h, m);
+    expect(defaultMealType(at(7, 30)), 'Breakfast');
+    expect(defaultMealType(at(10, 59)), 'Breakfast');
+    expect(defaultMealType(at(11, 0)), 'Lunch');
+    expect(defaultMealType(at(15, 30)), 'Snack');
+    expect(defaultMealType(at(18, 0)), 'Dinner');
+    expect(defaultMealType(at(23, 59)), 'Dinner');
+  });
+
+  test('maps labels to slots, unknown ones to Other', () {
+    Meal labeled(String label) => Meal(label: label, items: const []);
+    expect(mealTypeOf(labeled('Lunch')), 'Lunch');
+    expect(mealTypeOf(labeled(' snack ')), 'Snack');
+    expect(mealTypeOf(labeled('Manual entry')), otherMealType);
+    expect(mealTypeOf(labeled('Detected dishes')), otherMealType);
   });
 }

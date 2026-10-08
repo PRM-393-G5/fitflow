@@ -7,6 +7,7 @@ import 'package:prm/data/backend_auth_service.dart';
 import 'package:prm/data/local_workout_repository.dart';
 import 'package:prm/data/remote_workout_repository.dart';
 import 'package:prm/data/sync_outbox.dart';
+import 'package:prm/domain/meal_plan.dart';
 import 'package:prm/domain/models/workout_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -60,7 +61,12 @@ class FakeServer {
     if (segments.length >= 4 && segments[2] == 'docs') {
       final kind = docs.putIfAbsent(segments[3], () => {});
       if (segments.length == 4 && request.method == 'GET') {
-        return FakeBackend.json(kind.values.toList());
+        final since = request.url.queryParameters['since'];
+        return FakeBackend.json([
+          for (final doc in kind.values)
+            if (since == null || (doc['id'] as String).compareTo(since) >= 0)
+              doc,
+        ]);
       }
       if (segments.length == 4 && request.method == 'PUT') {
         final body = jsonDecode(request.body) as Map<String, dynamic>;
@@ -174,6 +180,120 @@ void main() {
     await syncNow(app);
 
     expect(app.sessions.map((s) => s.id), ['remote-1']);
+  });
+
+  Map<String, dynamic> mealDoc(String id, String label, String dish) => {
+    'id': id,
+    ...Meal(
+      label: label,
+      items: [MealItem(name: dish, kcal: 400)],
+    ).toJson(),
+  };
+
+  test('meals sync one entry per doc and survive signing in again', () async {
+    final today = DateTime.now();
+    final yesterday = DateTime(today.year, today.month, today.day - 1);
+    final dinnerId = '${FoodLog.dayKey(yesterday)}:1';
+    // Another device logged yesterday's dinner; an entry older than the
+    // kept window stays on the server and is not even downloaded.
+    server.docs['meals'] = {
+      dinnerId: mealDoc(dinnerId, 'Dinner', 'Pho'),
+      '2000-01-01:1': mealDoc('2000-01-01:1', 'Lunch', 'Old'),
+    };
+    final (app, auth) = await device();
+    await auth.signInWithGoogle();
+    await app.load();
+    await syncNow(app);
+    expect(app.foodLog.mealsOn(yesterday).single.items.single.name, 'Pho');
+    expect(app.foodLog.days.keys, [FoodLog.dayKey(yesterday)]);
+
+    const lunch = Meal(
+      label: 'Lunch',
+      items: [MealItem(name: 'Com tam', kcal: 650)],
+    );
+    await app.logMeal(today, lunch);
+    await app.removeMeal(dinnerId);
+    await app.removeMeal(dinnerId); // already gone: no second write
+    final repo = app.repository as RemoteWorkoutRepository;
+    expect(await repo.flushPendingWrites(), isTrue);
+    final lunchId = app.foodLog.entriesOn(today).single.id;
+    expect(server.docs['meals']![lunchId], {'id': lunchId, ...lunch.toJson()});
+    expect(server.docs['meals']![dinnerId], {'id': dinnerId, 'deleted': true});
+    expect(server.docs['meals']!['2000-01-01:1']!['deleted'], isNull);
+
+    // Signing out wipes the device; signing back in restores the log.
+    await app.signOut();
+    expect(app.foodLog.days, isEmpty);
+    await auth.signInWithGoogle();
+    await app.load();
+    await syncNow(app);
+    expect(app.foodLog.mealsOn(today).single.label, 'Lunch');
+    expect(app.foodLog.mealsOn(yesterday), isEmpty);
+  });
+
+  test('an older local food log is rewritten in the current format', () async {
+    final day = FoodLog.dayKey(DateTime.now());
+    final (app, _) = await device(
+      prefs: {
+        'food_log_v1': jsonEncode({
+          'version': 2,
+          'days': {
+            day: [
+              const Meal(
+                label: 'Lunch',
+                items: [MealItem(name: 'Bun', kcal: 500)],
+              ).toJson(),
+            ],
+          },
+        }),
+      },
+    );
+    await pumpEventQueue();
+    final stored = app.preferences.getString('food_log_v1')!;
+    expect(FoodLog.isCurrentFormat(stored), isTrue);
+    // Ids persist across reloads instead of being re-generated.
+    final id = app.foodLog.entries.single.id;
+    await app.load();
+    expect(app.foodLog.entries.single.id, id);
+  });
+
+  test('two devices logging the same day keep both meals', () async {
+    final today = DateTime.now();
+    final (phone, phoneAuth) = await device();
+    await phoneAuth.signInWithGoogle();
+    await phone.load();
+    await syncNow(phone);
+    // Logged offline on the phone…
+    server.online = false;
+    await phone.logMeal(
+      today,
+      const Meal(
+        label: 'Lunch',
+        items: [MealItem(name: 'Bun', kcal: 500)],
+      ),
+    );
+    server.online = true;
+    // …while the tablet logs breakfast for the same day.
+    final breakfastId = '${FoodLog.dayKey(today)}:1';
+    server.docs['meals']![breakfastId] = mealDoc(
+      breakfastId,
+      'Breakfast',
+      'Banh mi',
+    );
+
+    await syncNow(phone);
+    expect(
+      await (phone.repository as RemoteWorkoutRepository).flushPendingWrites(),
+      isTrue,
+    );
+    expect(phone.foodLog.mealsOn(today).map((m) => m.label).toSet(), {
+      'Breakfast',
+      'Lunch',
+    });
+    expect(
+      server.docs['meals']!.values.where((doc) => doc['deleted'] == null),
+      hasLength(2),
+    );
   });
 
   test('profile changes push to the server, newest write wins', () async {

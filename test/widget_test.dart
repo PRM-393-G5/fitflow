@@ -117,15 +117,21 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.widgetWithText(FTextField, 'What did you eat?'),
+      find.descendant(
+        of: find.byKey(const Key('log-meal-name')),
+        matching: find.byType(EditableText),
+      ),
       'Phở bò',
     );
     await tester.enterText(
-      find.widgetWithText(FTextField, 'Calories (kcal)'),
+      find.descendant(
+        of: find.byKey(const Key('log-meal-kcal')),
+        matching: find.byType(EditableText),
+      ),
       '450',
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Log'));
+    await tester.tap(find.byKey(const Key('log-meal-submit')));
     await tester.pumpAndSettle();
 
     expect(find.text('Phở bò'), findsOneWidget);

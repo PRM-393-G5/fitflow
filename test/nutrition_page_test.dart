@@ -63,9 +63,16 @@ void main() {
     expect(find.text('Toast'), findsOneWidget);
     expect(find.text('Ramen'), findsNothing);
 
-    await tester.tap(find.byKey(const Key('nutrition-prev-day')));
+    // The strip shows each day's kcal.
+    final yesterdayCell = find.byKey(
+      Key('nutrition-day-${FoodLog.dayKey(yesterday)}'),
+    );
+    expect(
+      find.descendant(of: yesterdayCell, matching: find.text('600')),
+      findsOneWidget,
+    );
+    await tester.tap(yesterdayCell);
     await tester.pumpAndSettle();
-    expect(find.text('Yesterday'), findsOneWidget);
     expect(find.text('Ramen'), findsOneWidget);
     expect(find.textContaining('eaten on yesterday'), findsOneWidget);
 
@@ -74,7 +81,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Ramen'), findsNothing);
     expect(find.text('Toast'), findsNothing);
-    expect(find.text('Today'), findsOneWidget);
+    expect(find.textContaining('eaten today'), findsOneWidget);
   });
 
   testWidgets('restores preferences and flags a plan built for an old target', (
@@ -96,8 +103,180 @@ void main() {
       ),
     });
 
+    // Options stay folded, summarised on their toggle.
+    expect(find.textContaining('vegan'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('nutrition-plan-options')));
+    await tester.tap(find.byKey(const Key('nutrition-plan-options')));
+    await tester.pumpAndSettle();
     expect(find.text('vegan'), findsOneWidget);
     expect(find.byKey(const Key('nutrition-target-changed')), findsOneWidget);
     expect(find.textContaining('Build muscle'), findsOneWidget);
+  });
+
+  testWidgets('groups the log into meal slots and logs into a chosen slot', (
+    tester,
+  ) async {
+    final log = FoodLog()
+      ..add(
+        DateTime.now(),
+        const Meal(
+          label: 'Breakfast',
+          items: [MealItem(name: 'Pho', kcal: 450)],
+        ),
+      )
+      ..add(DateTime.now(), meal('Old entry', 300));
+    await pumpNutrition(tester, {'food_log_v1': jsonEncode(log.toJson())});
+
+    for (final type in mealTypes) {
+      expect(find.text(type), findsOneWidget);
+    }
+    // Legacy labels land in "Other" with the original label shown.
+    expect(find.text('Other'), findsOneWidget);
+    expect(find.text('Manual entry'), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('nutrition-add-Dinner')));
+    await tester.tap(find.byKey(const Key('nutrition-add-Dinner')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('slot-add-manual')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const Key('log-meal-name')),
+        matching: find.byType(EditableText),
+      ),
+      'Rice',
+    );
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const Key('log-meal-kcal')),
+        matching: find.byType(EditableText),
+      ),
+      '500',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('log-meal-submit')));
+    await tester.pumpAndSettle();
+
+    final saved = FoodLog.decode(
+      (await SharedPreferences.getInstance()).getString('food_log_v1'),
+    ).mealsOn(DateTime.now());
+    expect(saved.last.label, 'Dinner');
+    expect(saved.last.items.single.name, 'Rice');
+  });
+
+  testWidgets('picks a day from the month calendar', (tester) async {
+    final now = DateTime.now();
+    final earlier = DateTime(now.year, now.month, now.day - 20);
+    final log = FoodLog()..add(earlier, meal('Bun cha', 580));
+    await pumpNutrition(tester, {'food_log_v1': jsonEncode(log.toJson())});
+
+    await tester.tap(find.byKey(const Key('nutrition-calendar')));
+    await tester.pumpAndSettle();
+    if (earlier.month != now.month) {
+      await tester.tap(find.byKey(const Key('calendar-prev-month')));
+      await tester.pumpAndSettle();
+    }
+    final cell = find.descendant(
+      of: find.byType(FDialog),
+      matching: find.byKey(Key('nutrition-day-${FoodLog.dayKey(earlier)}')),
+    );
+    expect(
+      find.descendant(of: cell, matching: find.text('580')),
+      findsOneWidget,
+    );
+    await tester.tap(cell);
+    await tester.pumpAndSettle();
+    expect(find.text('Bun cha'), findsOneWidget);
+  });
+
+  testWidgets('logs several dishes as one meal, re-using recent foods', (
+    tester,
+  ) async {
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+    final log = FoodLog()
+      ..add(
+        yesterday,
+        const Meal(
+          label: 'Lunch',
+          items: [MealItem(name: 'Grilled pork', kcal: 320, proteinG: 25)],
+        ),
+      );
+    await pumpNutrition(tester, {'food_log_v1': jsonEncode(log.toJson())});
+    await tester.ensureVisible(find.byKey(const Key('nutrition-add-Lunch')));
+    await tester.tap(find.byKey(const Key('nutrition-add-Lunch')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('slot-add-manual')));
+    await tester.pumpAndSettle();
+
+    Finder field(String key) => find.descendant(
+      of: find.byKey(Key(key)),
+      matching: find.byType(EditableText),
+    );
+    await tester.enterText(field('log-meal-name'), 'Rice');
+    await tester.enterText(field('log-meal-kcal'), '260');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('log-meal-add-item')));
+    await tester.pumpAndSettle();
+
+    // Typing filters recent foods; one tap adds the dish with its macros.
+    await tester.enterText(field('log-meal-name'), 'pork');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('recent-Grilled pork')));
+    await tester.pumpAndSettle();
+    expect(find.text('580 kcal'), findsOneWidget);
+    expect(find.text('Log to Lunch'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('log-meal-submit')));
+    await tester.pumpAndSettle();
+
+    final saved = FoodLog.decode(
+      (await SharedPreferences.getInstance()).getString('food_log_v1'),
+    ).mealsOn(DateTime.now());
+    expect(saved.single.label, 'Lunch');
+    expect(saved.single.items.map((item) => item.name), [
+      'Rice',
+      'Grilled pork',
+    ]);
+    expect(saved.single.items.last.proteinG, 25);
+  });
+
+  testWidgets('a recent food keeps the dish being typed; bad macros show', (
+    tester,
+  ) async {
+    final log = FoodLog()
+      ..add(
+        DateTime.now().subtract(const Duration(days: 1)),
+        const Meal(
+          label: 'Lunch',
+          items: [MealItem(name: 'Pho', kcal: 450)],
+        ),
+      );
+    await pumpNutrition(tester, {'food_log_v1': jsonEncode(log.toJson())});
+    await tester.ensureVisible(find.byKey(const Key('nutrition-log-manual')));
+    await tester.tap(find.byKey(const Key('nutrition-log-manual')));
+    await tester.pumpAndSettle();
+
+    Finder field(String key) => find.descendant(
+      of: find.byKey(Key(key)),
+      matching: find.byType(EditableText),
+    );
+    // A complete dish typed in the form (its name also filters recents).
+    await tester.enterText(field('log-meal-name'), 'Pho');
+    await tester.enterText(field('log-meal-kcal'), '260');
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('recent-Pho')));
+    await tester.tap(find.byKey(const Key('recent-Pho')));
+    await tester.pumpAndSettle();
+    expect(find.text('710 kcal'), findsOneWidget, reason: 'typed + recent');
+
+    await tester.tap(find.byKey(const Key('log-meal-macros')));
+    await tester.pumpAndSettle();
+    await tester.enterText(field('log-meal-name'), 'Egg');
+    await tester.enterText(field('log-meal-kcal'), '70');
+    await tester.enterText(find.byType(EditableText).at(2), 'abc');
+    await tester.pumpAndSettle();
+    // Folding the macros keeps them open while one is invalid.
+    await tester.tap(find.byKey(const Key('log-meal-macros')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Macros must be numbers'), findsOneWidget);
   });
 }

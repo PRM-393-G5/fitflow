@@ -9,6 +9,7 @@ import '../data/sync_merge.dart';
 import '../data/local_workout_repository.dart';
 import '../data/reminder_service.dart';
 import '../data/remote_workout_repository.dart';
+import '../domain/meal_plan.dart';
 import '../domain/models/body_weight_entry.dart';
 import '../domain/models/workout.dart';
 import '../domain/models/workout_session.dart';
@@ -32,7 +33,8 @@ class AppController extends ChangeNotifier {
 
   /// Feature-owned keys holding per-user data (nutrition cache and food
   /// log); wiped with the rest of the user's data on account changes.
-  static const featureUserKeys = ['meal_plan_v1', 'food_log_v1'];
+  static const _foodLogKey = 'food_log_v1';
+  static const featureUserKeys = ['meal_plan_v1', _foodLogKey];
 
   /// Schedule value marking a deliberate rest day (vs. an unassigned day).
   static const restDay = 'rest';
@@ -56,6 +58,10 @@ class AppController extends ChangeNotifier {
   List<Workout> workouts = [];
   List<WorkoutSession> sessions = [];
   List<BodyWeightEntry> weightEntries = [];
+
+  /// Meals logged per day (last [FoodLog.keepDays] days), each synced
+  /// as one `meals` doc.
+  FoodLog foodLog = FoodLog();
   ThemeMode themeMode = ThemeMode.system;
   bool useMetric = true;
   bool loading = true;
@@ -129,6 +135,7 @@ class AppController extends ChangeNotifier {
       debugPrint('Local load failed: $e');
       error = 'Could not load your local data.';
     }
+    _decodeSyncedLists();
     _decodeUserState();
     loading = false;
     notifyListeners();
@@ -136,9 +143,20 @@ class AppController extends ChangeNotifier {
     unawaited(sync());
   }
 
+  /// Reads the synced per-entry lists (weights, food log) from storage.
+  /// An older food-log format is rewritten at once, so the ids it was
+  /// given stay the ones that sync.
+  void _decodeSyncedLists() {
+    weightEntries = _decodeWeights();
+    final raw = preferences.getString(_foodLogKey);
+    foodLog = FoodLog.decode(raw)..prune(DateTime.now());
+    if (raw != null && !FoodLog.isCurrentFormat(raw)) {
+      unawaited(_saveFoodLog());
+    }
+  }
+
   /// Resets the per-user fields to defaults, then decodes stored values.
   void _decodeUserState() {
-    weightEntries = _decodeWeights();
     heightCm = null;
     age = null;
     isMale = true;
@@ -169,6 +187,7 @@ class AppController extends ChangeNotifier {
       await repo.clearAll();
     }
     sessions = [];
+    _decodeSyncedLists();
     _decodeUserState();
     dataEpoch++;
   }
@@ -273,6 +292,31 @@ class AppController extends ChangeNotifier {
         await _saveWeights();
       }
 
+      final entriesBefore = foodLog.entries.toList();
+      final mergedEntries = await repo.syncDocs('meals', [
+        for (final entry in entriesBefore) entry.toJson(),
+      ], since: FoodLog.oldestKept(DateTime.now()));
+      if (stale()) return;
+      if (mergedEntries != null) {
+        final remoteEntries = <FoodEntry>[];
+        for (final json in mergedEntries) {
+          try {
+            remoteEntries.add(FoodEntry.fromJson(json));
+          } on FormatException {
+            // Skip a malformed entry rather than failing the sync.
+          }
+        }
+        foodLog = FoodLog.fromEntries(
+          SyncMerge.reconcile(
+            remoteEntries,
+            entriesBefore,
+            foodLog.entries.toList(),
+            (entry) => entry.id,
+          ),
+        )..prune(DateTime.now());
+        await _saveFoodLog();
+      }
+
       final remote = await repo.pullMeta();
       if (stale()) return;
       await _mergeMeta(repo, remote);
@@ -347,9 +391,7 @@ class AppController extends ChangeNotifier {
     );
     await preferences.setInt(_weeklyGoalKey, remote['weeklyGoal'] as int? ?? 3);
     await preferences.setInt(_metaTsKey, remote['updatedAt'] as int? ?? 0);
-    final weights = weightEntries;
     _decodeUserState();
-    weightEntries = weights;
     // Re-push once so the legacy weights field is removed from the cloud.
     if (legacyWeights is List && legacyWeights.isNotEmpty) await _pushMeta();
   }
@@ -449,6 +491,47 @@ class AppController extends ChangeNotifier {
       repo.putDoc('weights', entry.id, entry.toJson());
     }
     notifyListeners();
+  }
+
+  /// Adds [meal] to [day]'s food log.
+  Future<void> logMeal(DateTime day, Meal meal) async {
+    final entry = foodLog.add(day, meal);
+    await _saveFoodLog();
+    _putMealEntry(entry);
+    notifyListeners();
+  }
+
+  /// Replaces logged entry [id]; a no-op when it is no longer there.
+  Future<void> replaceMeal(String id, Meal meal) async {
+    final entry = foodLog.replace(id, meal);
+    if (entry == null) return;
+    await _saveFoodLog();
+    _putMealEntry(entry);
+    notifyListeners();
+  }
+
+  /// Removes logged entry [id]; a no-op when it is no longer there.
+  Future<void> removeMeal(String id) async {
+    if (foodLog.remove(id) == null) return;
+    await _saveFoodLog();
+    final repo = repository;
+    if (repo is RemoteWorkoutRepository) repo.deleteDoc('meals', id);
+    notifyListeners();
+  }
+
+  void _putMealEntry(FoodEntry entry) {
+    final repo = repository;
+    if (repo is RemoteWorkoutRepository) {
+      repo.putDoc('meals', entry.id, entry.toJson());
+    }
+  }
+
+  Future<void> _saveFoodLog() async {
+    try {
+      await preferences.setString(_foodLogKey, jsonEncode(foodLog.toJson()));
+    } catch (e) {
+      debugPrint('Saving the food log failed: $e');
+    }
   }
 
   Future<void> removeWeightEntry(BodyWeightEntry entry) async {
@@ -789,9 +872,7 @@ class AppController extends ChangeNotifier {
     }
     workouts = await repository.getWorkouts();
     sessions = await repository.getRecentSessions();
-    final weightsNow = weightEntries;
     _decodeUserState();
-    weightEntries = weightsNow;
     await _pushMeta();
     dataEpoch++;
     notifyListeners();

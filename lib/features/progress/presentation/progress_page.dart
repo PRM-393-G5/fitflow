@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
 
 import '../../../app/app_scope.dart';
+import '../../../core/formatting.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/section_header.dart';
@@ -280,20 +281,7 @@ class _ActivityHeatmap extends StatelessWidget {
   static const _cell = 14.0;
   static const _gap = 2.0;
   static const _weekdays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-  static const _months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
+  static final _months = [for (final name in monthNames) name.substring(0, 3)];
 
   static Color _shade(FColors colors, int count) => count == 0
       ? colors.muted
