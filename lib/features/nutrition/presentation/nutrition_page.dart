@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
+import '../../../core/formatting.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
@@ -111,11 +112,17 @@ class _NutritionPageState extends State<NutritionPage>
     if (state == AppLifecycleState.resumed && _rollOver()) setState(() {});
   }
 
-  /// Moves [_today] to the current day; returns true when it changed.
+  /// Moves [_today] to the current day; returns true when it changed. A
+  /// viewed day that fell out of the kept window moves to today.
   bool _rollOver() {
     final today = _dayOf(DateTime.now());
     if (today == _today) return false;
-    if (_viewDay == _today) _viewDay = today;
+    final oldest = DateTime(
+      today.year,
+      today.month,
+      today.day - (FoodLog.keepDays - 1),
+    );
+    if (_viewDay == _today || _viewDay.isBefore(oldest)) _viewDay = today;
     _today = today;
     return true;
   }
@@ -318,18 +325,17 @@ class _NutritionPageState extends State<NutritionPage>
     return AppScope.of(context).logMeal(day ?? _viewDay, meal);
   }
 
-  Future<void> _removeLogged(int index) =>
-      AppScope.of(context).removeMeal(_viewDay, index);
+  Future<void> _removeLogged(FoodEntry entry) =>
+      AppScope.of(context).removeMeal(entry.id);
 
-  Future<void> _editLogged(int index, Meal meal) async {
-    final day = _viewDay;
+  Future<void> _editLogged(FoodEntry entry) async {
     final edited = await showFDialog<Meal>(
       context: context,
       builder: (context, style, animation) =>
-          _EditMealDialog(meal: meal, animation: animation),
+          _EditMealDialog(meal: entry.meal, animation: animation),
     );
     if (edited == null || !mounted) return;
-    await AppScope.of(context).replaceMeal(day, index, edited);
+    await AppScope.of(context).replaceMeal(entry.id, edited);
   }
 
   /// Logs a manually typed dish (name, kcal, optional macros) — the
@@ -449,8 +455,7 @@ class _NutritionPageState extends State<NutritionPage>
     if (day == DateTime(_today.year, _today.month, _today.day - 1)) {
       return 'Yesterday';
     }
-    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return '${weekdays[day.weekday - 1]} '
+    return '${weekdayNames[day.weekday - 1]} '
         '${day.day.toString().padLeft(2, '0')}/'
         '${day.month.toString().padLeft(2, '0')}';
   }
@@ -673,7 +678,9 @@ class _NutritionPageState extends State<NutritionPage>
           if (logged.isEmpty && !isToday)
             const _EmptyDay()
           else
-            for (final (type, entries) in _slots(logged))
+            for (final (type, entries) in _slots(
+              controller.foodLog.entriesOn(_viewDay),
+            ))
               Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                 child: _MealSlotCard(
@@ -772,12 +779,12 @@ class _NutritionPageState extends State<NutritionPage>
   static Meal _typed(Meal meal, String type) =>
       Meal(label: type, items: meal.items);
 
-  /// The day's log bucketed into the fixed slots (plus "Other" for legacy
-  /// labels), keeping each entry's index in the log for edit / remove.
-  static List<(String, List<(int, Meal)>)> _slots(List<Meal> logged) {
-    final buckets = {for (final type in mealTypes) type: <(int, Meal)>[]};
-    for (final (index, meal) in logged.indexed) {
-      buckets.putIfAbsent(mealTypeOf(meal), () => []).add((index, meal));
+  /// The day's entries bucketed into the fixed slots (plus "Other" for
+  /// legacy labels).
+  static List<(String, List<FoodEntry>)> _slots(List<FoodEntry> logged) {
+    final buckets = {for (final type in mealTypes) type: <FoodEntry>[]};
+    for (final entry in logged) {
+      buckets.putIfAbsent(mealTypeOf(entry.meal), () => []).add(entry);
     }
     return [
       for (final MapEntry(:key, :value) in buckets.entries)
@@ -793,7 +800,8 @@ class _NutritionPageState extends State<NutritionPage>
     return parts.join(' · ');
   }
 
-  Future<void> _mealActions(int index, Meal meal) async {
+  Future<void> _mealActions(FoodEntry entry) async {
+    final meal = entry.meal;
     final action = await showAppDialog<String>(
       context: context,
       title: mealTypeOf(meal) == otherMealType ? meal.label : mealTypeOf(meal),
@@ -838,14 +846,13 @@ class _NutritionPageState extends State<NutritionPage>
     );
     if (!mounted || action == null) return;
     if (action == 'edit') {
-      await _editLogged(index, meal);
+      await _editLogged(entry);
     } else if (action == 'remove') {
-      await _removeLogged(index);
+      await _removeLogged(entry);
     } else if (action.startsWith('move:')) {
       final type = action.substring('move:'.length);
       if (type == mealTypeOf(meal)) return;
-      await AppScope.of(context)
-          .replaceMeal(_viewDay, index, _typed(meal, type));
+      await AppScope.of(context).replaceMeal(entry.id, _typed(meal, type));
     }
   }
 }
@@ -1008,31 +1015,6 @@ class _EditMealDialogState extends State<_EditMealDialog> {
   }
 }
 
-String _thousands(num value) {
-  final digits = value.round().abs().toString();
-  final grouped = digits.replaceAllMapped(
-    RegExp(r'\B(?=(\d{3})+(?!\d))'),
-    (_) => ',',
-  );
-  return value < 0 ? '-$grouped' : grouped;
-}
-
-const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const _months = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
 /// Month label + a horizontal strip of the kept days, newest on the right,
 /// each showing that day's kcal.
 class _DayStrip extends StatefulWidget {
@@ -1070,9 +1052,9 @@ class _DayStripState extends State<_DayStrip> {
 
   /// Scrolls the selected day into view (e.g. after a calendar pick).
   void _reveal() {
-    if (!_scroll.hasClients) return;
-    final fromNewest =
-        widget.days.length - 1 - widget.days.indexOf(widget.selected);
+    final index = widget.days.indexOf(widget.selected);
+    if (!_scroll.hasClients || index < 0) return;
+    final fromNewest = widget.days.length - 1 - index;
     final cellStart = fromNewest * (_cellWidth + _gap);
     final viewport = _scroll.position.viewportDimension;
     final offset = _scroll.offset;
@@ -1107,7 +1089,7 @@ class _DayStripState extends State<_DayStrip> {
           children: [
             Expanded(
               child: Text(
-                '${_months[selected.month - 1]} ${selected.year}',
+                '${monthNames[selected.month - 1]} ${selected.year}',
                 style: textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -1149,7 +1131,7 @@ class _DayStripState extends State<_DayStrip> {
                 width: _cellWidth,
                 child: _DayCell(
                   day: day,
-                  label: _weekdays[day.weekday - 1],
+                  label: weekdayNames[day.weekday - 1],
                   kcal: widget.kcalOf(day),
                   selected: day == selected,
                   onTap: () => widget.onSelect(day),
@@ -1205,7 +1187,7 @@ class _DayCell extends StatelessWidget {
       button: enabled,
       selected: selected,
       label:
-          '${day.day} ${_months[day.month - 1]}, '
+          '${day.day} ${monthNames[day.month - 1]}, '
           '${logged ? '$kcal kilocalories' : 'nothing logged'}',
       excludeSemantics: true,
       child: GestureDetector(
@@ -1248,7 +1230,7 @@ class _DayCell extends StatelessWidget {
                         ? FittedBox(
                             fit: .scaleDown,
                             child: Text(
-                              _thousands(kcal),
+                              thousands(kcal),
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
@@ -1337,7 +1319,7 @@ class _MonthCalendarDialogState extends State<_MonthCalendarDialog> {
                     ),
                     Expanded(
                       child: Text(
-                        '${_months[_month.month - 1]} ${_month.year}',
+                        '${monthNames[_month.month - 1]} ${_month.year}',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 16,
@@ -1358,7 +1340,7 @@ class _MonthCalendarDialogState extends State<_MonthCalendarDialog> {
                 const SizedBox(height: AppSpacing.sm),
                 Row(
                   children: [
-                    for (final weekday in _weekdays)
+                    for (final weekday in weekdayNames)
                       Expanded(
                         child: Text(
                           weekday.substring(0, 2),
@@ -1457,7 +1439,7 @@ class _SummaryCard extends StatelessWidget {
               textBaseline: TextBaseline.alphabetic,
               children: [
                 Text(
-                  _thousands(eaten.kcal),
+                  thousands(eaten.kcal),
                   style: textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -1490,7 +1472,7 @@ class _SummaryCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     '${goal == null ? 'No goal' : NutritionPage.goalLabel(goal!)}'
-                    ' · TDEE ${_thousands(tdee!)} kcal',
+                    ' · TDEE ${thousands(tdee!)} kcal',
                     style: muted,
                   ),
                 ),
@@ -1580,16 +1562,16 @@ class _MealSlotCard extends StatelessWidget {
   final String type;
 
   /// (index in the day's log, meal) pairs.
-  final List<(int, Meal)> entries;
+  final List<FoodEntry> entries;
   final VoidCallback? onAdd;
-  final void Function(int index, Meal meal) onMore;
+  final ValueChanged<FoodEntry> onMore;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.theme.colors;
     final textTheme = Theme.of(context).textTheme;
     final muted = textTheme.bodySmall?.copyWith(color: colors.mutedForeground);
-    final total = FoodLog.totals(entries.map((entry) => entry.$2));
+    final total = FoodLog.totals(entries.map((entry) => entry.meal));
     final empty = entries.isEmpty;
     return AppCard(
       child: Column(
@@ -1635,7 +1617,7 @@ class _MealSlotCard extends StatelessWidget {
               ),
               if (!empty)
                 Text(
-                  '${_thousands(total.kcal)} kcal',
+                  '${thousands(total.kcal)} kcal',
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               if (onAdd != null)
@@ -1651,7 +1633,9 @@ class _MealSlotCard extends StatelessWidget {
                 ),
             ],
           ),
-          for (final (index, meal) in entries) ...[
+          for (final (entry, meal) in [
+            for (final entry in entries) (entry, entry.meal),
+          ]) ...[
             const SizedBox(height: AppSpacing.xs),
             Padding(
               padding: const EdgeInsets.only(left: 42),
@@ -1669,7 +1653,7 @@ class _MealSlotCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${_thousands(meal.kcal)} kcal',
+                    '${thousands(meal.kcal)} kcal',
                     style: textTheme.bodyMedium?.copyWith(
                       color: colors.mutedForeground,
                     ),
@@ -1680,7 +1664,7 @@ class _MealSlotCard extends StatelessWidget {
                       key: const Key('nutrition-meal-more'),
                       variant: .ghost,
                       size: .sm,
-                      onPress: () => onMore(index, meal),
+                      onPress: () => onMore(entry),
                       child: Icon(
                         FLucideIcons.ellipsisVertical,
                         size: 18,
@@ -1761,7 +1745,7 @@ class _AiPlanCard extends StatelessWidget {
     final target = targetKcal;
     final subtitle = target == null
         ? 'Set up your body profile to get a menu for your target.'
-        : 'A full day menu for your ${_thousands(target)} kcal target.';
+        : 'A full day menu for your ${thousands(target)} kcal target.';
     return AppCard(
       style: .delta(
         decoration: .boxDelta(
@@ -1897,7 +1881,7 @@ class _MealCard extends StatelessWidget {
                 ),
               ),
               Text(
-                '${_thousands(meal.kcal)} kcal',
+                '${thousands(meal.kcal)} kcal',
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               if (onLog != null)

@@ -227,8 +227,6 @@ class MealPlanCache {
   }
 }
 
-/// Logged meals per local calendar day, kept for [keepDays] days.
-/// Persisted under `food_log_v1`.
 /// The fixed meal slots a day's log is grouped into, in display order.
 const mealTypes = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
 
@@ -255,93 +253,128 @@ String mealTypeOf(Meal meal) {
   return otherMealType;
 }
 
-/// One day's logged meals — the unit synced to the backend (`foodDays`,
-/// id `yyyy-mm-dd`). Immutable: every edit makes a new day, so sync can
+/// One logged meal — the unit synced to the backend (`meals` docs).
+/// The id is `yyyy-mm-dd:<entry>`: the day it was eaten, then a unique
+/// entry part (microseconds when logged), so entries sort by time.
+/// Immutable: an edit makes a new entry with the same id, so sync can
 /// tell local changes apart by identity.
-class FoodDay {
-  FoodDay(this.id, Iterable<Meal> meals) : meals = List.unmodifiable(meals);
+class FoodEntry {
+  const FoodEntry(this.id, this.meal);
 
   final String id;
-  final List<Meal> meals;
+  final Meal meal;
 
-  Map<String, Object> toJson() => {
-    'id': id,
-    'meals': [for (final meal in meals) meal.toJson()],
-  };
+  /// `yyyy-mm-dd` the meal was eaten on.
+  String get day => id.substring(0, 10);
 
-  /// Malformed meals are dropped; throws [FormatException] without a
-  /// `yyyy-mm-dd` id.
-  factory FoodDay.fromJson(Map<String, dynamic> json) {
+  static final _idPattern = RegExp(r'^\d{4}-\d{2}-\d{2}:[A-Za-z0-9_-]{1,64}$');
+
+  static bool isId(String id) => _idPattern.hasMatch(id);
+
+  Map<String, Object> toJson() => {'id': id, ...meal.toJson()};
+
+  /// Throws [FormatException] for a bad id or meal.
+  factory FoodEntry.fromJson(Map<String, dynamic> json) {
     final id = json['id'];
-    if (id is! String || !FoodLog.isDayKey(id)) {
-      throw const FormatException('Food day has no yyyy-mm-dd id');
+    if (id is! String || !isId(id)) {
+      throw const FormatException('Food entry has no yyyy-mm-dd:<entry> id');
     }
-    return FoodDay(id, FoodLog._meals(json['meals']));
+    return FoodEntry(id, Meal.fromJson(json));
   }
 }
 
 /// Meals logged per calendar day, kept for the last [keepDays] days on
 /// the device (the backend keeps the full history).
 class FoodLog {
-  FoodLog([Map<String, FoodDay>? days]) : days = days ?? {};
+  FoodLog([Map<String, List<FoodEntry>>? days]) : days = days ?? {};
 
-  /// Keeps only non-empty days.
-  factory FoodLog.fromDays(Iterable<FoodDay> days) => FoodLog({
-    for (final day in days)
-      if (day.meals.isNotEmpty) day.id: day,
-  });
+  /// Groups [entries] by day, each day in logging order.
+  factory FoodLog.fromEntries(Iterable<FoodEntry> entries) {
+    final days = <String, List<FoodEntry>>{};
+    for (final entry in entries) {
+      days.putIfAbsent(entry.day, () => []).add(entry);
+    }
+    return FoodLog({
+      for (final MapEntry(:key, :value) in days.entries)
+        key: List.unmodifiable(value..sort((a, b) => a.id.compareTo(b.id))),
+    });
+  }
 
   static const keepDays = 30;
 
-  /// `yyyy-mm-dd` → that day's meals.
-  final Map<String, FoodDay> days;
+  /// `yyyy-mm-dd` → that day's entries, oldest first.
+  final Map<String, List<FoodEntry>> days;
+
+  static final _dayPattern = RegExp(r'^\d{4}-\d{2}-\d{2}$');
 
   static String dayKey(DateTime day) =>
       '${day.year.toString().padLeft(4, '0')}-'
       '${day.month.toString().padLeft(2, '0')}-'
       '${day.day.toString().padLeft(2, '0')}';
 
-  static bool isDayKey(String key) =>
-      RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(key);
+  static bool isDayKey(String key) => _dayPattern.hasMatch(key);
 
-  List<Meal> mealsOn(DateTime day) => days[dayKey(day)]?.meals ?? const [];
+  Iterable<FoodEntry> get entries => days.values.expand((day) => day);
 
-  /// Each mutation returns the changed day's key.
-  String add(DateTime day, Meal meal) {
+  List<FoodEntry> entriesOn(DateTime day) => days[dayKey(day)] ?? const [];
+
+  List<Meal> mealsOn(DateTime day) => [
+    for (final entry in entriesOn(day)) entry.meal,
+  ];
+
+  /// Logs [meal] on [day]; the entry id comes from [now] (default: the
+  /// current time), made unique within the day.
+  FoodEntry add(DateTime day, Meal meal, {DateTime? now}) {
     final key = dayKey(day);
-    days[key] = FoodDay(key, [...?days[key]?.meals, meal]);
-    return key;
+    final existing = days[key] ?? const [];
+    final micros = (now ?? DateTime.now()).microsecondsSinceEpoch;
+    var id = '$key:$micros';
+    for (var n = 1; existing.any((entry) => entry.id == id); n++) {
+      id = '$key:$micros-$n';
+    }
+    final entry = FoodEntry(id, meal);
+    days[key] = List.unmodifiable([...existing, entry]);
+    return entry;
   }
 
-  String replace(DateTime day, int index, Meal meal) {
-    final key = dayKey(day);
-    final meals = days[key]?.meals;
-    if (meals == null || index < 0 || index >= meals.length) return key;
-    days[key] = FoodDay(key, [...meals]..[index] = meal);
-    return key;
+  /// Replaces entry [id]'s meal; null (and no change) when it is gone.
+  FoodEntry? replace(String id, Meal meal) {
+    final key = id.substring(0, 10);
+    final entries = days[key];
+    final index = entries?.indexWhere((entry) => entry.id == id) ?? -1;
+    if (index < 0) return null;
+    final entry = FoodEntry(id, meal);
+    days[key] = List.unmodifiable([...entries!]..[index] = entry);
+    return entry;
   }
 
-  String removeAt(DateTime day, int index) {
-    final key = dayKey(day);
-    final meals = days[key]?.meals;
-    if (meals == null || index < 0 || index >= meals.length) return key;
-    final left = [...meals]..removeAt(index);
+  /// Removes entry [id]; null (and no change) when it is gone.
+  FoodEntry? remove(String id) {
+    final key = id.substring(0, 10);
+    final entries = days[key];
+    final index = entries?.indexWhere((entry) => entry.id == id) ?? -1;
+    if (index < 0) return null;
+    final removed = entries![index];
+    final left = [...entries]..removeAt(index);
     if (left.isEmpty) {
       days.remove(key);
     } else {
-      days[key] = FoodDay(key, left);
+      days[key] = List.unmodifiable(left);
     }
-    return key;
+    return removed;
   }
 
-  /// Drops days older than the last [keepDays] days ending at [now].
+  /// First day kept on the device for [now].
+  static String oldestKept(DateTime now) =>
+      dayKey(DateTime(now.year, now.month, now.day - (keepDays - 1)));
+
+  /// Drops days older than the last [keepDays] days ending at [now] —
+  /// locally only; the backend keeps them.
   void prune(DateTime now) {
-    final cutoff = dayKey(
-      DateTime(now.year, now.month, now.day - (keepDays - 1)),
-    );
+    final cutoff = oldestKept(now);
     // yyyy-mm-dd keys sort chronologically as strings.
     days.removeWhere(
-      (key, day) => key.compareTo(cutoff) < 0 || day.meals.isEmpty,
+      (key, entries) => key.compareTo(cutoff) < 0 || entries.isEmpty,
     );
   }
 
@@ -356,36 +389,45 @@ class FoodLog {
   );
 
   Map<String, Object> toJson() => {
-    'version': 2,
-    'days': {
-      for (final entry in days.entries)
-        entry.key: [for (final meal in entry.value.meals) meal.toJson()],
-    },
+    'version': 3,
+    'entries': [for (final entry in entries) entry.toJson()],
   };
 
-  /// Never throws: malformed days or meals are dropped. Also reads the
-  /// legacy single-day format (`{date, meals}`).
+  /// Never throws: malformed entries are dropped. Also reads the older
+  /// formats — `{days: {day: [meal…]}}` (v2) and the single-day
+  /// `{date, meals}` — giving their meals stable ids `day:0-<index>`.
   static FoodLog decode(String? raw) {
-    final log = FoodLog();
-    if (raw == null) return log;
+    if (raw == null) return FoodLog();
+    final entries = <FoodEntry>[];
+    void legacyDay(String key, Object? meals) {
+      for (final (index, meal) in _meals(meals).indexed) {
+        entries.add(FoodEntry('$key:0-$index', meal));
+      }
+    }
+
     try {
       final json = jsonDecode(raw);
-      if (json is! Map<String, dynamic>) return log;
-      final legacyDate = json['date'];
-      if (legacyDate is String) {
-        final key = dayKey(DateTime.parse(legacyDate));
-        log.days[key] = FoodDay(key, _meals(json['meals']));
+      if (json is! Map<String, dynamic>) return FoodLog();
+      if (json['entries'] case final List list) {
+        for (final item in list) {
+          if (item is! Map<String, dynamic>) continue;
+          try {
+            entries.add(FoodEntry.fromJson(item));
+          } on FormatException {
+            // Skip the broken entry.
+          }
+        }
+      } else if (json['date'] case final String date) {
+        legacyDay(dayKey(DateTime.parse(date)), json['meals']);
       } else if (json['days'] case final Map<String, dynamic> days) {
-        for (final entry in days.entries) {
-          if (!isDayKey(entry.key)) continue;
-          log.days[entry.key] = FoodDay(entry.key, _meals(entry.value));
+        for (final MapEntry(:key, :value) in days.entries) {
+          if (isDayKey(key)) legacyDay(key, value);
         }
       }
     } on FormatException {
       // Unreadable log — start fresh.
     }
-    log.days.removeWhere((_, day) => day.meals.isEmpty);
-    return log;
+    return FoodLog.fromEntries(entries);
   }
 
   static List<Meal> _meals(Object? value) {

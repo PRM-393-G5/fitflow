@@ -28,8 +28,8 @@ class LogMealPage extends StatefulWidget {
     final seen = <String>{};
     final items = <MealItem>[];
     for (final key in keys) {
-      for (final meal in log.days[key]!.meals.reversed) {
-        for (final item in meal.items) {
+      for (final entry in log.days[key]!.reversed) {
+        for (final item in entry.meal.items) {
           if (seen.add(item.name.trim().toLowerCase())) items.add(item);
           if (items.length >= limit) return items;
         }

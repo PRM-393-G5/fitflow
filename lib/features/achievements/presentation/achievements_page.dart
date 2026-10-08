@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
 
 import '../../../app/app_scope.dart';
+import '../../../core/formatting.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/workout_stats.dart';
@@ -64,7 +65,7 @@ class AchievementsPage extends StatelessWidget {
     final metric = controller.useMetric;
     final volumeGoal = metric
         ? '10,000 kg'
-        : '${_thousands(_volumeGoalKg * 2.20462)} lb';
+        : '${thousands(_volumeGoalKg * 2.20462)} lb';
 
     _Badge workouts(IconData icon, String title, int goal) => _Badge(
       icon: icon,
@@ -123,7 +124,7 @@ class AchievementsPage extends StatelessWidget {
         detail: 'Lift $volumeGoal of total volume',
         progress: volume,
         goal: _volumeGoalKg,
-        format: (kg) => _thousands(metric ? kg : kg * 2.20462),
+        format: (kg) => thousands(metric ? kg : kg * 2.20462),
       ),
       _Badge(
         icon: FLucideIcons.sofa,
@@ -219,15 +220,4 @@ class _BadgeCard extends StatelessWidget {
       ),
     );
   }
-}
-
-/// 10000 → "10,000".
-String _thousands(num value) {
-  final digits = value.round().toString();
-  final buffer = StringBuffer();
-  for (var i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
-    buffer.write(digits[i]);
-  }
-  return buffer.toString();
 }

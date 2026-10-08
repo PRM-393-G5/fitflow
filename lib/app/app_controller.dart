@@ -59,8 +59,8 @@ class AppController extends ChangeNotifier {
   List<WorkoutSession> sessions = [];
   List<BodyWeightEntry> weightEntries = [];
 
-  /// Meals logged per day (last [FoodLog.keepDays] days), synced as
-  /// `foodDays`.
+  /// Meals logged per day (last [FoodLog.keepDays] days), each synced
+  /// as one `meals` doc.
   FoodLog foodLog = FoodLog();
   ThemeMode themeMode = ThemeMode.system;
   bool useMetric = true;
@@ -281,26 +281,26 @@ class AppController extends ChangeNotifier {
         await _saveWeights();
       }
 
-      final daysBefore = foodLog.days.values.toList();
-      final mergedDays = await repo.syncDocs('foodDays', [
-        for (final day in daysBefore) day.toJson(),
-      ]);
+      final entriesBefore = foodLog.entries.toList();
+      final mergedEntries = await repo.syncDocs('meals', [
+        for (final entry in entriesBefore) entry.toJson(),
+      ], since: FoodLog.oldestKept(DateTime.now()));
       if (stale()) return;
-      if (mergedDays != null) {
-        final remoteDays = <FoodDay>[];
-        for (final json in mergedDays) {
+      if (mergedEntries != null) {
+        final remoteEntries = <FoodEntry>[];
+        for (final json in mergedEntries) {
           try {
-            remoteDays.add(FoodDay.fromJson(json));
+            remoteEntries.add(FoodEntry.fromJson(json));
           } on FormatException {
-            // Skip a malformed day rather than failing the sync.
+            // Skip a malformed entry rather than failing the sync.
           }
         }
-        foodLog = FoodLog.fromDays(
+        foodLog = FoodLog.fromEntries(
           SyncMerge.reconcile(
-            remoteDays,
-            daysBefore,
-            foodLog.days.values.toList(),
-            (day) => day.id,
+            remoteEntries,
+            entriesBefore,
+            foodLog.entries.toList(),
+            (entry) => entry.id,
           ),
         )..prune(DateTime.now());
         await _saveFoodLog();
@@ -487,29 +487,36 @@ class AppController extends ChangeNotifier {
   }
 
   /// Adds [meal] to [day]'s food log.
-  Future<void> logMeal(DateTime day, Meal meal) =>
-      _changeFoodDay(foodLog.add(day, meal));
+  Future<void> logMeal(DateTime day, Meal meal) async {
+    final entry = foodLog.add(day, meal);
+    await _saveFoodLog();
+    _putMealEntry(entry);
+    notifyListeners();
+  }
 
-  Future<void> replaceMeal(DateTime day, int index, Meal meal) =>
-      _changeFoodDay(foodLog.replace(day, index, meal));
+  /// Replaces logged entry [id]; a no-op when it is no longer there.
+  Future<void> replaceMeal(String id, Meal meal) async {
+    final entry = foodLog.replace(id, meal);
+    if (entry == null) return;
+    await _saveFoodLog();
+    _putMealEntry(entry);
+    notifyListeners();
+  }
 
-  Future<void> removeMeal(DateTime day, int index) =>
-      _changeFoodDay(foodLog.removeAt(day, index));
-
-  /// Persists the food log and syncs day [key] (a tombstone once empty).
-  Future<void> _changeFoodDay(String key) async {
-    foodLog.prune(DateTime.now());
+  /// Removes logged entry [id]; a no-op when it is no longer there.
+  Future<void> removeMeal(String id) async {
+    if (foodLog.remove(id) == null) return;
     await _saveFoodLog();
     final repo = repository;
-    if (repo is RemoteWorkoutRepository) {
-      final day = foodLog.days[key];
-      if (day == null) {
-        repo.deleteDoc('foodDays', key);
-      } else {
-        repo.putDoc('foodDays', key, day.toJson());
-      }
-    }
+    if (repo is RemoteWorkoutRepository) repo.deleteDoc('meals', id);
     notifyListeners();
+  }
+
+  void _putMealEntry(FoodEntry entry) {
+    final repo = repository;
+    if (repo is RemoteWorkoutRepository) {
+      repo.putDoc('meals', entry.id, entry.toJson());
+    }
   }
 
   Future<void> _saveFoodLog() async {

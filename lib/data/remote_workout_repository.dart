@@ -50,11 +50,14 @@ class RemoteWorkoutRepository implements WorkoutRepository {
   /// dropped, local-only docs are queued for upload. Writes still pending
   /// in the outbox are newer than the server copy, so they are delivered
   /// first and win over it. Returns the merged docs, or null when signed
-  /// out or unreachable (callers keep their local data).
+  /// out or unreachable (callers keep their local data). With [since]
+  /// (`yyyy-mm-dd`) only docs whose id sorts at or after it are fetched,
+  /// for date-keyed kinds; [local] must then hold only such docs too.
   Future<List<Map<String, dynamic>>?> syncDocs(
     String name,
-    List<Map<String, dynamic>> local,
-  ) async {
+    List<Map<String, dynamic>> local, {
+    String? since,
+  }) async {
     final owner = uid;
     if (owner == null) return null;
     // Deliver this kind's pending writes first so the server copy is
@@ -62,7 +65,9 @@ class RemoteWorkoutRepository implements WorkoutRepository {
     if (_outbox.pendingFor(owner, name).isNotEmpty) await _sender.flush();
     final List<Map<String, dynamic>> remote;
     try {
-      final json = await _api.get('me/docs/$name');
+      final json = await _api.get(
+        since == null ? 'me/docs/$name' : 'me/docs/$name?since=$since',
+      );
       remote = [
         for (final doc in json as List) Map<String, dynamic>.from(doc as Map),
       ];
