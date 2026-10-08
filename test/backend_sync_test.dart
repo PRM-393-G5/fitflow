@@ -7,6 +7,7 @@ import 'package:prm/data/backend_auth_service.dart';
 import 'package:prm/data/local_workout_repository.dart';
 import 'package:prm/data/remote_workout_repository.dart';
 import 'package:prm/data/sync_outbox.dart';
+import 'package:prm/domain/meal_plan.dart';
 import 'package:prm/domain/models/workout_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -174,6 +175,56 @@ void main() {
     await syncNow(app);
 
     expect(app.sessions.map((s) => s.id), ['remote-1']);
+  });
+
+  test('food log syncs per day and survives signing in again', () async {
+    final today = DateTime.now();
+    final yesterday = DateTime(today.year, today.month, today.day - 1);
+    final key = FoodLog.dayKey(yesterday);
+    // Another device logged yesterday's dinner; a day older than the
+    // kept window stays on the server only.
+    server.docs['foodDays'] = {
+      key: {
+        'id': key,
+        'meals': [
+          {
+            'label': 'Dinner',
+            'items': [
+              {'name': 'Pho', 'kcal': 450},
+            ],
+          },
+        ],
+      },
+      '2000-01-01': {'id': '2000-01-01', 'meals': <Object>[]},
+    };
+    final (app, auth) = await device();
+    await auth.signInWithGoogle();
+    await app.load();
+    await syncNow(app);
+    expect(app.foodLog.mealsOn(yesterday).single.items.single.name, 'Pho');
+    expect(app.foodLog.days.keys, [key]);
+
+    const lunch = Meal(
+      label: 'Lunch',
+      items: [MealItem(name: 'Com tam', kcal: 650)],
+    );
+    await app.logMeal(today, lunch);
+    await app.removeMeal(yesterday, 0);
+    final repo = app.repository as RemoteWorkoutRepository;
+    expect(await repo.flushPendingWrites(), isTrue);
+    expect(server.docs['foodDays']![FoodLog.dayKey(today)]!['meals'], [
+      lunch.toJson(),
+    ]);
+    expect(server.docs['foodDays']![key], {'id': key, 'deleted': true});
+
+    // Signing out wipes the device; signing back in restores the log.
+    await app.signOut();
+    expect(app.foodLog.days, isEmpty);
+    await auth.signInWithGoogle();
+    await app.load();
+    await syncNow(app);
+    expect(app.foodLog.mealsOn(today).single.label, 'Lunch');
+    expect(app.foodLog.mealsOn(yesterday), isEmpty);
   });
 
   test('profile changes push to the server, newest write wins', () async {

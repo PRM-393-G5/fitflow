@@ -76,4 +76,22 @@ void main() {
     log.removeAt(day, 0);
     expect(log.days, isEmpty);
   });
+
+  test('picks the meal slot from the time of day', () {
+    DateTime at(int h, int m) => DateTime(2026, 10, 16, h, m);
+    expect(defaultMealType(at(7, 30)), 'Breakfast');
+    expect(defaultMealType(at(10, 59)), 'Breakfast');
+    expect(defaultMealType(at(11, 0)), 'Lunch');
+    expect(defaultMealType(at(15, 30)), 'Snack');
+    expect(defaultMealType(at(18, 0)), 'Dinner');
+    expect(defaultMealType(at(23, 59)), 'Dinner');
+  });
+
+  test('maps labels to slots, unknown ones to Other', () {
+    Meal labeled(String label) => Meal(label: label, items: const []);
+    expect(mealTypeOf(labeled('Lunch')), 'Lunch');
+    expect(mealTypeOf(labeled(' snack ')), 'Snack');
+    expect(mealTypeOf(labeled('Manual entry')), otherMealType);
+    expect(mealTypeOf(labeled('Detected dishes')), otherMealType);
+  });
 }
