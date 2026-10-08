@@ -98,16 +98,30 @@ void main() {
     expect(decoded.entriesOn(day).map((e) => e.id), [first.id, second.id]);
   });
 
-  test('older formats get stable legacy ids', () {
+  test('older formats get per-device ids in logging order', () {
     final raw = jsonEncode({
       'version': 2,
       'days': {
-        '2026-04-08': [meal('Eggs', 150).toJson(), meal('Oats', 300).toJson()],
+        '2026-04-08': [
+          for (var i = 0; i < 11; i++) meal('Dish $i', 100).toJson(),
+          {'label': 'Lunch', 'items': <Object>[]},
+        ],
       },
     });
-    final ids = FoodLog.decode(raw).entries.map((e) => e.id).toList();
-    expect(ids, ['2026-04-08:0-0', '2026-04-08:0-1']);
-    expect(FoodLog.decode(raw).entries.map((e) => e.id), ids);
+    expect(FoodLog.isCurrentFormat(raw), isFalse);
+    final log = FoodLog.decode(raw, nonce: 'phone');
+    final ids = log.entries.map((e) => e.id).toList();
+    expect(ids.first, '2026-04-08:0-phone-0000');
+    expect(ids, hasLength(11), reason: 'a meal without dishes is dropped');
+    // 11+ meals keep their order (zero-padded index).
+    expect(log.mealsOn(DateTime(2026, 4, 8)).last.items.single.name, 'Dish 10');
+    // Another device's old log never produces the same ids.
+    final other = FoodLog.decode(raw, nonce: 'tablet');
+    expect(
+      other.entries.map((e) => e.id).toSet().intersection(ids.toSet()),
+      isEmpty,
+    );
+    expect(FoodLog.isCurrentFormat(jsonEncode(log.toJson())), isTrue);
   });
 
   test('picks the meal slot from the time of day', () {

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 /// One suggested food item inside a meal.
 class MealItem {
@@ -273,13 +274,17 @@ class FoodEntry {
 
   Map<String, Object> toJson() => {'id': id, ...meal.toJson()};
 
-  /// Throws [FormatException] for a bad id or meal.
+  /// Throws [FormatException] for a bad id or a meal without dishes.
   factory FoodEntry.fromJson(Map<String, dynamic> json) {
     final id = json['id'];
     if (id is! String || !isId(id)) {
       throw const FormatException('Food entry has no yyyy-mm-dd:<entry> id');
     }
-    return FoodEntry(id, Meal.fromJson(json));
+    final meal = Meal.fromJson(json);
+    if (meal.items.isEmpty) {
+      throw const FormatException('Food entry has no dishes');
+    }
+    return FoodEntry(id, meal);
   }
 }
 
@@ -364,9 +369,12 @@ class FoodLog {
     return removed;
   }
 
-  /// First day kept on the device for [now].
-  static String oldestKept(DateTime now) =>
-      dayKey(DateTime(now.year, now.month, now.day - (keepDays - 1)));
+  /// First calendar day kept on the device for [now].
+  static DateTime oldestKeptDay(DateTime now) =>
+      DateTime(now.year, now.month, now.day - (keepDays - 1));
+
+  /// [oldestKeptDay] as a `yyyy-mm-dd` key.
+  static String oldestKept(DateTime now) => dayKey(oldestKeptDay(now));
 
   /// Drops days older than the last [keepDays] days ending at [now] —
   /// locally only; the backend keeps them.
@@ -393,15 +401,32 @@ class FoodLog {
     'entries': [for (final entry in entries) entry.toJson()],
   };
 
-  /// Never throws: malformed entries are dropped. Also reads the older
-  /// formats — `{days: {day: [meal…]}}` (v2) and the single-day
-  /// `{date, meals}` — giving their meals stable ids `day:0-<index>`.
-  static FoodLog decode(String? raw) {
+  /// Whether [raw] is already the current (v3, per-entry) format.
+  static bool isCurrentFormat(String raw) {
+    try {
+      final json = jsonDecode(raw);
+      return json is Map<String, dynamic> && json['entries'] is List;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  /// Never throws: malformed entries (or meals without dishes) are
+  /// dropped. Also reads the older device-only formats —
+  /// `{days: {day: [meal…]}}` (v2) and the single-day `{date, meals}`.
+  /// Their meals get ids `day:0-<nonce>-<index>`: sorted before newer
+  /// entries and in logging order, and unique per device ([nonce], random
+  /// by default) so two devices' old logs never collide on sync. Callers
+  /// persist the result right away so the ids stay stable.
+  static FoodLog decode(String? raw, {String? nonce}) {
     if (raw == null) return FoodLog();
     final entries = <FoodEntry>[];
+    final legacyNonce = nonce ?? _nonce();
     void legacyDay(String key, Object? meals) {
       for (final (index, meal) in _meals(meals).indexed) {
-        entries.add(FoodEntry('$key:0-$index', meal));
+        if (meal.items.isEmpty) continue;
+        final order = index.toString().padLeft(4, '0');
+        entries.add(FoodEntry('$key:0-$legacyNonce-$order', meal));
       }
     }
 
@@ -429,6 +454,13 @@ class FoodLog {
     }
     return FoodLog.fromEntries(entries);
   }
+
+  static final _random = Random();
+
+  static String _nonce() => [
+    for (var i = 0; i < 8; i++)
+      'abcdefghijklmnopqrstuvwxyz0123456789'[_random.nextInt(36)],
+  ].join();
 
   static List<Meal> _meals(Object? value) {
     final meals = <Meal>[];

@@ -238,4 +238,45 @@ void main() {
     ]);
     expect(saved.single.items.last.proteinG, 25);
   });
+
+  testWidgets('a recent food keeps the dish being typed; bad macros show', (
+    tester,
+  ) async {
+    final log = FoodLog()
+      ..add(
+        DateTime.now().subtract(const Duration(days: 1)),
+        const Meal(
+          label: 'Lunch',
+          items: [MealItem(name: 'Pho', kcal: 450)],
+        ),
+      );
+    await pumpNutrition(tester, {'food_log_v1': jsonEncode(log.toJson())});
+    await tester.ensureVisible(find.byKey(const Key('nutrition-log-manual')));
+    await tester.tap(find.byKey(const Key('nutrition-log-manual')));
+    await tester.pumpAndSettle();
+
+    Finder field(String key) => find.descendant(
+      of: find.byKey(Key(key)),
+      matching: find.byType(EditableText),
+    );
+    // A complete dish typed in the form (its name also filters recents).
+    await tester.enterText(field('log-meal-name'), 'Pho');
+    await tester.enterText(field('log-meal-kcal'), '260');
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('recent-Pho')));
+    await tester.tap(find.byKey(const Key('recent-Pho')));
+    await tester.pumpAndSettle();
+    expect(find.text('710 kcal'), findsOneWidget, reason: 'typed + recent');
+
+    await tester.tap(find.byKey(const Key('log-meal-macros')));
+    await tester.pumpAndSettle();
+    await tester.enterText(field('log-meal-name'), 'Egg');
+    await tester.enterText(field('log-meal-kcal'), '70');
+    await tester.enterText(find.byType(EditableText).at(2), 'abc');
+    await tester.pumpAndSettle();
+    // Folding the macros keeps them open while one is invalid.
+    await tester.tap(find.byKey(const Key('log-meal-macros')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Macros must be numbers'), findsOneWidget);
+  });
 }

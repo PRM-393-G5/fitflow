@@ -117,11 +117,7 @@ class _NutritionPageState extends State<NutritionPage>
   bool _rollOver() {
     final today = _dayOf(DateTime.now());
     if (today == _today) return false;
-    final oldest = DateTime(
-      today.year,
-      today.month,
-      today.day - (FoodLog.keepDays - 1),
-    );
+    final oldest = FoodLog.oldestKeptDay(today);
     if (_viewDay == _today || _viewDay.isBefore(oldest)) _viewDay = today;
     _today = today;
     return true;
@@ -499,11 +495,7 @@ class _NutritionPageState extends State<NutritionPage>
         plan != null && targetKcal != null && plan.targetKcal != targetKcal;
 
     final isToday = _viewDay == _today;
-    final oldest = DateTime(
-      _today.year,
-      _today.month,
-      _today.day - (FoodLog.keepDays - 1),
-    );
+    final oldest = FoodLog.oldestKeptDay(_today);
     final logged = controller.foodLog.mealsOn(_viewDay);
     final eaten = FoodLog.totals(logged);
     final dayText = isToday
@@ -792,7 +784,7 @@ class _NutritionPageState extends State<NutritionPage>
     ];
   }
 
-  String? _optionsSummary() {
+  String _optionsSummary() {
     final parts = [
       if (_cache.preferences.isNotEmpty) _cache.preferences,
       _cache.mealCount == 4 ? '3 meals + snack' : '3 meals',
@@ -1561,7 +1553,7 @@ class _MealSlotCard extends StatelessWidget {
 
   final String type;
 
-  /// (index in the day's log, meal) pairs.
+  /// The slot's logged entries, oldest first.
   final List<FoodEntry> entries;
   final VoidCallback? onAdd;
   final ValueChanged<FoodEntry> onMore;
@@ -1633,49 +1625,56 @@ class _MealSlotCard extends StatelessWidget {
                 ),
             ],
           ),
-          for (final (entry, meal) in [
-            for (final entry in entries) (entry, entry.meal),
-          ]) ...[
+          for (final entry in entries) ...[
             const SizedBox(height: AppSpacing.xs),
-            Padding(
-              padding: const EdgeInsets.only(left: 42),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (final item in meal.items)
-                          Text(item.name, style: textTheme.bodyMedium),
-                        if (mealTypeOf(meal) == otherMealType)
-                          Text(meal.label, style: muted),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    '${thousands(meal.kcal)} kcal',
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: colors.mutedForeground,
-                    ),
-                  ),
-                  Semantics(
-                    label: 'Actions for ${meal.items.first.name}',
-                    child: FButton.icon(
-                      key: const Key('nutrition-meal-more'),
-                      variant: .ghost,
-                      size: .sm,
-                      onPress: () => onMore(entry),
-                      child: Icon(
-                        FLucideIcons.ellipsisVertical,
-                        size: 18,
-                        color: colors.mutedForeground,
-                      ),
-                    ),
-                  ),
-                ],
+            _entryRow(context, entry),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _entryRow(BuildContext context, FoodEntry entry) {
+    final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
+    final muted = textTheme.bodySmall?.copyWith(color: colors.mutedForeground);
+    final meal = entry.meal;
+    return Padding(
+      padding: const EdgeInsets.only(left: 42),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final item in meal.items)
+                  Text(item.name, style: textTheme.bodyMedium),
+                if (mealTypeOf(meal) == otherMealType)
+                  Text(meal.label, style: muted),
+              ],
+            ),
+          ),
+          Text(
+            '${thousands(meal.kcal)} kcal',
+            style: textTheme.bodyMedium?.copyWith(
+              color: colors.mutedForeground,
+            ),
+          ),
+          Semantics(
+            label:
+                'Actions for ${meal.items.isEmpty ? meal.label : meal.items.first.name}',
+            child: FButton.icon(
+              key: const Key('nutrition-meal-more'),
+              variant: .ghost,
+              size: .sm,
+              onPress: () => onMore(entry),
+              child: Icon(
+                FLucideIcons.ellipsisVertical,
+                size: 18,
+                color: colors.mutedForeground,
               ),
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -1733,7 +1732,7 @@ class _AiPlanCard extends StatelessWidget {
   final bool generating;
   final bool showOptions;
   final VoidCallback onToggleOptions;
-  final String? optionsSummary;
+  final String optionsSummary;
   final Widget options;
   final VoidCallback? onGenerate;
 
@@ -1785,9 +1784,7 @@ class _AiPlanCard extends StatelessWidget {
             ),
             child: Flexible(
               child: Text(
-                showOptions || optionsSummary == null
-                    ? 'Options'
-                    : 'Options: $optionsSummary',
+                showOptions ? 'Options' : 'Options: $optionsSummary',
                 overflow: TextOverflow.ellipsis,
               ),
             ),

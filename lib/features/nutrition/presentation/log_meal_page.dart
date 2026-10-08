@@ -116,10 +116,24 @@ class _LogMealPageState extends State<LogMealPage> {
     _nameFocus.requestFocus();
   }
 
+  /// Adds a recent dish. A complete dish still in the form is added
+  /// first; a name typed only to search is cleared; anything else
+  /// half-typed stays in the form.
   void _addRecent(MealItem item) {
-    setState(() => _items.add(item));
-    _clearForm();
+    final draft = _draft;
+    final searchOnly = [
+      _kcal,
+      _protein,
+      _carbs,
+      _fat,
+    ].every((controller) => controller.text.trim().isEmpty);
+    setState(() => _items.addAll([?draft, item]));
+    if (draft != null || searchOnly) _clearForm();
   }
+
+  /// A macro field holds something that is not a valid gram amount.
+  bool get _macrosInvalid =>
+      [_protein, _carbs, _fat].any((controller) => _grams(controller) == null);
 
   void _submit() {
     final items = _pending;
@@ -237,7 +251,9 @@ class _LogMealPageState extends State<LogMealPage> {
               ),
             ],
           ),
-          if (_showMacros) ...[
+          // Stays open while a macro is invalid, so what blocks logging is
+          // never hidden.
+          if (_showMacros || _macrosInvalid) ...[
             const SizedBox(height: AppSpacing.xs),
             Row(
               spacing: AppSpacing.sm,
@@ -249,13 +265,23 @@ class _LogMealPageState extends State<LogMealPage> {
                 ])
                   Expanded(
                     child: FTextField(
-                      control: .managed(controller: controller),
+                      control: .managed(
+                        controller: controller,
+                        onChange: (_) => setState(() {}),
+                      ),
                       label: Text(label),
                       keyboardType: grams,
                     ),
                   ),
               ],
             ),
+            if (_macrosInvalid) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Macros must be numbers between 0 and 1000 g.',
+                style: TextStyle(fontSize: 12, color: colors.destructive),
+              ),
+            ],
           ],
           if (widget.recent.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.lg),

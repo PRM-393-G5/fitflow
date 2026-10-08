@@ -135,6 +135,7 @@ class AppController extends ChangeNotifier {
       debugPrint('Local load failed: $e');
       error = 'Could not load your local data.';
     }
+    _decodeSyncedLists();
     _decodeUserState();
     loading = false;
     notifyListeners();
@@ -142,11 +143,20 @@ class AppController extends ChangeNotifier {
     unawaited(sync());
   }
 
+  /// Reads the synced per-entry lists (weights, food log) from storage.
+  /// An older food-log format is rewritten at once, so the ids it was
+  /// given stay the ones that sync.
+  void _decodeSyncedLists() {
+    weightEntries = _decodeWeights();
+    final raw = preferences.getString(_foodLogKey);
+    foodLog = FoodLog.decode(raw)..prune(DateTime.now());
+    if (raw != null && !FoodLog.isCurrentFormat(raw)) {
+      unawaited(_saveFoodLog());
+    }
+  }
+
   /// Resets the per-user fields to defaults, then decodes stored values.
   void _decodeUserState() {
-    weightEntries = _decodeWeights();
-    foodLog = FoodLog.decode(preferences.getString(_foodLogKey))
-      ..prune(DateTime.now());
     heightCm = null;
     age = null;
     isMale = true;
@@ -177,6 +187,7 @@ class AppController extends ChangeNotifier {
       await repo.clearAll();
     }
     sessions = [];
+    _decodeSyncedLists();
     _decodeUserState();
     dataEpoch++;
   }
@@ -380,11 +391,7 @@ class AppController extends ChangeNotifier {
     );
     await preferences.setInt(_weeklyGoalKey, remote['weeklyGoal'] as int? ?? 3);
     await preferences.setInt(_metaTsKey, remote['updatedAt'] as int? ?? 0);
-    final weights = weightEntries;
-    final food = foodLog;
     _decodeUserState();
-    weightEntries = weights;
-    foodLog = food;
     // Re-push once so the legacy weights field is removed from the cloud.
     if (legacyWeights is List && legacyWeights.isNotEmpty) await _pushMeta();
   }
@@ -865,11 +872,7 @@ class AppController extends ChangeNotifier {
     }
     workouts = await repository.getWorkouts();
     sessions = await repository.getRecentSessions();
-    final weightsNow = weightEntries;
-    final foodNow = foodLog;
     _decodeUserState();
-    weightEntries = weightsNow;
-    foodLog = foodNow;
     await _pushMeta();
     dataEpoch++;
     notifyListeners();
