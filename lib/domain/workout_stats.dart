@@ -20,8 +20,8 @@ abstract final class WorkoutStats {
   static double totalVolume(Iterable<WorkoutSession> sessions) =>
       counted(sessions).fold(0, (sum, session) => sum + session.volumeKg);
 
-  /// Sessions completed in the current Monday-based calendar week.
-  static int sessionsThisWeek(
+  /// Counted sessions completed in the current Monday-based week.
+  static List<WorkoutSession> thisWeek(
     Iterable<WorkoutSession> sessions, {
     DateTime? now,
   }) {
@@ -34,8 +34,14 @@ abstract final class WorkoutStats {
               !item.completedAt.isBefore(start) &&
               item.completedAt.isBefore(end),
         )
-        .length;
+        .toList();
   }
+
+  /// Sessions completed in the current Monday-based calendar week.
+  static int sessionsThisWeek(
+    Iterable<WorkoutSession> sessions, {
+    DateTime? now,
+  }) => thisWeek(sessions, now: now).length;
 
   static int longestStreak(Iterable<WorkoutSession> sessions) {
     final dates = _days(sessions);

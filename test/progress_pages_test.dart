@@ -36,10 +36,12 @@ Future<AppController> pumpPage(
   WidgetTester tester,
   Widget page, {
   List<WorkoutSession> sessions = const [],
+  Map<String, Object> prefs = const {},
 }) async {
   SharedPreferences.setMockInitialValues({
     'onboarding_v1': '{"done":true}',
     'sessions_v1': jsonEncode([for (final s in sessions) s.toJson()]),
+    ...prefs,
   });
   final preferences = await SharedPreferences.getInstance();
   final controller = AppController(
@@ -82,7 +84,18 @@ void main() {
       ],
     );
 
-    final scrollable = find.byType(Scrollable).first;
+    // The page previews 5 sessions; the full, paged history is one tap away.
+    final seeAll = find.byKey(const Key('progress-history-all'));
+    await tester.scrollUntilVisible(
+      seeAll,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('See all (25)'), findsOneWidget);
+    await tester.tap(seeAll);
+    await tester.pumpAndSettle();
+
+    final scrollable = find.byType(Scrollable).last;
     await tester.scrollUntilVisible(
       find.textContaining('45 s hold'),
       300,
@@ -172,5 +185,41 @@ void main() {
     expect(controller.weightEntries.single.weightKg, 70.5);
     expect(find.text('70.5 kg'), findsWidgets);
     FlutterError.onError = onError;
+  });
+
+  testWidgets('overview leads with this week and the weight trend', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    await pumpPage(
+      tester,
+      const FScaffold(child: ProgressPage()),
+      sessions: [session(0)],
+      prefs: {
+        'weekly_goal_v1': 4,
+        'body_weights_v1': jsonEncode([
+          {
+            'date': today.subtract(const Duration(days: 20)).toIso8601String(),
+            'weightKg': 74.0,
+          },
+          {'date': today.toIso8601String(), 'weightKg': 72.5},
+        ]),
+      },
+    );
+
+    expect(find.text(' / 4 sessions'), findsOneWidget);
+    expect(find.text('1'), findsWidgets);
+    expect(find.byKey(const Key('progress-achievements')), findsOneWidget);
+    expect(find.byKey(const Key('progress-share')), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('progress-weight')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('72.5 kg'), findsOneWidget);
+    expect(find.text('−1.5 kg in 30 days'), findsOneWidget);
+    // One session: no "See all" for history.
+    expect(find.byKey(const Key('progress-history-all')), findsNothing);
   });
 }
