@@ -15,6 +15,7 @@ import '../../../domain/personal_records.dart';
 import '../../../domain/workout_stats.dart';
 import '../../achievements/presentation/achievements_page.dart';
 import '../../metrics/presentation/body_metrics_page.dart';
+import '../../workouts/presentation/weight_units.dart';
 import 'session_detail_page.dart';
 import 'share_summary_dialog.dart';
 import '../../../core/widgets/app_card.dart';
@@ -199,11 +200,23 @@ class ProgressPage extends StatelessWidget {
   /// Rows shown before "See all".
   static const _preview = 5;
 
+  /// By exercise name, then record kind.
+  static int _byExercise(PersonalRecord a, PersonalRecord b) {
+    final byName = a.exerciseName.compareTo(b.exerciseName);
+    return byName != 0 ? byName : a.kind.index.compareTo(b.kind.index);
+  }
+
+  /// Newest first; records set the same day keep exercise order, so the
+  /// preview is stable.
   static List<PersonalRecord> _newestFirst(List<PersonalRecord> records) =>
-      [...records]..sort((a, b) => b.date.compareTo(a.date));
+      [...records]..sort((a, b) {
+        final byDate = b.date.compareTo(a.date);
+        return byDate != 0 ? byDate : _byExercise(a, b);
+      });
 
   static String _weight(double kg, bool metric) =>
-      '${thousands(metric ? kg : kg * 2.20462)} ${metric ? 'kg' : 'lb'}';
+      '${thousands(WeightUnits.toDisplay(kg, metric))} '
+      '${WeightUnits.label(metric)}';
 
   /// 1411 → "23 h 31 m"; under an hour → "45 min".
   static String _hours(int minutes) => minutes < 60
@@ -218,9 +231,8 @@ class ProgressPage extends StatelessWidget {
     PersonalRecord record,
     bool metric,
   ) {
-    final unit = metric ? 'kg' : 'lb';
     String weight(double kg) =>
-        '${trimDecimal(metric ? kg : kg * 2.20462)} $unit';
+        '${WeightUnits.format(kg, metric)} ${WeightUnits.label(metric)}';
     final oneRepMax = record.estimatedOneRepMaxKg;
     return FTile(
       prefix: const Icon(FLucideIcons.trophy),
@@ -566,13 +578,14 @@ class _ThisWeek extends StatelessWidget {
           children: [
             Text(
               '$done',
+              key: const Key('progress-week-done'),
               style: textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
             Text(' / $goal sessions', style: textTheme.titleMedium),
             const Spacer(),
-            if (done >= goal)
+            if (goal > 0 && done >= goal)
               Text(
                 'Goal reached',
                 style: textTheme.labelMedium?.copyWith(color: colors.primary),
@@ -597,7 +610,7 @@ class _ThisWeek extends StatelessWidget {
           style: muted,
         ),
         const SizedBox(height: AppSpacing.md),
-        _WeekChart(sessions: allCounted),
+        _WeekChart(sessions: week),
       ],
     );
   }
@@ -704,7 +717,7 @@ class _WeightCard extends StatelessWidget {
   final bool metric;
 
   String _kg(double kg) =>
-      '${trimDecimal(metric ? kg : kg * 2.20462)} ${metric ? 'kg' : 'lb'}';
+      '${WeightUnits.format(kg, metric)} ${WeightUnits.label(metric)}';
 
   @override
   Widget build(BuildContext context) {
@@ -728,17 +741,39 @@ class _WeightCard extends StatelessWidget {
       );
     }
     final latest = entries.last;
-    final from = latest.date.subtract(const Duration(days: 30));
+    // The trend covers the last 30 days counted from today, so an old
+    // log is never presented as recent.
+    final now = DateTime.now();
+    final from = DateTime(now.year, now.month, now.day - 30);
     final recent = [
       for (final entry in entries)
         if (!entry.date.isBefore(from)) entry,
     ];
-    final change = latest.weightKg - recent.first.weightKg;
-    final sign = change > 0 ? '+' : (change < 0 ? '−' : '±');
-    return GestureDetector(
+    final String detail;
+    if (recent.length < 2) {
+      detail = 'logged ${ProgressPage._date(latest.date)}';
+    } else {
+      // Sign from the value as displayed, so 0.04 kg never reads "−0 kg".
+      final shown = double.parse(
+        WeightUnits.formatNumber(
+          WeightUnits.toDisplay(
+            latest.weightKg - recent.first.weightKg,
+            metric,
+          ),
+        ),
+      );
+      final sign = shown > 0 ? '+' : (shown < 0 ? '−' : '±');
+      detail =
+          '$sign${WeightUnits.formatNumber(shown.abs())} '
+          '${WeightUnits.label(metric)} since '
+          '${ProgressPage._date(recent.first.date).substring(0, 5)}';
+    }
+    return FTappable(
       key: const Key('progress-weight'),
-      behavior: HitTestBehavior.opaque,
-      onTap: open,
+      semanticsLabel:
+          'Body weight ${_kg(latest.weightKg)}, $detail. '
+          'Open body metrics',
+      onPress: open,
       child: AppCard(
         child: Row(
           children: [
@@ -751,12 +786,7 @@ class _WeightCard extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Text(
-                  recent.length < 2
-                      ? 'latest'
-                      : '$sign${_kg(change.abs())} in 30 days',
-                  style: muted,
-                ),
+                Text(detail, style: muted),
               ],
             ),
             const SizedBox(width: AppSpacing.md),
@@ -827,10 +857,7 @@ class _RecordsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final records = PersonalRecords.all(controller.sessions).values.toList()
-      ..sort((a, b) {
-        final byName = a.exerciseName.compareTo(b.exerciseName);
-        return byName != 0 ? byName : a.kind.index.compareTo(b.kind.index);
-      });
+      ..sort(ProgressPage._byExercise);
     return FScaffold(
       header: FHeader.nested(
         title: const Text('Personal records'),
