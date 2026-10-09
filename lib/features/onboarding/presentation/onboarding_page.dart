@@ -92,34 +92,10 @@ class _OnboardingPageState extends State<OnboardingPage> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: AppSpacing.sm),
-            Row(
-              spacing: AppSpacing.sm,
-              children: [
-                for (final item in _levels)
-                  Expanded(
-                    child: FButton(
-                      variant: _level == item ? .primary : .outline,
-                      size: .sm,
-                      // Smaller text and side padding so all three labels fit
-                      // a third of a phone width at the same size.
-                      style: const .delta(
-                        contentStyle: .delta(
-                          padding: .add(EdgeInsets.symmetric(horizontal: -4)),
-                        ),
-                      ),
-                      onPress: () => setState(() => _level = item),
-                      child: Flexible(
-                        child: FittedBox(
-                          fit: .scaleDown,
-                          child: Text(
-                            item,
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+            _LevelPicker(
+              levels: _levels,
+              selected: _level,
+              onChanged: (level) => setState(() => _level = level),
             ),
             const SizedBox(height: AppSpacing.xl),
             SizedBox(
@@ -143,4 +119,69 @@ class _OnboardingPageState extends State<OnboardingPage> {
       ),
     ),
   );
+}
+
+/// Experience levels as equal buttons: one row when every label fits a
+/// third of the width at the user's text scale, otherwise stacked — so
+/// labels keep one size and are never shrunk below the chosen scale.
+class _LevelPicker extends StatelessWidget {
+  const _LevelPicker({
+    required this.levels,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final List<String> levels;
+  final String? selected;
+  final ValueChanged<String> onChanged;
+
+  /// Room a small button needs around its label (padding + border).
+  static const _chrome = 24.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = context.theme.typography.body.xs;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.clamp(0.0, 480.0);
+        final painter = TextPainter(
+          text: TextSpan(
+            text: levels.reduce((a, b) => a.length >= b.length ? a : b),
+            style: style,
+          ),
+          textScaler: MediaQuery.textScalerOf(context),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+        )..layout();
+        final column =
+            (width - AppSpacing.sm * (levels.length - 1)) / levels.length;
+        final fitsRow = painter.width + _chrome <= column;
+        painter.dispose();
+        final buttons = [
+          for (final level in levels)
+            FButton(
+              variant: level == selected ? .primary : .outline,
+              size: .sm,
+              onPress: () => onChanged(level),
+              child: Text(level, style: style),
+            ),
+        ];
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: fitsRow
+              ? Row(
+                  spacing: AppSpacing.sm,
+                  children: [
+                    for (final button in buttons) Expanded(child: button),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: AppSpacing.sm,
+                  children: buttons,
+                ),
+        );
+      },
+    );
+  }
 }

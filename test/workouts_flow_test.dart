@@ -461,4 +461,37 @@ void main() {
     expect(controller.onboardingDone, isTrue);
     expect(controller.goal, isNull);
   });
+
+  testWidgets('experience levels share a row, or stack at large text', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final controller = AppController(
+      LocalWorkoutRepository(preferences, templates: const []),
+      preferences,
+    );
+    await controller.load();
+
+    Future<List<double>> levelTops(double textScale) async {
+      tester.platformDispatcher.textScaleFactorTestValue = textScale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await launch(tester, controller, () => const OnboardingPage());
+      await tester.pumpAndSettle();
+      final tops = [
+        for (final level in ['Beginner', 'Intermediate', 'Advanced'])
+          tester.getTopLeft(find.text(level)).dy,
+      ];
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      return tops;
+    }
+
+    // The test font is much wider than the app's; 0.5 stands in for a
+    // label that fits a third of the width.
+    final normal = await levelTops(0.5);
+    expect(normal.toSet(), hasLength(1), reason: 'one row');
+    final large = await levelTops(2);
+    expect(large.toSet(), hasLength(3), reason: 'stacked, not shrunk');
+  });
 }
