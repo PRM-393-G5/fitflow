@@ -36,10 +36,12 @@ Future<AppController> pumpPage(
   WidgetTester tester,
   Widget page, {
   List<WorkoutSession> sessions = const [],
+  Map<String, Object> prefs = const {},
 }) async {
   SharedPreferences.setMockInitialValues({
     'onboarding_v1': '{"done":true}',
     'sessions_v1': jsonEncode([for (final s in sessions) s.toJson()]),
+    ...prefs,
   });
   final preferences = await SharedPreferences.getInstance();
   final controller = AppController(
@@ -82,7 +84,18 @@ void main() {
       ],
     );
 
-    final scrollable = find.byType(Scrollable).first;
+    // The page previews 5 sessions; the full, paged history is one tap away.
+    final seeAll = find.byKey(const Key('progress-history-all'));
+    await tester.scrollUntilVisible(
+      seeAll,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('See all (25)'), findsOneWidget);
+    await tester.tap(seeAll);
+    await tester.pumpAndSettle();
+
+    final scrollable = find.byType(Scrollable).last;
     await tester.scrollUntilVisible(
       find.textContaining('45 s hold'),
       300,
@@ -172,5 +185,92 @@ void main() {
     expect(controller.weightEntries.single.weightKg, 70.5);
     expect(find.text('70.5 kg'), findsWidgets);
     FlutterError.onError = onError;
+  });
+
+  testWidgets('overview leads with this week and the weight trend', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    await pumpPage(
+      tester,
+      const FScaffold(child: ProgressPage()),
+      sessions: [session(0)],
+      prefs: {
+        'weekly_goal_v1': 4,
+        'body_weights_v1': jsonEncode([
+          {
+            'date': today.subtract(const Duration(days: 20)).toIso8601String(),
+            'weightKg': 74.0,
+          },
+          {'date': today.toIso8601String(), 'weightKg': 72.5},
+        ]),
+      },
+    );
+
+    expect(find.text(' / 4 sessions'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('progress-week-done'))).data,
+      '1',
+    );
+    expect(find.byKey(const Key('progress-achievements')), findsOneWidget);
+    expect(find.byKey(const Key('progress-share')), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('progress-weight')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('72.5 kg'), findsOneWidget);
+    final since = today.subtract(const Duration(days: 20));
+    final dd = since.day.toString().padLeft(2, '0');
+    final mm = since.month.toString().padLeft(2, '0');
+    expect(find.text('−1.5 kg since $dd/$mm'), findsOneWidget);
+    // One session: no "See all" for history.
+    expect(find.byKey(const Key('progress-history-all')), findsNothing);
+  });
+
+  testWidgets('weight card never shows an old log as a recent trend', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    Future<void> pumpWeights(List<(int, double)> daysAgoKg) => pumpPage(
+      tester,
+      const FScaffold(child: ProgressPage()),
+      prefs: {
+        'body_weights_v1': jsonEncode([
+          for (final (daysAgo, kg) in daysAgoKg)
+            {
+              'date': today.subtract(Duration(days: daysAgo)).toIso8601String(),
+              'weightKg': kg,
+            },
+        ]),
+      },
+    );
+    Future<String> detail() async {
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('progress-weight')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      return tester
+          .widgetList<Text>(
+            find.descendant(
+              of: find.byKey(const Key('progress-weight')),
+              matching: find.byType(Text),
+            ),
+          )
+          .map((text) => text.data)
+          .join(' | ');
+    }
+
+    // Last weighed four months ago: no trend, just when.
+    await pumpWeights([(150, 74), (120, 72.5)]);
+    expect(await detail(), contains('logged'));
+    expect(await detail(), isNot(contains('since')));
+
+    // A change that rounds to zero reads ±0, not −0.
+    await pumpWeights([(10, 72.5), (0, 72.46)]);
+    expect(await detail(), contains('±0 kg since'));
   });
 }
