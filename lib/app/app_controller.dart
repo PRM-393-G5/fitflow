@@ -71,6 +71,12 @@ class AppController extends ChangeNotifier {
   /// a returning user's cloud profile arrives before deciding to show it.
   bool syncing = false;
 
+  /// When the last sync reached every collection; null until one has.
+  DateTime? lastSyncedAt;
+
+  /// The last sync stopped early or skipped a collection (e.g. offline).
+  bool lastSyncFailed = false;
+
   /// Bumped whenever the user's data is wiped (sign-out, account switch,
   /// import) so pages caching feature data can reload it.
   int dataEpoch = 0;
@@ -320,8 +326,17 @@ class AppController extends ChangeNotifier {
       final remote = await repo.pullMeta();
       if (stale()) return;
       await _mergeMeta(repo, remote);
+      final complete = [
+        mergedWorkouts,
+        mergedSessions,
+        mergedWeights,
+        mergedEntries,
+      ].every((merged) => merged != null);
+      lastSyncFailed = !complete;
+      if (complete) lastSyncedAt = DateTime.now();
     } catch (e) {
       debugPrint('Sync failed: $e');
+      lastSyncFailed = true;
     } finally {
       syncing = false;
       notifyListeners();

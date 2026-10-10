@@ -10,6 +10,7 @@ import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/ai_workout_parser.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout.dart';
+import '../../../domain/training_options.dart';
 import 'weight_units.dart';
 import 'workout_detail_page.dart';
 
@@ -133,7 +134,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   String? _nameError;
 
   static const _categories = ['Strength', 'Cardio', 'Mobility'];
-  static const _levels = ['Beginner', 'Intermediate', 'Advanced'];
+  static const _levels = trainingLevels;
 
   @override
   void didChangeDependencies() {

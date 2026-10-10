@@ -8,15 +8,19 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
+import '../../../core/formatting.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../data/api/api_client.dart';
 import '../../../data/backend_auth_service.dart';
 import '../../../domain/models/app_user.dart';
+import '../../../domain/training_options.dart';
 import '../../auth/presentation/login_page.dart';
-import '../../onboarding/presentation/onboarding_page.dart';
+import '../../metrics/presentation/body_metrics_page.dart';
 import '../../workouts/presentation/schedule_page.dart';
+import '../../workouts/presentation/weight_units.dart';
 import 'reminders_page.dart';
 
 class ProfilePage extends StatelessWidget {
@@ -27,38 +31,59 @@ class ProfilePage extends StatelessWidget {
     final controller = AppScope.of(context);
     final user = controller.auth?.currentUser;
     final textTheme = Theme.of(context).textTheme;
-    final colors = context.theme.colors;
     return ResponsiveContent(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Profile & settings', style: textTheme.headlineMedium),
-          const SizedBox(height: AppSpacing.lg),
-          Center(
-            child: Column(
-              children: [
-                user?.photoUrl == null
-                    ? FAvatar.raw(
-                        size: 88,
-                        child: const Icon(FLucideIcons.user, size: 36),
-                      )
-                    : FAvatar(image: NetworkImage(user!.photoUrl!), size: 88),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  user?.displayName ?? 'FitFlow Athlete',
-                  style: textTheme.titleLarge,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  user?.email ?? 'Your data stays on this device.',
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colors.mutedForeground,
-                  ),
-                ),
-              ],
+          Text(
+            'Profile',
+            style: textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.md),
+          _ProfileCard(controller: controller, user: user),
+          const _SectionLabel('Training'),
+          FTileGroup(
+            children: [
+              FTile(
+                key: const Key('profile-goal'),
+                prefix: const Icon(FLucideIcons.target),
+                title: const Text('Goal & level'),
+                subtitle: Text(
+                  [
+                    controller.goal == null
+                        ? 'No goal set'
+                        : goalLabel(controller.goal!),
+                    ?controller.level,
+                  ].join(' · '),
+                ),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: () => _editGoal(context, controller),
+              ),
+              FTile(
+                prefix: const Icon(FLucideIcons.calendarDays),
+                title: const Text('Weekly schedule'),
+                subtitle: Text(_scheduleSummary(controller)),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const SchedulePage()),
+                ),
+              ),
+              FTile(
+                prefix: const Icon(FLucideIcons.bell),
+                title: const Text('Workout reminders'),
+                subtitle: Text(_reminderSummary(controller)),
+                suffix: const Icon(FLucideIcons.chevronRight),
+                onPress: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const RemindersPage(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const _SectionLabel('Preferences'),
           FTileGroup(
             children: [
               FSelectMenuTile<ThemeMode>.fromMap(
@@ -91,50 +116,19 @@ class ProfilePage extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const _SectionLabel('Data'),
           FTileGroup(
             children: [
-              FTile(
-                prefix: const Icon(FLucideIcons.target),
-                title: const Text('Training goal'),
-                subtitle: Text(
-                  [
-                    controller.goal ?? 'No goal set',
-                    ?controller.level,
-                  ].join(' · '),
+              if (user != null)
+                FTile(
+                  key: const Key('profile-sync'),
+                  prefix: controller.syncing
+                      ? const FCircularProgress()
+                      : const Icon(FLucideIcons.refreshCw),
+                  title: const Text('Sync'),
+                  subtitle: Text(_syncSummary(controller)),
+                  onPress: controller.syncing ? null : controller.sync,
                 ),
-                suffix: const Icon(FLucideIcons.chevronRight),
-                onPress: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const OnboardingPage(),
-                  ),
-                ),
-              ),
-              FTile(
-                prefix: const Icon(FLucideIcons.bell),
-                title: const Text('Workout reminders'),
-                subtitle: const Text('Time and training days'),
-                suffix: const Icon(FLucideIcons.chevronRight),
-                onPress: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const RemindersPage(),
-                  ),
-                ),
-              ),
-              FTile(
-                prefix: const Icon(FLucideIcons.calendarDays),
-                title: const Text('Weekly schedule'),
-                subtitle: const Text('Assign a plan to each day'),
-                suffix: const Icon(FLucideIcons.chevronRight),
-                onPress: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const SchedulePage()),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          FTileGroup(
-            children: [
               FTile(
                 prefix: const Icon(FLucideIcons.upload),
                 title: const Text('Export data'),
@@ -151,11 +145,70 @@ class ProfilePage extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const _SectionLabel('Account'),
           _AccountSection(controller: controller, user: user),
         ],
       ),
     );
+  }
+
+  /// "5 workout days · Mon, Wed, Thu, Fri, Sat", or a hint when empty.
+  static String _scheduleSummary(AppController controller) {
+    final days = [
+      for (var day = 1; day <= 7; day++)
+        if (controller.scheduledWorkout(day) != null) day,
+    ];
+    if (days.isEmpty) return 'No plan assigned yet';
+    final names = days.map((day) => weekdayNames[day - 1]).join(', ');
+    return '${days.length} workout ${days.length == 1 ? 'day' : 'days'} · '
+        '$names';
+  }
+
+  /// "18:00 · Mon, Wed, Fri", or "Off".
+  static String _reminderSummary(AppController controller) {
+    if (!controller.reminderEnabled) return 'Off';
+    final minutes = controller.reminderMinutes;
+    final time =
+        '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
+        '${(minutes % 60).toString().padLeft(2, '0')}';
+    final days = (controller.reminderDays.toList()..sort())
+        .map((day) => weekdayNames[day - 1])
+        .join(', ');
+    return days.isEmpty ? time : '$time · $days';
+  }
+
+  static String _syncSummary(AppController controller) {
+    if (controller.syncing) return 'Syncing…';
+    if (controller.lastSyncFailed) return "Couldn't sync — tap to retry";
+    final at = controller.lastSyncedAt;
+    return at == null ? 'Tap to sync now' : 'Synced ${_ago(at)}';
+  }
+
+  /// "just now", "5 min ago", "3 h ago", else the date.
+  @visibleForTesting
+  static String ago(DateTime time, {DateTime? now}) => _ago(time, now: now);
+
+  static String _ago(DateTime time, {DateTime? now}) {
+    final elapsed = (now ?? DateTime.now()).difference(time);
+    if (elapsed.inMinutes < 1) return 'just now';
+    if (elapsed.inHours < 1) return '${elapsed.inMinutes} min ago';
+    if (elapsed.inDays < 1) return '${elapsed.inHours} h ago';
+    return 'on ${time.day.toString().padLeft(2, '0')}/'
+        '${time.month.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _editGoal(BuildContext context, AppController controller) async {
+    final picked = await showFDialog<({String goal, String level})>(
+      context: context,
+      builder: (context, style, animation) => _GoalDialog(
+        style: style,
+        animation: animation,
+        goal: controller.goal,
+        level: controller.level,
+      ),
+    );
+    if (picked == null) return;
+    await controller.setGoal(goal: picked.goal, level: picked.level);
   }
 
   void _showExport(BuildContext context, String json) {
@@ -409,53 +462,276 @@ class _AccountSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final signedIn = user != null;
-    return FTileGroup(
-      children: [
-        if (signedIn) ...[
-          FTile(
-            prefix: const Icon(FLucideIcons.refreshCw),
-            title: const Text('Sync now'),
-            subtitle: Text(
-              controller.syncing ? 'Syncing…' : 'Backed up to your account',
-            ),
-            onPress: controller.syncing ? null : controller.sync,
-          ),
-          FTile(
-            prefix: const Icon(FLucideIcons.logOut),
-            title: const Text('Sign out'),
-            subtitle: Text(user!.email),
-            onPress: () => _signOut(context),
-          ),
-          FTile(
+    // The destructive action sits apart from the everyday ones.
+    final danger = signedIn
+        ? FTile(
+            key: const Key('profile-delete-account'),
             variant: .destructive,
             prefix: const Icon(FLucideIcons.userX),
             title: const Text('Delete account'),
             subtitle: const Text('Remove your account and cloud data'),
             onPress: () => _deleteAccount(context),
-          ),
-        ] else ...[
-          if (controller.auth != null)
-            FTile(
-              prefix: const Icon(FLucideIcons.logIn),
-              title: const Text('Sign in with Google'),
-              subtitle: const Text('Back up and sync across devices'),
-              suffix: const Icon(FLucideIcons.chevronRight),
-              onPress: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const LoginPage(popOnSuccess: true),
-                ),
-              ),
-            ),
-          FTile(
+          )
+        : FTile(
             variant: .destructive,
             prefix: const Icon(FLucideIcons.trash2),
             title: const Text('Delete data on this device'),
             onPress: () => _clearLocal(context),
+          );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (signedIn || controller.auth != null)
+          FTileGroup(
+            children: [
+              if (signedIn)
+                FTile(
+                  key: const Key('profile-sign-out'),
+                  prefix: const Icon(FLucideIcons.logOut),
+                  title: const Text('Sign out'),
+                  onPress: () => _signOut(context),
+                )
+              else
+                FTile(
+                  prefix: const Icon(FLucideIcons.logIn),
+                  title: const Text('Sign in with Google'),
+                  subtitle: const Text('Back up and sync across devices'),
+                  suffix: const Icon(FLucideIcons.chevronRight),
+                  onPress: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const LoginPage(popOnSuccess: true),
+                    ),
+                  ),
+                ),
+            ],
           ),
-        ],
+        const SizedBox(height: AppSpacing.lg),
+        FTileGroup(children: [danger]),
       ],
     );
   }
+}
+
+/// Small heading above a settings group.
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(
+      top: AppSpacing.lg,
+      bottom: AppSpacing.sm,
+      left: AppSpacing.xs,
+    ),
+    child: Text(
+      text.toUpperCase(),
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+        color: context.theme.colors.mutedForeground,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.6,
+      ),
+    ),
+  );
+}
+
+/// Who is signed in plus the body profile at a glance; opens Body
+/// metrics to edit it.
+class _ProfileCard extends StatelessWidget {
+  const _ProfileCard({required this.controller, required this.user});
+
+  final AppController controller;
+  final AppUser? user;
+
+  /// "172 cm · 22 y · 72.5 kg · Moderate", or null with nothing set.
+  String? _bodySummary() {
+    final weights = controller.weightEntries;
+    final parts = [
+      if (controller.heightCm case final height?)
+        '${WeightUnits.formatNumber(height.toDouble())} cm',
+      if (controller.age case final age?) '$age y',
+      if (weights.isNotEmpty)
+        '${WeightUnits.format(weights.last.weightKg, controller.useMetric)} '
+            '${WeightUnits.label(controller.useMetric)}',
+    ];
+    if (parts.isEmpty) return null;
+    return [...parts, activityLabel(controller.activityLevel)].join(' · ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
+    final muted = textTheme.bodySmall?.copyWith(color: colors.mutedForeground);
+    final body = _bodySummary();
+    final user = this.user;
+    return FTappable(
+      key: const Key('profile-card'),
+      semanticsLabel:
+          '${user?.displayName ?? 'FitFlow Athlete'}. '
+          '${body ?? 'Add your body profile'}. Open body metrics',
+      onPress: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const BodyMetricsPage())),
+      child: AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                user?.photoUrl == null
+                    ? FAvatar.raw(
+                        size: 56,
+                        child: const Icon(FLucideIcons.user, size: 26),
+                      )
+                    : FAvatar(image: NetworkImage(user!.photoUrl!), size: 56),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        user?.displayName ?? 'FitFlow Athlete',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        user?.email ?? 'Guest · data stays on this device',
+                        style: muted,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.secondary,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      FLucideIcons.activity,
+                      size: 18,
+                      color: colors.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        body ?? 'Add height, age and weight',
+                        style: textTheme.bodyMedium,
+                      ),
+                    ),
+                    Icon(
+                      FLucideIcons.chevronRight,
+                      size: 18,
+                      color: colors.mutedForeground,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Picks the training goal and level in place; pops both, or null.
+class _GoalDialog extends StatefulWidget {
+  const _GoalDialog({
+    required this.style,
+    required this.animation,
+    required this.goal,
+    required this.level,
+  });
+
+  final FDialogStyle style;
+  final Animation<double> animation;
+  final String? goal;
+  final String? level;
+
+  @override
+  State<_GoalDialog> createState() => _GoalDialogState();
+}
+
+class _GoalDialogState extends State<_GoalDialog> {
+  late String? _goal = widget.goal;
+  late String? _level = widget.level;
+
+  FTile _option(String label, bool selected, VoidCallback onPress) => FTile(
+    title: Text(label),
+    suffix: selected
+        ? Icon(FLucideIcons.check, color: context.theme.colors.primary)
+        : null,
+    onPress: onPress,
+  );
+
+  @override
+  Widget build(BuildContext context) => FDialog(
+    style: widget.style,
+    animation: widget.animation,
+    builder: (context, style) => AppDialogContent(
+      title: 'Goal & level',
+      style: style,
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Plans, suggestions and calorie targets follow these.'),
+          const SizedBox(height: AppSpacing.md),
+          FTileGroup(
+            label: const Text('Goal'),
+            children: [
+              for (final option in trainingGoals)
+                _option(
+                  option.label,
+                  _goal == option.value,
+                  () => setState(() => _goal = option.value),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          FTileGroup(
+            label: const Text('Level'),
+            children: [
+              for (final level in trainingLevels)
+                _option(
+                  level,
+                  _level == level,
+                  () => setState(() => _level = level),
+                ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        FButton(
+          key: const Key('goal-save'),
+          onPress: _goal == null || _level == null
+              ? null
+              : () => Navigator.pop(context, (goal: _goal!, level: _level!)),
+          child: const Text('Save'),
+        ),
+        FButton(
+          variant: .ghost,
+          onPress: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
+    ),
+  );
 }
 
 /// A user-facing reason why account deletion failed.

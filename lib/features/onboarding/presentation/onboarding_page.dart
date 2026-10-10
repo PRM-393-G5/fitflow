@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../domain/training_options.dart';
 
 class OnboardingPage extends StatefulWidget {
   const OnboardingPage({super.key});
@@ -22,7 +23,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
     (label: 'Lose fat', category: 'Cardio', icon: FLucideIcons.flame),
     (label: 'Stay mobile', category: 'Mobility', icon: FLucideIcons.activity),
   ];
-  static const _levels = ['Beginner', 'Intermediate', 'Advanced'];
+  static const _levels = trainingLevels;
 
   Future<void> _finish({bool skip = false}) async {
     if (_saving) return;
