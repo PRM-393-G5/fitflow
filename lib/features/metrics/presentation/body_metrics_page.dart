@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/body_metrics.dart';
 import '../../../domain/models/body_weight_entry.dart';
+import '../../../domain/training_options.dart';
 import '../../../core/widgets/app_card.dart';
 
 class BodyMetricsPage extends StatelessWidget {
@@ -284,13 +285,6 @@ class _BodyProfileCard extends StatelessWidget {
   const _BodyProfileCard({required this.latestKg});
 
   final double? latestKg;
-  static const _activityLabels = [
-    'Sedentary',
-    'Light',
-    'Moderate',
-    'Active',
-    'Athlete',
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -349,7 +343,7 @@ class _BodyProfileCard extends StatelessWidget {
               '${height.round()} cm'
               '${controller.useMetric ? '' : ' (${BodyMetrics.feetInches(height)})'}'
               ' • $age years • ${controller.isMale ? 'Male' : 'Female'}'
-              ' • ${_activityLabels[controller.activityLevel.clamp(0, _activityLabels.length - 1)]}',
+              ' • ${activityLabel(controller.activityLevel)}',
               style: mutedStyle,
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -521,12 +515,8 @@ class _ProfileDialogState extends State<_ProfileDialog> {
             const SizedBox(height: AppSpacing.md),
             FSelect<int>(
               items: {
-                for (
-                  var i = 0;
-                  i < _BodyProfileCard._activityLabels.length;
-                  i++
-                )
-                  _BodyProfileCard._activityLabels[i]: i,
+                for (var i = 0; i < activityLevels.length; i++)
+                  activityLevels[i]: i,
               },
               control: .managed(
                 initial: _activity,

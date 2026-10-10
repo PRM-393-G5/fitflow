@@ -5,6 +5,7 @@ import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/models/workout.dart';
+import '../../../domain/training_options.dart';
 import 'ai_workout_page.dart';
 import 'workout_builder_page.dart';
 import 'workout_detail_page.dart';
@@ -19,7 +20,6 @@ class WorkoutsPage extends StatefulWidget {
 
 class _WorkoutsPageState extends State<WorkoutsPage> {
   static const _all = 'All';
-  static const _levels = ['Beginner', 'Intermediate', 'Advanced'];
 
   final _searchCtrl = TextEditingController();
   String _category = _all;
@@ -148,7 +148,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
           ),
           const SizedBox(height: AppSpacing.sm),
           _chips(
-            {_all, ..._levels},
+            {_all, ...trainingLevels},
             _level,
             (value) => setState(() => _level = value),
             labelFor: (value) => value == _all ? 'All levels' : value,

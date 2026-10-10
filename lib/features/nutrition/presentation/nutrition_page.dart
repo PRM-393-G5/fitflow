@@ -14,6 +14,7 @@ import '../../../core/widgets/app_dialog.dart';
 import '../../../data/openai_service.dart';
 import '../../../domain/body_metrics.dart';
 import '../../../domain/meal_plan.dart';
+import '../../../domain/training_options.dart';
 import '../../metrics/presentation/body_metrics_page.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/section_header.dart';
@@ -27,20 +28,6 @@ class NutritionPage extends StatefulWidget {
   const NutritionPage({super.key});
 
   static const _cacheKey = 'meal_plan_v1';
-
-  /// Same values as onboarding (workout categories).
-  static const goals = [
-    (label: 'Build muscle', value: 'Strength'),
-    (label: 'Lose fat', value: 'Cardio'),
-    (label: 'Stay mobile', value: 'Mobility'),
-  ];
-
-  static String goalLabel(String goal) => goals
-      .firstWhere(
-        (option) => option.value == goal,
-        orElse: () => (label: goal, value: goal),
-      )
-      .label;
 
   @override
   State<NutritionPage> createState() => _NutritionPageState();
@@ -401,7 +388,7 @@ class _NutritionPageState extends State<NutritionPage>
       title: 'Your goal',
       body: const Text('Your calorie and protein targets follow your goal.'),
       actions: [
-        for (final option in NutritionPage.goals)
+        for (final option in trainingGoals)
           FButton(
             variant: controller.goal == option.value ? .primary : .outline,
             onPress: () => Navigator.pop(context, option.value),
@@ -1463,7 +1450,7 @@ class _SummaryCard extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
-                    '${goal == null ? 'No goal' : NutritionPage.goalLabel(goal!)}'
+                    '${goal == null ? 'No goal' : goalLabel(goal!)}'
                     ' · TDEE ${thousands(tdee!)} kcal',
                     style: muted,
                   ),

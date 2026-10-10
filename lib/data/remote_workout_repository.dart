@@ -170,11 +170,14 @@ class RemoteWorkoutRepository implements WorkoutRepository {
     return {...Map<String, dynamic>.from(meta), 'updatedAt': json['updatedAt']};
   }
 
+  /// Whether the latest [pushMeta] did not reach the server.
+  bool metaPushFailed = false;
+
   /// Pushes the meta blob; the server keeps it only if [updatedAt] is
   /// newer than its copy (last write wins). Returns the server's newer
   /// blob (same shape as [pullMeta]) when this push lost, so the caller
   /// can adopt it; null when applied or on failure — the next sync then
-  /// pushes again.
+  /// pushes again. [metaPushFailed] tells the two apart.
   Future<Map<String, dynamic>?> pushMeta(
     Map<String, Object?> meta,
     int updatedAt,
@@ -185,6 +188,7 @@ class RemoteWorkoutRepository implements WorkoutRepository {
         'me/meta',
         body: {'updatedAt': updatedAt, 'meta': meta},
       );
+      metaPushFailed = false;
       if (json is! Map || json['applied'] != false) return null;
       final newer = json['meta'];
       if (newer is! Map) return null;
@@ -194,6 +198,7 @@ class RemoteWorkoutRepository implements WorkoutRepository {
       };
     } catch (e) {
       debugPrint('Meta push failed: $e');
+      metaPushFailed = true;
       return null;
     }
   }

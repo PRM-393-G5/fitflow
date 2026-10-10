@@ -10,6 +10,7 @@ import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/ai_workout_parser.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout.dart';
+import '../../../domain/training_options.dart';
 import 'weight_units.dart';
 import 'workout_detail_page.dart';
 
@@ -133,7 +134,6 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   String? _nameError;
 
   static const _categories = ['Strength', 'Cardio', 'Mobility'];
-  static const _levels = ['Beginner', 'Intermediate', 'Advanced'];
 
   @override
   void didChangeDependencies() {
@@ -145,7 +145,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
     if (initial != null) {
       _name.text = initial.name;
       if (_categories.contains(initial.category)) _category = initial.category;
-      if (_levels.contains(initial.level)) _level = initial.level;
+      if (trainingLevels.contains(initial.level)) _level = initial.level;
       _exercises.addAll(
         initial.exercises.map(
           (item) => _ExerciseDraft.from(item, metric: _metric),
@@ -354,7 +354,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
             Text('Level', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: AppSpacing.sm),
             _choices(
-              _levels,
+              trainingLevels,
               _level,
               (value) => setState(() => _level = value),
             ),

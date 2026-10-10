@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../domain/training_options.dart';
 
 class OnboardingPage extends StatefulWidget {
   const OnboardingPage({super.key});
@@ -17,12 +18,19 @@ class _OnboardingPageState extends State<OnboardingPage> {
   String? _level;
   bool _saving = false;
 
-  static const _goals = [
-    (label: 'Build muscle', category: 'Strength', icon: FLucideIcons.dumbbell),
-    (label: 'Lose fat', category: 'Cardio', icon: FLucideIcons.flame),
-    (label: 'Stay mobile', category: 'Mobility', icon: FLucideIcons.activity),
+  static const _goalIcons = {
+    'Strength': FLucideIcons.dumbbell,
+    'Cardio': FLucideIcons.flame,
+    'Mobility': FLucideIcons.activity,
+  };
+  static final _goals = [
+    for (final goal in trainingGoals)
+      (
+        label: goal.label,
+        category: goal.value,
+        icon: _goalIcons[goal.value] ?? FLucideIcons.target,
+      ),
   ];
-  static const _levels = ['Beginner', 'Intermediate', 'Advanced'];
 
   Future<void> _finish({bool skip = false}) async {
     if (_saving) return;
@@ -93,7 +101,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
             ),
             const SizedBox(height: AppSpacing.sm),
             _LevelPicker(
-              levels: _levels,
+              levels: trainingLevels,
               selected: _level,
               onChanged: (level) => setState(() => _level = level),
             ),
