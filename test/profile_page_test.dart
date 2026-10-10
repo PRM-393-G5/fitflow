@@ -110,5 +110,6 @@ void main() {
       '3 h ago',
     );
     expect(ProfilePage.ago(DateTime(2026, 10, 2), now: now), 'on 02/10');
+    expect(ProfilePage.ago(DateTime(2025, 10, 16), now: now), 'on 16/10/2025');
   });
 }

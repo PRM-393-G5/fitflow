@@ -7,15 +7,10 @@ import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/formatting.dart';
 
 class RemindersPage extends StatelessWidget {
   const RemindersPage({super.key});
-
-  static const _dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-  static String _timeLabel(int minutes) =>
-      '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
-      '${(minutes % 60).toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
@@ -68,7 +63,7 @@ class RemindersPage extends StatelessWidget {
                 FTile(
                   prefix: const Icon(FLucideIcons.clock),
                   title: const Text('Time'),
-                  suffix: Text(_timeLabel(controller.reminderMinutes)),
+                  suffix: Text(clockLabel(controller.reminderMinutes)),
                   onPress: !controller.reminderEnabled
                       ? null
                       : () async {
@@ -131,7 +126,7 @@ class RemindersPage extends StatelessWidget {
                         onPress: !controller.reminderEnabled
                             ? null
                             : () => controller.toggleReminderDay(index + 1),
-                        child: Text(_dayLabels[index]),
+                        child: Text(weekdayNames[index]),
                       ),
                     ),
                   ),

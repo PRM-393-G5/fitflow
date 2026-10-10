@@ -20,7 +20,6 @@ class WorkoutsPage extends StatefulWidget {
 
 class _WorkoutsPageState extends State<WorkoutsPage> {
   static const _all = 'All';
-  static const _levels = trainingLevels;
 
   final _searchCtrl = TextEditingController();
   String _category = _all;
@@ -149,7 +148,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
           ),
           const SizedBox(height: AppSpacing.sm),
           _chips(
-            {_all, ..._levels},
+            {_all, ...trainingLevels},
             _level,
             (value) => setState(() => _level = value),
             labelFor: (value) => value == _all ? 'All levels' : value,

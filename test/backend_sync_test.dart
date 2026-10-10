@@ -296,6 +296,25 @@ void main() {
     );
   });
 
+  test('sync status tracks success, failure and the account', () async {
+    final (app, auth) = await device();
+    await auth.signInWithGoogle();
+    await app.load();
+    await syncNow(app);
+    expect(app.lastSyncFailed, isFalse);
+    expect(app.lastSyncedAt, isNotNull);
+
+    server.online = false;
+    await app.sync();
+    expect(app.lastSyncFailed, isTrue);
+    server.online = true;
+
+    // Another account must not inherit this one's status.
+    await app.signOut(force: true);
+    expect(app.lastSyncedAt, isNull);
+    expect(app.lastSyncFailed, isFalse);
+  });
+
   test('profile changes push to the server, newest write wins', () async {
     final (app, auth) = await device();
     await auth.signInWithGoogle();

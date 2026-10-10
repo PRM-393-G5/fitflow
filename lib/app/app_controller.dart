@@ -193,6 +193,8 @@ class AppController extends ChangeNotifier {
       await repo.clearAll();
     }
     sessions = [];
+    lastSyncedAt = null;
+    lastSyncFailed = false;
     _decodeSyncedLists();
     _decodeUserState();
     dataEpoch++;
@@ -230,6 +232,9 @@ class AppController extends ChangeNotifier {
     final epoch = dataEpoch;
     bool stale() => dataEpoch != epoch || repo.uid != uid;
     syncing = true;
+    var finished = false;
+    // Only a meta push made by this sync counts towards its outcome.
+    repo.metaPushFailed = false;
     notifyListeners();
     try {
       await repo.refreshTemplates();
@@ -326,18 +331,25 @@ class AppController extends ChangeNotifier {
       final remote = await repo.pullMeta();
       if (stale()) return;
       await _mergeMeta(repo, remote);
-      final complete = [
-        mergedWorkouts,
-        mergedSessions,
-        mergedWeights,
-        mergedEntries,
-      ].every((merged) => merged != null);
+      final complete =
+          !repo.metaPushFailed &&
+          [
+            mergedWorkouts,
+            mergedSessions,
+            mergedWeights,
+            mergedEntries,
+          ].every((merged) => merged != null);
       lastSyncFailed = !complete;
       if (complete) lastSyncedAt = DateTime.now();
+      finished = true;
     } catch (e) {
       debugPrint('Sync failed: $e');
       lastSyncFailed = true;
+      finished = true;
     } finally {
+      // Stopped early because the account or its data changed: this run
+      // says nothing about the (new) data, so claim no failure either.
+      if (!finished) lastSyncFailed = false;
       syncing = false;
       notifyListeners();
     }
@@ -359,7 +371,8 @@ class AppController extends ChangeNotifier {
     if (remote != null && (firstPull || remoteTs > localTs)) {
       await _applyRemoteMeta(remote);
     } else if (remoteTs < localTs || remote == null) {
-      await _pushMeta();
+      // Awaited so the sync knows whether the profile reached the cloud.
+      await _pushMeta(wait: true);
     }
   }
 
@@ -413,7 +426,7 @@ class AppController extends ChangeNotifier {
 
   /// Stamps the meta change and pushes it to the cloud in the background
   /// (when signed in) — the UI never waits on the network.
-  Future<void> _pushMeta() async {
+  Future<void> _pushMeta({bool wait = false}) async {
     final ts = DateTime.now().millisecondsSinceEpoch;
     await preferences.setInt(_metaTsKey, ts);
     final repo = repository;
@@ -422,21 +435,24 @@ class AppController extends ChangeNotifier {
         preferences.getString(_metaPulledKey) == repo.uid) {
       final uid = repo.uid;
       final epoch = dataEpoch;
-      unawaited(
-        repo.pushMeta(_metaSnapshot(), ts).then((newer) async {
-          // Another device wrote a newer profile meanwhile: adopt it,
-          // unless the account, local data or meta changed since, or a
-          // sync is merging meta right now (it will pick the newer copy).
-          if (newer == null || repo.uid != uid || dataEpoch != epoch) return;
-          if (preferences.getInt(_metaTsKey) != ts || syncing) return;
-          try {
-            await _applyRemoteMeta(newer);
-            notifyListeners();
-          } catch (e) {
-            debugPrint('Could not apply newer profile: $e');
-          }
-        }),
-      );
+      final push = repo.pushMeta(_metaSnapshot(), ts).then((newer) async {
+        // Another device wrote a newer profile meanwhile: adopt it,
+        // unless the account, local data or meta changed since, or a
+        // sync is merging meta right now (it will pick the newer copy).
+        if (newer == null || repo.uid != uid || dataEpoch != epoch) return;
+        if (preferences.getInt(_metaTsKey) != ts || syncing) return;
+        try {
+          await _applyRemoteMeta(newer);
+          notifyListeners();
+        } catch (e) {
+          debugPrint('Could not apply newer profile: $e');
+        }
+      });
+      if (wait) {
+        await push;
+      } else {
+        unawaited(push);
+      }
     }
   }
 

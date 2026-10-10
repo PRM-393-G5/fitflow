@@ -12,6 +12,11 @@ String thousands(num value) {
   return buffer.toString();
 }
 
+/// Minutes after midnight as a 24-hour clock: 1080 → "18:00".
+String clockLabel(int minutes) =>
+    '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
+    '${(minutes % 60).toString().padLeft(2, '0')}';
+
 /// Monday-first short weekday names (`DateTime.weekday - 1` indexes it).
 const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
@@ -119,16 +120,7 @@ class ProfilePage extends StatelessWidget {
           const _SectionLabel('Data'),
           FTileGroup(
             children: [
-              if (user != null)
-                FTile(
-                  key: const Key('profile-sync'),
-                  prefix: controller.syncing
-                      ? const FCircularProgress()
-                      : const Icon(FLucideIcons.refreshCw),
-                  title: const Text('Sync'),
-                  subtitle: Text(_syncSummary(controller)),
-                  onPress: controller.syncing ? null : controller.sync,
-                ),
+              if (user != null) _syncTile(controller),
               FTile(
                 prefix: const Icon(FLucideIcons.upload),
                 title: const Text('Export data'),
@@ -152,6 +144,20 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
+  /// Sync status; rebuilt every minute so "5 min ago" stays true.
+  static FTile _syncTile(AppController controller) => FTile(
+    key: const Key('profile-sync'),
+    prefix: controller.syncing
+        ? const FCircularProgress()
+        : const Icon(FLucideIcons.refreshCw),
+    title: const Text('Sync'),
+    subtitle: _Ticking(
+      every: const Duration(minutes: 1),
+      builder: (_) => Text(_syncSummary(controller)),
+    ),
+    onPress: controller.syncing ? null : controller.sync,
+  );
+
   /// "5 workout days · Mon, Wed, Thu, Fri, Sat", or a hint when empty.
   static String _scheduleSummary(AppController controller) {
     final days = [
@@ -167,10 +173,7 @@ class ProfilePage extends StatelessWidget {
   /// "18:00 · Mon, Wed, Fri", or "Off".
   static String _reminderSummary(AppController controller) {
     if (!controller.reminderEnabled) return 'Off';
-    final minutes = controller.reminderMinutes;
-    final time =
-        '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
-        '${(minutes % 60).toString().padLeft(2, '0')}';
+    final time = clockLabel(controller.reminderMinutes);
     final days = (controller.reminderDays.toList()..sort())
         .map((day) => weekdayNames[day - 1])
         .join(', ');
@@ -181,20 +184,22 @@ class ProfilePage extends StatelessWidget {
     if (controller.syncing) return 'Syncing…';
     if (controller.lastSyncFailed) return "Couldn't sync — tap to retry";
     final at = controller.lastSyncedAt;
-    return at == null ? 'Tap to sync now' : 'Synced ${_ago(at)}';
+    return at == null ? 'Tap to sync now' : 'Synced ${ago(at)}';
   }
 
-  /// "just now", "5 min ago", "3 h ago", else the date.
+  /// "just now", "5 min ago", "3 h ago", else the date (with the year
+  /// when it is not this year).
   @visibleForTesting
-  static String ago(DateTime time, {DateTime? now}) => _ago(time, now: now);
-
-  static String _ago(DateTime time, {DateTime? now}) {
-    final elapsed = (now ?? DateTime.now()).difference(time);
+  static String ago(DateTime time, {DateTime? now}) {
+    final today = now ?? DateTime.now();
+    final elapsed = today.difference(time);
     if (elapsed.inMinutes < 1) return 'just now';
     if (elapsed.inHours < 1) return '${elapsed.inMinutes} min ago';
     if (elapsed.inDays < 1) return '${elapsed.inHours} h ago';
-    return 'on ${time.day.toString().padLeft(2, '0')}/'
+    final day =
+        '${time.day.toString().padLeft(2, '0')}/'
         '${time.month.toString().padLeft(2, '0')}';
+    return time.year == today.year ? 'on $day' : 'on $day/${time.year}';
   }
 
   Future<void> _editGoal(BuildContext context, AppController controller) async {
@@ -481,7 +486,7 @@ class _AccountSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (signedIn || controller.auth != null)
+        if (signedIn || controller.auth != null) ...[
           FTileGroup(
             children: [
               if (signedIn)
@@ -505,11 +510,42 @@ class _AccountSection extends StatelessWidget {
                 ),
             ],
           ),
-        const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.lg),
+        ],
         FTileGroup(children: [danger]),
       ],
     );
   }
+}
+
+/// Rebuilds [builder] every [every] (for relative times).
+class _Ticking extends StatefulWidget {
+  const _Ticking({required this.every, required this.builder});
+
+  final Duration every;
+  final WidgetBuilder builder;
+
+  @override
+  State<_Ticking> createState() => _TickingState();
+}
+
+class _TickingState extends State<_Ticking> {
+  late final Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(widget.every, (_) => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
 }
 
 /// Small heading above a settings group.
