@@ -35,11 +35,11 @@ typedef _Summary = ({
 });
 
 _Summary _summary(AppController controller) {
-  final sessions = WorkoutStats.counted(controller.sessions).toList();
+  final sessions = WorkoutStats.training(controller.sessions).toList();
   final volume = WorkoutStats.totalVolume(sessions);
   final display = controller.useMetric ? volume : volume * 2.20462;
   return (
-    streak: WorkoutStats.streak(sessions),
+    streak: WorkoutStats.weeklyStreak(sessions, controller.weeklyGoal).current,
     workouts: sessions.length,
     minutes: WorkoutStats.totalMinutes(sessions),
     volume: '${display.round()}',
@@ -52,7 +52,7 @@ String _summaryText(_Summary summary) =>
     '${summary.minutes} minutes, '
     '${summary.volume} ${summary.unit} lifted, '
     'current streak: ${summary.streak} '
-    '${summary.streak == 1 ? 'day' : 'days'}';
+    '${summary.streak == 1 ? 'week' : 'weeks'}';
 
 class _ShareSummaryContent extends StatefulWidget {
   const _ShareSummaryContent({required this.controller});
@@ -182,7 +182,7 @@ class _ShareCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stats = [
-      ('${summary.streak}', 'current streak (days)'),
+      ('${summary.streak}', 'week streak'),
       ('${summary.workouts}', 'workouts'),
       ('${summary.minutes}', 'minutes'),
       (summary.volume, '${summary.unit} lifted'),

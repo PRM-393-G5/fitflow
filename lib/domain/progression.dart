@@ -119,11 +119,8 @@ abstract final class Progression {
     Exercise planned,
   ) {
     final name = _normalize(planned.name);
-    final ordered =
-        WorkoutStats.counted(sessions)
-            .where((item) => item.workoutId != WorkoutStats.formCheckId)
-            .toList()
-          ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
+    final ordered = WorkoutStats.training(sessions).toList()
+      ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
     for (final session in ordered) {
       for (final exercise in session.exercises) {
         if (_normalize(exercise.name) != name ||

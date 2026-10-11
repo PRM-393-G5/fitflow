@@ -28,10 +28,12 @@ class ProgressPage extends StatelessWidget {
     final controller = AppScope.of(context);
     final sessions = controller.sessions;
     final metric = controller.useMetric;
-    // Stats ignore empty sessions; computed once per build.
-    final counted = WorkoutStats.counted(sessions).toList();
+    // Stats ignore empty sessions and camera form checks; computed once
+    // per build. Records still include form checks — a best set is real.
+    final training = WorkoutStats.training(sessions).toList();
     final records = PersonalRecords.all(sessions).values.toList();
-    final week = WorkoutStats.thisWeek(counted);
+    final week = WorkoutStats.thisWeek(training);
+    final streak = WorkoutStats.weeklyStreak(training, controller.weeklyGoal);
 
     return ResponsiveContent(
       child: Column(
@@ -77,7 +79,7 @@ class ProgressPage extends StatelessWidget {
           AppCard(
             child: _ThisWeek(
               week: week,
-              allCounted: counted,
+              streakWeeks: streak.current,
               goal: controller.weeklyGoal,
               metric: metric,
             ),
@@ -89,22 +91,22 @@ class ProgressPage extends StatelessWidget {
             tiles: [
               _StatTile(
                 icon: FLucideIcons.calendarCheck,
-                value: thousands(counted.length),
+                value: thousands(training.length),
                 label: 'sessions',
               ),
               _StatTile(
                 icon: FLucideIcons.timer,
-                value: _hours(WorkoutStats.totalMinutes(counted)),
+                value: _hours(WorkoutStats.totalMinutes(training)),
                 label: 'trained',
               ),
               _StatTile(
                 icon: FLucideIcons.weight,
-                value: _weight(WorkoutStats.totalVolume(counted), metric),
+                value: _weight(WorkoutStats.totalVolume(training), metric),
                 label: 'volume lifted',
               ),
               _StatTile(
                 icon: FLucideIcons.flame,
-                value: '${WorkoutStats.longestStreak(counted)} days',
+                value: _weeks(streak.longest),
                 label: 'longest streak',
               ),
             ],
@@ -112,12 +114,14 @@ class ProgressPage extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'Activity'),
           const SizedBox(height: AppSpacing.sm),
-          AppCard(child: _ActivityHeatmap(sessions: counted)),
+          AppCard(child: _ActivityHeatmap(sessions: training)),
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'Body weight'),
           const SizedBox(height: AppSpacing.sm),
           _WeightCard(entries: controller.weightEntries, metric: metric),
-          if (counted.isNotEmpty) ...[
+          // Form checks alone can set records without any training
+          // session, so the two parts are guarded separately.
+          if (training.isNotEmpty || records.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.lg),
             SectionHeader(
               title: 'Personal records',
@@ -137,26 +141,27 @@ class ProgressPage extends StatelessWidget {
                   : null,
             ),
             const SizedBox(height: AppSpacing.sm),
-            _StatGrid(
-              tiles: [
-                _StatTile(
-                  icon: FLucideIcons.dumbbell,
-                  value: _weight(
-                    counted.map((item) => item.volumeKg).reduce(math.max),
-                    metric,
+            if (training.isNotEmpty)
+              _StatGrid(
+                tiles: [
+                  _StatTile(
+                    icon: FLucideIcons.dumbbell,
+                    value: _weight(
+                      training.map((item) => item.volumeKg).reduce(math.max),
+                      metric,
+                    ),
+                    label: 'best session',
                   ),
-                  label: 'best session',
-                ),
-                _StatTile(
-                  icon: FLucideIcons.clock,
-                  value:
-                      '${counted.map((item) => item.durationMinutes).reduce(math.max)} min',
-                  label: 'longest session',
-                ),
-              ],
-            ),
+                  _StatTile(
+                    icon: FLucideIcons.clock,
+                    value:
+                        '${training.map((item) => item.durationMinutes).reduce(math.max)} min',
+                    label: 'longest session',
+                  ),
+                ],
+              ),
             if (records.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.sm),
+              if (training.isNotEmpty) const SizedBox(height: AppSpacing.sm),
               FTileGroup(
                 children: [
                   for (final record in _newestFirst(records).take(_preview))
@@ -217,6 +222,8 @@ class ProgressPage extends StatelessWidget {
   static String _weight(double kg, bool metric) =>
       '${thousands(WeightUnits.toDisplay(kg, metric))} '
       '${WeightUnits.label(metric)}';
+
+  static String _weeks(int weeks) => weeks == 1 ? '1 week' : '$weeks weeks';
 
   /// 1411 → "23 h 31 m"; under an hour → "45 min".
   static String _hours(int minutes) => minutes < 60
@@ -553,13 +560,13 @@ class _WeekChart extends StatelessWidget {
 class _ThisWeek extends StatelessWidget {
   const _ThisWeek({
     required this.week,
-    required this.allCounted,
+    required this.streakWeeks,
     required this.goal,
     required this.metric,
   });
 
   final List<WorkoutSession> week;
-  final List<WorkoutSession> allCounted;
+  final int streakWeeks;
   final int goal;
   final bool metric;
 
@@ -606,7 +613,7 @@ class _ThisWeek extends StatelessWidget {
         Text(
           '${WorkoutStats.totalMinutes(week)} min · '
           '${ProgressPage._weight(WorkoutStats.totalVolume(week), metric)} · '
-          '${WorkoutStats.streak(allCounted)}-day streak',
+          '$streakWeeks-week streak',
           style: muted,
         ),
         const SizedBox(height: AppSpacing.md),

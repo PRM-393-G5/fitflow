@@ -25,18 +25,19 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 | Push-up | Đếm rep qua góc khuỷu tay chỉ khi thân nằm ngang, phát hiện hông xệ/pike | ✅ |
 | Plank | Đo thời gian giữ đúng form (hold seconds), độ lệch hông chuẩn hoá theo chiều dài thân, phải chống tay/khuỷu (nằm sấp không tính) | ✅ |
 | Chấm điểm + cues | Form score 0–100, gợi ý sửa tư thế realtime; pause, đổi camera | ✅ |
-| Lưu kết quả | Kết quả form check lưu vào session history | ✅ |
+| Lưu kết quả | Kết quả form check lưu vào session history (hiện trong lịch sử, không tính là buổi tập: không cộng vào số buổi, phút tập, mục tiêu tuần, streak, huy hiệu) | ✅ |
 | Thêm bài tập | Lunge, pull-up, overhead press (analyzer mới, tái dùng pipeline) | 📋 |
 
 ## 3. Theo dõi tiến độ (Progress & Motivation)
 
 | Tính năng | Mô tả | Trạng thái |
 |---|---|---|
-| Dashboard | Tổng sessions, phút tập, volume | ✅ |
+| Dashboard | Tổng sessions, phút tập, volume (không tính form check) | ✅ |
 | Activity heatmap | 12 tuần kiểu GitHub | ✅ |
 | Weekly chart | Bar chart phút tập theo thứ | ✅ |
-| Personal records | Streak, session volume/dài nhất; PR từng bài (tạ nặng nhất, hold lâu nhất, nhiều rep nhất) + ước lượng 1RM (Epley) | ✅ |
-| Achievements | 12 badges theo streak/volume/số buổi tập/chuỗi tuần đạt weekly goal, hiện tiến độ badge chưa mở | ✅ |
+| Streak theo tuần | Số tuần liên tiếp đạt mục tiêu tuần (mặc định 3 buổi, tuần bắt đầu thứ 2), giống Hevy; ngày nghỉ không làm đứt chuỗi, tuần đang dở chưa đạt không làm đứt chuỗi | ✅ |
+| Personal records | Session volume/dài nhất; PR từng bài (tạ nặng nhất, hold lâu nhất, nhiều rep nhất) + ước lượng 1RM (Epley) | ✅ |
+| Achievements | 12 badges theo số buổi tập/phút tập/volume/streak tuần (2, 4, 12 tuần liên tiếp đạt weekly goal), hiện tiến độ badge chưa mở | ✅ |
 | Share summary | Card tổng kết → share ảnh PNG (`share_plus`), fallback text/copy | ✅ |
 | So sánh tuần/tháng | Delta % so với kỳ trước | 📋 |
 

@@ -26,7 +26,11 @@ class HomePage extends StatelessWidget {
     final now = DateTime.now();
     final today = controller.suggestedWorkout();
     final restDay = controller.isRestDay(now.weekday);
-    final weekly = WorkoutStats.sessionsThisWeek(controller.sessions);
+    final streak = WorkoutStats.weeklyStreak(
+      controller.sessions,
+      controller.weeklyGoal,
+      now: now,
+    );
     // Same Monday-start calendar week as the weekly goal.
     final weekStart = DateTime(
       now.year,
@@ -162,7 +166,7 @@ class HomePage extends StatelessWidget {
           const SectionHeader(title: 'This week'),
           const SizedBox(height: AppSpacing.sm),
           _WeeklyGoalCard(
-            done: weekly,
+            done: streak.thisWeek,
             goal: controller.weeklyGoal,
             onTap: () => _pickWeeklyGoal(context, controller),
           ),
@@ -178,8 +182,8 @@ class HomePage extends StatelessWidget {
               children: [
                 StatCard(
                   icon: FLucideIcons.flame,
-                  value: '${WorkoutStats.streak(controller.sessions)}',
-                  label: 'day streak',
+                  value: '${streak.current}',
+                  label: 'week streak',
                 ),
                 StatCard(
                   icon: FLucideIcons.timer,
