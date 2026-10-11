@@ -11,12 +11,6 @@ typedef WeeklyStreak = ({
 
   /// Longest run ever.
   int longest,
-
-  /// Training sessions so far this week.
-  int thisWeek,
-
-  /// The goal each week was measured against (clamped to 1–7).
-  int goal,
 });
 
 abstract final class WorkoutStats {
@@ -116,12 +110,7 @@ abstract final class WorkoutStats {
       final run = runFrom(week, 1);
       if (run > longest) longest = run;
     }
-    return (
-      current: current,
-      longest: longest,
-      thisWeek: perWeek[thisMonday] ?? 0,
-      goal: goal,
-    );
+    return (current: current, longest: longest);
   }
 
   /// The reps (or hold seconds) of a form-check session, or null for

@@ -178,7 +178,9 @@ class AppController extends ChangeNotifier {
         debugPrint('Skipping malformed stored state: $e');
       }
     }
-    weeklyGoal = preferences.getInt(_weeklyGoalKey) ?? 3;
+    // Imports and remote meta store whatever they carry; read it back
+    // within the range the picker offers.
+    weeklyGoal = (preferences.getInt(_weeklyGoalKey) ?? 3).clamp(1, 7);
   }
 
   /// Wipes the user's local data (not settings) and the in-memory copy.
@@ -669,9 +671,10 @@ class AppController extends ChangeNotifier {
     return granted;
   }
 
+  /// Sessions per week, 1–7.
   Future<void> setWeeklyGoal(int value) async {
-    weeklyGoal = value;
-    await preferences.setInt(_weeklyGoalKey, value);
+    weeklyGoal = value.clamp(1, 7);
+    await preferences.setInt(_weeklyGoalKey, weeklyGoal);
     await _pushMeta();
     notifyListeners();
   }

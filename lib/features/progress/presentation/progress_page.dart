@@ -28,12 +28,13 @@ class ProgressPage extends StatelessWidget {
     final controller = AppScope.of(context);
     final sessions = controller.sessions;
     final metric = controller.useMetric;
-    // Stats ignore empty sessions and camera form checks; computed once
-    // per build. Records still include form checks — a best set is real.
+    // Stats ignore empty sessions and camera form checks (the helpers
+    // filter them out themselves); records still include form checks — a
+    // best set is real.
     final training = WorkoutStats.training(sessions).toList();
     final records = PersonalRecords.all(sessions).values.toList();
-    final week = WorkoutStats.thisWeek(training);
-    final streak = WorkoutStats.weeklyStreak(training, controller.weeklyGoal);
+    final week = WorkoutStats.thisWeek(sessions);
+    final streak = WorkoutStats.weeklyStreak(sessions, controller.weeklyGoal);
 
     return ResponsiveContent(
       child: Column(
@@ -96,12 +97,12 @@ class ProgressPage extends StatelessWidget {
               ),
               _StatTile(
                 icon: FLucideIcons.timer,
-                value: _hours(WorkoutStats.totalMinutes(training)),
+                value: _hours(WorkoutStats.totalMinutes(sessions)),
                 label: 'trained',
               ),
               _StatTile(
                 icon: FLucideIcons.weight,
-                value: _weight(WorkoutStats.totalVolume(training), metric),
+                value: _weight(WorkoutStats.totalVolume(sessions), metric),
                 label: 'volume lifted',
               ),
               _StatTile(

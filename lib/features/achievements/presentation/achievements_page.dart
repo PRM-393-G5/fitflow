@@ -48,13 +48,15 @@ class AchievementsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    // Empty sessions and camera form checks never count toward badges.
-    final sessions = WorkoutStats.training(controller.sessions).toList();
+    // Empty sessions and camera form checks never count toward badges;
+    // the stats helpers drop them from the raw list themselves.
+    final all = controller.sessions;
+    final sessions = WorkoutStats.training(all).toList();
     final count = sessions.length;
-    final minutes = WorkoutStats.totalMinutes(sessions);
-    final volume = WorkoutStats.totalVolume(sessions);
+    final minutes = WorkoutStats.totalMinutes(all);
+    final volume = WorkoutStats.totalVolume(all);
     final weeklyGoal = controller.weeklyGoal;
-    final goalWeeks = WorkoutStats.weeklyStreak(sessions, weeklyGoal).longest;
+    final goalWeeks = WorkoutStats.weeklyStreak(all, weeklyGoal).longest;
     final weekend = sessions.any(
       (item) => item.completedAt.weekday >= DateTime.saturday,
     );

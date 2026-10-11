@@ -35,12 +35,12 @@ typedef _Summary = ({
 });
 
 _Summary _summary(AppController controller) {
-  final sessions = WorkoutStats.training(controller.sessions).toList();
+  final sessions = controller.sessions;
   final volume = WorkoutStats.totalVolume(sessions);
   final display = controller.useMetric ? volume : volume * 2.20462;
   return (
     streak: WorkoutStats.weeklyStreak(sessions, controller.weeklyGoal).current,
-    workouts: sessions.length,
+    workouts: WorkoutStats.training(sessions).length,
     minutes: WorkoutStats.totalMinutes(sessions),
     volume: '${display.round()}',
     unit: controller.useMetric ? 'kg' : 'lb',

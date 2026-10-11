@@ -57,8 +57,6 @@ void main() {
 
       expect(streak.current, 5);
       expect(streak.longest, 5);
-      expect(streak.thisWeek, 3);
-      expect(streak.goal, 3);
     });
 
     test('a week still in progress keeps the streak alive', () {
@@ -70,7 +68,7 @@ void main() {
       final streak = WorkoutStats.weeklyStreak(sessions, 3, now: tuesday);
 
       expect(streak.current, 5);
-      expect(streak.thisWeek, 1);
+      expect(WorkoutStats.sessionsThisWeek(sessions, now: tuesday), 1);
     });
 
     test('a finished week below the goal breaks it', () {
@@ -117,12 +115,10 @@ void main() {
 
       expect(streak.current, 2);
       expect(streak.longest, 2);
-      expect(streak.thisWeek, 3);
+      expect(WorkoutStats.sessionsThisWeek(sessions, now: now), 3);
       expect(WorkoutStats.weeklyStreak(const <WorkoutSession>[], 3, now: now), (
         current: 0,
         longest: 0,
-        thisWeek: 0,
-        goal: 3,
       ));
     });
   });
@@ -159,7 +155,7 @@ void main() {
 
     expect(WorkoutStats.totalMinutes(sessions), 30);
     expect(WorkoutStats.sessionsThisWeek(sessions, now: now), 1);
-    expect(WorkoutStats.weeklyStreak(sessions, 2, now: now).thisWeek, 1);
+    expect(WorkoutStats.weeklyStreak(sessions, 1, now: now).current, 1);
   });
 
   test('form checks are not training sessions', () {
@@ -179,9 +175,24 @@ void main() {
     expect(WorkoutStats.training(sessions), hasLength(1));
     expect(WorkoutStats.totalMinutes(sessions), 40);
     expect(WorkoutStats.sessionsThisWeek(sessions, now: now), 1);
-    expect(WorkoutStats.weeklyStreak(sessions, 3, now: now).thisWeek, 1);
+    // One real session: a goal of 1 is met, the form checks add nothing.
+    expect(WorkoutStats.weeklyStreak(sessions, 1, now: now).current, 1);
+    expect(WorkoutStats.weeklyStreak(sessions, 2, now: now).current, 0);
   });
 
+  test('goals outside 1–7 are measured as 1 or 7', () {
+    // Seven sessions, Monday to Sunday.
+    final sessions = [
+      for (var day = 2; day <= 8; day++) session(DateTime(2026, 3, day, 9)),
+    ];
+    final now = DateTime(2026, 3, 9, 12);
+
+    expect(WorkoutStats.weeklyStreak(sessions, 10, now: now).current, 1);
+    expect(WorkoutStats.weeklyStreak(sessions, 0, now: now).current, 1);
+  });
+
+  // Only crosses a DST change on machines in a DST time zone (e.g. run
+  // with TZ=Europe/Berlin); under UTC it passes trivially.
   test('weekly streak spans a DST change', () {
     List<WorkoutSession> week(DateTime monday, int count) => [
       for (var i = 0; i < count; i++)

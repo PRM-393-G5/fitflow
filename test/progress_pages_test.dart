@@ -7,6 +7,7 @@ import 'package:prm/app/app_controller.dart';
 import 'package:prm/app/app_scope.dart';
 import 'package:prm/core/theme/app_theme.dart';
 import 'package:prm/data/local_workout_repository.dart';
+import 'package:prm/domain/models/exercise.dart';
 import 'package:prm/domain/models/workout_session.dart';
 import 'package:prm/features/achievements/presentation/achievements_page.dart';
 import 'package:prm/features/metrics/presentation/body_metrics_page.dart';
@@ -134,6 +135,50 @@ void main() {
 
     expect(controller.sessions, isEmpty);
     expect(find.text('Session detail'), findsNothing);
+  });
+
+  testWidgets('form checks alone show records but no workout stats', (
+    tester,
+  ) async {
+    final day = DateTime.now().subtract(const Duration(days: 1));
+    await pumpPage(
+      tester,
+      const FScaffold(child: ProgressPage()),
+      sessions: [
+        WorkoutSession(
+          id: 'form-1',
+          workoutId: 'form-check',
+          workoutName: 'Push-up Form Check (15 reps)',
+          startedAt: day.subtract(const Duration(minutes: 2)),
+          completedAt: day,
+          completedSets: 1,
+          volumeKg: 0,
+          exercises: const [
+            Exercise(
+              id: 'pushup',
+              name: 'Push-up',
+              muscleGroup: 'Chest',
+              sets: 1,
+              reps: 15,
+              performedSets: [SetEntry(amount: 15)],
+            ),
+          ],
+        ),
+      ],
+    );
+
+    expect(find.text('0 weeks'), findsOneWidget); // longest streak
+    final records = find.text('Personal records');
+    await tester.scrollUntilVisible(
+      records,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(records, findsOneWidget);
+    expect(find.text('15 reps'), findsOneWidget);
+    // The best/longest session tiles need a real workout.
+    expect(find.text('best session'), findsNothing);
+    expect(find.text('longest session'), findsNothing);
   });
 
   testWidgets('achievements show progress toward locked badges', (
