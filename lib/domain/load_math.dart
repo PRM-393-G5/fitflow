@@ -11,9 +11,4 @@ abstract final class LoadMath {
 
   /// Whether [kg] is heavier than [thanKg] by more than the tolerance.
   static bool heavier(double kg, double thanKg) => kg > thanKg + toleranceKg;
-
-  /// Whether a set volume ([kg] × [reps]) beats [thanKg] by more than the
-  /// tolerance carried through every rep.
-  static bool moreVolume(double kg, int reps, double thanKg) =>
-      kg * reps > thanKg + toleranceKg * reps;
 }
