@@ -212,11 +212,11 @@ class ProgressPage extends StatelessWidget {
     return byName != 0 ? byName : a.kind.index.compareTo(b.kind.index);
   }
 
-  /// Newest first; records set the same day keep exercise order, so the
-  /// preview is stable.
+  /// Most recently improved first; records set the same day keep
+  /// exercise order, so the preview is stable.
   static List<PersonalRecord> _newestFirst(List<PersonalRecord> records) =>
       [...records]..sort((a, b) {
-        final byDate = b.date.compareTo(a.date);
+        final byDate = b.lastImprovedAt.compareTo(a.lastImprovedAt);
         return byDate != 0 ? byDate : _byExercise(a, b);
       });
 
@@ -242,13 +242,19 @@ class ProgressPage extends StatelessWidget {
     String weight(double kg) =>
         '${WeightUnits.format(kg, metric)} ${WeightUnits.label(metric)}';
     final oneRepMax = record.estimatedOneRepMaxKg;
+    final bestSet = record.bestSet;
     return FTile(
       prefix: const Icon(FLucideIcons.trophy),
       title: Text(record.exerciseName),
+      // Lifts show the heaviest set (suffix) plus the best estimated 1RM
+      // and the set behind it; the date is the latest record.
       subtitle: Text(
-        record.kind == RecordKind.weight && oneRepMax > 0
-            ? '${_date(record.date)} • est. 1RM ${weight(oneRepMax)}'
-            : _date(record.date),
+        [
+          _date(record.lastImprovedAt),
+          if (oneRepMax > 0) 'est. 1RM ${weight(oneRepMax)}',
+          if (bestSet != null)
+            'best set ${bestSet.amount} × ${weight(bestSet.weightKg)}',
+        ].join(' • '),
       ),
       suffix: Text(
         switch (record.kind) {

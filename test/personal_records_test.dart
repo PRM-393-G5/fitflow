@@ -139,10 +139,14 @@ void main() {
     );
   });
 
-  test('estimated 1RM uses Epley over the best logged set', () {
+  test('estimated 1RM uses Epley, counting at most ten reps', () {
     expect(PersonalRecords.estimatedOneRepMax(100, 1), 100);
     expect(PersonalRecords.estimatedOneRepMax(100, 10), closeTo(133.33, 0.01));
     expect(PersonalRecords.estimatedOneRepMax(100, 0), 0);
+    // Past ten reps the equations stop predicting a max, so a long set
+    // counts as ten: a lower bound, never below the weight lifted.
+    expect(PersonalRecords.estimatedOneRepMax(100, 11), closeTo(133.33, 0.01));
+    expect(PersonalRecords.estimatedOneRepMax(20, 50), closeTo(26.67, 0.01));
 
     final sessions = [
       session(DateTime(2026, 4, 1), [
@@ -153,7 +157,7 @@ void main() {
           sets: 2,
           performedSets: const [
             SetEntry(amount: 3, weightKg: 100), // 110
-            SetEntry(amount: 12, weightKg: 80), // 112
+            SetEntry(amount: 12, weightKg: 80), // counted as 10: 106.7
           ],
         ),
       ]),
@@ -161,6 +165,196 @@ void main() {
     final record = PersonalRecords.best(sessions)['Bench Press']!;
 
     expect(record.value, 100);
-    expect(record.estimatedOneRepMaxKg, closeTo(112, 0.001));
+    expect(record.estimatedOneRepMaxKg, closeTo(110, 0.001));
+    expect(record.bestSet!.amount, 3);
+    expect(record.bestSet!.weightKg, 100);
+  });
+
+  group('loaded records', () {
+    Exercise lift(List<SetEntry> sets, {String name = 'Bench Press'}) =>
+        Exercise(
+          id: name,
+          name: name,
+          muscleGroup: 'x',
+          sets: sets.length,
+          performedSets: sets,
+        );
+    final past = [
+      session(DateTime(2026, 4, 1), [
+        lift(const [SetEntry(amount: 8, weightKg: 60)]),
+      ]),
+    ];
+
+    test('a kg/lb round trip is the same load, not a record', () {
+      // 60 kg shows as 132.3 lb; re-typing that stores 60.0103 kg.
+      final retyped = lift(const [SetEntry(amount: 8, weightKg: 60.0103)]);
+      final sessions = [
+        ...past,
+        session(DateTime(2026, 4, 8), [retyped]),
+      ];
+
+      expect(PersonalRecords.newRecords(past, [retyped]), isEmpty);
+      final record = PersonalRecords.best(sessions)['Bench Press']!;
+      expect(record.value, 60);
+      expect(record.date, DateTime(2026, 4, 1));
+      expect(record.lastImprovedAt, DateTime(2026, 4, 1));
+    });
+
+    test('more reps at a load lifted before is a record', () {
+      final moreReps = lift(const [SetEntry(amount: 10, weightKg: 60)]);
+      final same = lift(const [SetEntry(amount: 8, weightKg: 60)]);
+
+      expect(PersonalRecords.newRecords(past, [moreReps]), hasLength(1));
+      expect(PersonalRecords.newRecords(past, [same]), isEmpty);
+    });
+
+    test('a rep record moves the record date, not the heaviest date', () {
+      final sessions = [
+        session(DateTime(2026, 1, 1), [
+          lift(const [SetEntry(amount: 5, weightKg: 60)]),
+        ]),
+        session(DateTime(2026, 4, 1), [
+          lift(const [SetEntry(amount: 8, weightKg: 60)]),
+        ]),
+      ];
+      final record = PersonalRecords.best(sessions)['Bench Press']!;
+
+      expect(record.date, DateTime(2026, 1, 1)); // 60 kg first lifted
+      expect(record.lastImprovedAt, DateTime(2026, 4, 1));
+    });
+
+    test('a better estimated 1RM alone is a record', () {
+      final history = [
+        session(DateTime(2026, 4, 1), [
+          lift(const [
+            SetEntry(amount: 3, weightKg: 60), // heaviest; 1RM ≈ 66 kg
+            SetEntry(amount: 12, weightKg: 30),
+          ]),
+        ]),
+      ];
+      // Lighter, at a new load, but 1RM ≈ 67.7 kg.
+      final harder = lift(const [SetEntry(amount: 5, weightKg: 58)]);
+
+      expect(PersonalRecords.newRecords(history, [harder]), hasLength(1));
+    });
+
+    test('a missed set after long sets is not a record', () {
+      // Seed-style 3 × 12: before the cap, the history's estimate was 0
+      // and any shorter set looked like a new 1RM.
+      final history = [
+        session(DateTime(2026, 4, 1), [
+          lift(name: 'Row', const [
+            SetEntry(amount: 12, weightKg: 10),
+            SetEntry(amount: 12, weightKg: 10),
+          ]),
+        ]),
+      ];
+      final worse = lift(name: 'Row', const [
+        SetEntry(amount: 12, weightKg: 10),
+        SetEntry(amount: 9, weightKg: 10),
+      ]);
+
+      expect(PersonalRecords.newRecords(history, [worse]), isEmpty);
+    });
+
+    test('the estimate never sits below the heaviest set', () {
+      final history = [
+        session(DateTime(2026, 4, 1), [
+          lift(const [
+            SetEntry(amount: 12, weightKg: 100),
+            SetEntry(amount: 5, weightKg: 60),
+          ]),
+        ]),
+      ];
+      final record = PersonalRecords.best(history)['Bench Press']!;
+
+      expect(record.estimatedOneRepMaxKg, greaterThan(100));
+      expect(
+        PersonalRecords.newRecords(history, [
+          lift(const [SetEntry(amount: 3, weightKg: 75)]),
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('a light warm-up at a new load is not a record', () {
+      final history = [
+        session(DateTime(2026, 4, 1), [
+          lift(const [SetEntry(amount: 5, weightKg: 100)]),
+        ]),
+      ];
+      final warmUpDay = lift(const [
+        SetEntry(amount: 15, weightKg: 40),
+        SetEntry(amount: 3, weightKg: 90),
+      ]);
+
+      expect(PersonalRecords.newRecords(history, [warmUpDay]), isEmpty);
+    });
+
+    test('an old plan-only session is a real baseline', () {
+      // Sessions from before per-set logging kept only the plan; reps
+      // default to 0. Its load still proves at least one rep.
+      final history = [
+        session(DateTime(2026, 4, 1), [weighted('Bench Press', 50)]),
+      ];
+
+      expect(
+        PersonalRecords.newRecords(history, [
+          lift(const [SetEntry(amount: 5, weightKg: 20)]),
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('the result does not depend on session order', () {
+      final sessions = [
+        session(DateTime(2026, 4, 1), [
+          lift(const [SetEntry(amount: 5, weightKg: 60)]),
+        ]),
+        session(DateTime(2026, 4, 8), [
+          lift(const [SetEntry(amount: 5, weightKg: 60.04)]),
+        ]),
+        session(DateTime(2026, 4, 15), [
+          lift(const [SetEntry(amount: 5, weightKg: 60.02)]),
+        ]),
+      ];
+      final forward = PersonalRecords.best(sessions)['Bench Press']!;
+      final backward = PersonalRecords.best(sessions.reversed)['Bench Press']!;
+
+      expect(forward.value, 60);
+      expect(forward.date, DateTime(2026, 4, 1));
+      expect(backward.value, forward.value);
+      expect(backward.date, forward.date);
+    });
+
+    test('sessions at the same time are read in id order', () {
+      final at = DateTime(2026, 4, 1, 9);
+      WorkoutSession withId(String id, double kg) => WorkoutSession(
+        id: id,
+        workoutId: 'workout',
+        workoutName: 'Workout',
+        startedAt: at,
+        completedAt: at,
+        completedSets: 1,
+        volumeKg: 0,
+        exercises: [
+          lift([SetEntry(amount: 5, weightKg: kg)]),
+        ],
+      );
+      final a = withId('a', 60);
+      final b = withId('b', 60.04);
+
+      expect(PersonalRecords.best([a, b])['Bench Press']!.value, 60);
+      expect(PersonalRecords.best([b, a])['Bench Press']!.value, 60);
+    });
+
+    test('an exercise done twice in one workout is listed once', () {
+      final heavier = lift(const [SetEntry(amount: 8, weightKg: 70)]);
+
+      expect(
+        PersonalRecords.newRecords(past, [heavier, heavier]),
+        hasLength(1),
+      );
+    });
   });
 }

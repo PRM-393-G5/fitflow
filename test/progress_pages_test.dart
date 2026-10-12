@@ -181,6 +181,51 @@ void main() {
     expect(find.text('longest session'), findsNothing);
   });
 
+  testWidgets('lift records show heaviest, estimated 1RM and best set', (
+    tester,
+  ) async {
+    final day = DateTime.now().subtract(const Duration(days: 1));
+    await pumpPage(
+      tester,
+      const FScaffold(child: ProgressPage()),
+      sessions: [
+        WorkoutSession(
+          id: 'bench-day',
+          workoutId: 'w1',
+          workoutName: 'Upper',
+          startedAt: day.subtract(const Duration(minutes: 40)),
+          completedAt: day,
+          completedSets: 2,
+          volumeKg: 1040,
+          exercises: const [
+            Exercise(
+              id: 'bench',
+              name: 'Bench Press',
+              muscleGroup: 'Chest',
+              sets: 2,
+              reps: 10,
+              performedSets: [
+                SetEntry(amount: 10, weightKg: 60), // 1RM 80, volume 600
+                SetEntry(amount: 4, weightKg: 70), // heaviest, 1RM ≈ 79.3
+                SetEntry(amount: 15, weightKg: 30), // too long to estimate
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final tile = find.textContaining('best set 10 × 60 kg');
+    await tester.scrollUntilVisible(
+      tile,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(tile, findsOneWidget);
+    expect(find.textContaining('est. 1RM 80 kg'), findsOneWidget);
+    expect(find.text('70 kg'), findsOneWidget);
+  });
+
   testWidgets('achievements show progress toward locked badges', (
     tester,
   ) async {
