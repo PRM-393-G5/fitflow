@@ -61,7 +61,7 @@ For a distributable Android release, configure a production application ID and r
 - Active workout flow with set completion, rest countdown, and finish confirmation
 - Local workout history and progress summaries
 - Activity heatmap, weekly minutes chart, and personal records
-- Achievements derived from streaks, volume, and session counts
+- Weekly streak (consecutive weeks reaching the weekly goal; rest days never break it) and achievements derived from it, volume, and session counts; camera form checks are not counted as workouts
 - Custom workout builder for user-created plans
 - AI workout generator that builds a plan from a text prompt (OpenAI, needs `OPENAI_API_KEY` via `--dart-define`)
 - Nutrition tab with a TDEE+goal calorie target, AI-suggested daily meal plans, food-photo analysis, and a local daily intake log vs target (same OpenAI key)

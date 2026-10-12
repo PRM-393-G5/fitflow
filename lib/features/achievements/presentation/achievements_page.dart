@@ -48,17 +48,15 @@ class AchievementsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    // Empty sessions never count toward badges.
-    final sessions = WorkoutStats.counted(controller.sessions).toList();
+    // Empty sessions and camera form checks never count toward badges;
+    // the stats helpers drop them from the raw list themselves.
+    final all = controller.sessions;
+    final sessions = WorkoutStats.training(all).toList();
     final count = sessions.length;
-    final streak = WorkoutStats.longestStreak(sessions);
-    final minutes = WorkoutStats.totalMinutes(sessions);
-    final volume = WorkoutStats.totalVolume(sessions);
+    final minutes = WorkoutStats.totalMinutes(all);
+    final volume = WorkoutStats.totalVolume(all);
     final weeklyGoal = controller.weeklyGoal;
-    final goalWeeks = WorkoutStats.longestWeeklyGoalStreak(
-      sessions,
-      weeklyGoal,
-    );
+    final goalWeeks = WorkoutStats.weeklyStreak(all, weeklyGoal).longest;
     final weekend = sessions.any(
       (item) => item.completedAt.weekday >= DateTime.saturday,
     );
@@ -77,33 +75,25 @@ class AchievementsPage extends StatelessWidget {
       goal: goal,
     );
 
+    // Streaks count weeks that reach the weekly goal, so rest days
+    // between sessions never break them.
+    _Badge streak(IconData icon, String title, int weeks) => _Badge(
+      icon: icon,
+      title: title,
+      detail: 'Hit your weekly goal ($weeklyGoal/week) $weeks weeks in a row',
+      progress: goalWeeks,
+      goal: weeks,
+    );
+
     final badges = [
       workouts(FLucideIcons.footprints, 'First steps', 1),
       workouts(FLucideIcons.repeat, 'Regular', 5),
       workouts(FLucideIcons.dumbbell, 'Committed', 10),
       workouts(FLucideIcons.medal, 'Dedicated', 25),
       workouts(FLucideIcons.award, 'Unstoppable', 50),
-      _Badge(
-        icon: FLucideIcons.flame,
-        title: 'Warming up',
-        detail: 'Reach a 3-day streak',
-        progress: streak,
-        goal: 3,
-      ),
-      _Badge(
-        icon: FLucideIcons.flame,
-        title: 'On fire',
-        detail: 'Reach a 7-day streak',
-        progress: streak,
-        goal: 7,
-      ),
-      _Badge(
-        icon: FLucideIcons.sparkles,
-        title: 'Monthly beast',
-        detail: 'Hit your weekly goal ($weeklyGoal/week) 4 weeks in a row',
-        progress: goalWeeks,
-        goal: 4,
-      ),
+      streak(FLucideIcons.flame, 'Warming up', 2),
+      streak(FLucideIcons.flame, 'On fire', 4),
+      streak(FLucideIcons.sparkles, 'Quarter strong', 12),
       _Badge(
         icon: FLucideIcons.timer,
         title: 'Five hours',

@@ -3,6 +3,16 @@ import 'models/workout_session.dart';
 /// What a form-check session recorded: reps, or seconds held for planks.
 typedef FormCheckResult = ({int amount, bool timed});
 
+/// Consecutive weeks reaching the weekly goal; see
+/// [WorkoutStats.weeklyStreak].
+typedef WeeklyStreak = ({
+  /// Run ending this week (if its goal is met) or last week.
+  int current,
+
+  /// Longest run ever.
+  int longest,
+});
+
 abstract final class WorkoutStats {
   /// Workout id given to camera form-check sessions.
   static const formCheckId = 'form-check';
@@ -13,14 +23,20 @@ abstract final class WorkoutStats {
   static Iterable<WorkoutSession> counted(Iterable<WorkoutSession> sessions) =>
       sessions.where((item) => item.completedSets > 0);
 
+  /// Counted workouts, without camera form checks: a single test set is
+  /// not a training session, so it never counts toward session totals,
+  /// minutes, the weekly goal, streaks or badges.
+  static Iterable<WorkoutSession> training(Iterable<WorkoutSession> sessions) =>
+      counted(sessions).where((item) => item.workoutId != formCheckId);
+
   static int totalMinutes(Iterable<WorkoutSession> sessions) =>
-      counted(sessions)
+      training(sessions)
           .fold(0, (sum, session) => sum + session.durationMinutes);
 
   static double totalVolume(Iterable<WorkoutSession> sessions) =>
-      counted(sessions).fold(0, (sum, session) => sum + session.volumeKg);
+      training(sessions).fold(0, (sum, session) => sum + session.volumeKg);
 
-  /// Counted sessions completed in the current Monday-based week.
+  /// Training sessions completed in the current Monday-based week.
   static List<WorkoutSession> thisWeek(
     Iterable<WorkoutSession> sessions, {
     DateTime? now,
@@ -28,7 +44,7 @@ abstract final class WorkoutStats {
     final start = _monday(now ?? DateTime.now());
     // Calendar construction (not Duration) keeps this DST-safe.
     final end = DateTime(start.year, start.month, start.day + 7);
-    return counted(sessions)
+    return training(sessions)
         .where(
           (item) =>
               !item.completedAt.isBefore(start) &&
@@ -37,77 +53,64 @@ abstract final class WorkoutStats {
         .toList();
   }
 
-  /// Sessions completed in the current Monday-based calendar week.
+  /// Training sessions completed in the current Monday-based week.
   static int sessionsThisWeek(
     Iterable<WorkoutSession> sessions, {
     DateTime? now,
   }) => thisWeek(sessions, now: now).length;
 
-  static int longestStreak(Iterable<WorkoutSession> sessions) {
-    final dates = _days(sessions);
-    var best = 0;
-    for (final day in dates) {
-      if (dates.contains(DateTime(day.year, day.month, day.day - 1))) {
-        continue;
-      }
-      var run = 0;
-      var cursor = day;
-      while (dates.contains(cursor)) {
-        run++;
-        cursor = DateTime(cursor.year, cursor.month, cursor.day + 1);
-      }
-      if (run > best) best = run;
-    }
-    return best;
-  }
-
-  /// Current run of consecutive training days ending today (or yesterday,
-  /// so the streak survives until today's workout is done).
-  static int streak(Iterable<WorkoutSession> sessions, {DateTime? now}) {
-    final dates = _days(sessions);
-    if (dates.isEmpty) return 0;
-    var cursor = now ?? DateTime.now();
-    cursor = DateTime(cursor.year, cursor.month, cursor.day);
-    if (!dates.contains(cursor)) {
-      cursor = DateTime(cursor.year, cursor.month, cursor.day - 1);
-    }
-    var count = 0;
-    while (dates.contains(cursor)) {
-      count++;
-      cursor = DateTime(cursor.year, cursor.month, cursor.day - 1);
-    }
-    return count;
-  }
-
-  /// Longest run of consecutive Monday-based weeks with at least
-  /// [weeklyGoal] sessions each.
-  static int longestWeeklyGoalStreak(
+  /// Weekly consistency streak, counted in Monday-based weeks that reach
+  /// [weeklyGoal] training sessions — rest days never break it.
+  ///
+  /// [WeeklyStreak.current] runs back from the current week if its goal is
+  /// already met, else from last week: a week still in progress has not
+  /// failed yet. Weeks after the current one (future-dated sessions) are
+  /// ignored.
+  static WeeklyStreak weeklyStreak(
     Iterable<WorkoutSession> sessions,
-    int weeklyGoal,
-  ) {
+    int weeklyGoal, {
+    DateTime? now,
+  }) {
+    final thisMonday = _monday(now ?? DateTime.now());
+    final goal = weeklyGoal.clamp(1, 7);
     final perWeek = <DateTime, int>{};
-    for (final session in counted(sessions)) {
+    for (final session in training(sessions)) {
       final week = _monday(session.completedAt);
+      if (week.isAfter(thisMonday)) continue;
       perWeek[week] = (perWeek[week] ?? 0) + 1;
     }
     final hit = {
       for (final entry in perWeek.entries)
-        if (entry.value >= weeklyGoal.clamp(1, 7)) entry.key,
+        if (entry.value >= goal) entry.key,
     };
-    var best = 0;
-    for (final week in hit) {
-      if (hit.contains(DateTime(week.year, week.month, week.day - 7))) {
-        continue;
-      }
+
+    int runFrom(DateTime week, int direction) {
       var run = 0;
       var cursor = week;
       while (hit.contains(cursor)) {
         run++;
-        cursor = DateTime(cursor.year, cursor.month, cursor.day + 7);
+        cursor = DateTime(
+          cursor.year,
+          cursor.month,
+          cursor.day + 7 * direction,
+        );
       }
-      if (run > best) best = run;
+      return run;
     }
-    return best;
+
+    final thisWeekMet = hit.contains(thisMonday);
+    final current = runFrom(
+      thisWeekMet ? thisMonday : _previousWeek(thisMonday),
+      -1,
+    );
+    var longest = 0;
+    for (final week in hit) {
+      // Only start counting at the first week of a run.
+      if (hit.contains(_previousWeek(week))) continue;
+      final run = runFrom(week, 1);
+      if (run > longest) longest = run;
+    }
+    return (current: current, longest: longest);
   }
 
   /// The reps (or hold seconds) of a form-check session, or null for
@@ -139,15 +142,9 @@ abstract final class WorkoutStats {
     return result.timed ? '${result.amount} s hold' : '${result.amount} reps';
   }
 
-  static Set<DateTime> _days(Iterable<WorkoutSession> sessions) => {
-    for (final item in counted(sessions))
-      DateTime(
-        item.completedAt.year,
-        item.completedAt.month,
-        item.completedAt.day,
-      ),
-  };
-
   static DateTime _monday(DateTime date) =>
       DateTime(date.year, date.month, date.day - (date.weekday - 1));
+
+  static DateTime _previousWeek(DateTime monday) =>
+      DateTime(monday.year, monday.month, monday.day - 7);
 }

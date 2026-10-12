@@ -26,18 +26,14 @@ class HomePage extends StatelessWidget {
     final now = DateTime.now();
     final today = controller.suggestedWorkout();
     final restDay = controller.isRestDay(now.weekday);
-    final weekly = WorkoutStats.sessionsThisWeek(controller.sessions);
-    // Same Monday-start calendar week as the weekly goal.
-    final weekStart = DateTime(
-      now.year,
-      now.month,
-      now.day - (now.weekday - 1),
+    final streak = WorkoutStats.weeklyStreak(
+      controller.sessions,
+      controller.weeklyGoal,
+      now: now,
     );
-    final weekMinutes = WorkoutStats.totalMinutes(
-      controller.sessions.where(
-        (item) => !item.completedAt.isBefore(weekStart),
-      ),
-    );
+    // The goal card and the minutes tile count the same sessions.
+    final week = WorkoutStats.thisWeek(controller.sessions, now: now);
+    final weekMinutes = WorkoutStats.totalMinutes(week);
     final dayStart = DateTime(now.year, now.month, now.day);
     WorkoutSession? doneToday;
     for (final session in controller.sessions) {
@@ -162,7 +158,7 @@ class HomePage extends StatelessWidget {
           const SectionHeader(title: 'This week'),
           const SizedBox(height: AppSpacing.sm),
           _WeeklyGoalCard(
-            done: weekly,
+            done: week.length,
             goal: controller.weeklyGoal,
             onTap: () => _pickWeeklyGoal(context, controller),
           ),
@@ -178,8 +174,8 @@ class HomePage extends StatelessWidget {
               children: [
                 StatCard(
                   icon: FLucideIcons.flame,
-                  value: '${WorkoutStats.streak(controller.sessions)}',
-                  label: 'day streak',
+                  value: '${streak.current}',
+                  label: 'week streak',
                 ),
                 StatCard(
                   icon: FLucideIcons.timer,
