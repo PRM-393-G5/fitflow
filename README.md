@@ -59,6 +59,7 @@ For a distributable Android release, configure a production application ID and r
 - Browse and filter bundled workout plans by category
 - Workout details with exercise, set, repetition, and rest guidance
 - Active workout flow with set completion, rest countdown, and finish confirmation
+- Progressive-overload hints per exercise: double progression with the 2-for-2 rule, load steps rounded to real plates/dumbbells, deloads after three misses, lighter restarts after a break
 - Local workout history and progress summaries
 - Activity heatmap, weekly minutes chart, and personal records
 - Weekly streak (consecutive weeks reaching the weekly goal; rest days never break it) and achievements derived from it, volume, and session counts; camera form checks are not counted as workouts
