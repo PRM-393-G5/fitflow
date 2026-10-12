@@ -36,7 +36,7 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 | Activity heatmap | 12 tuần kiểu GitHub | ✅ |
 | Weekly chart | Bar chart phút tập theo thứ | ✅ |
 | Streak theo tuần | Số tuần liên tiếp đạt mục tiêu tuần (mặc định 3 buổi, tuần bắt đầu thứ 2), giống Hevy; ngày nghỉ không làm đứt chuỗi, tuần đang dở chưa đạt không làm đứt chuỗi | ✅ |
-| Personal records | Session volume/dài nhất; PR từng bài (tạ nặng nhất, hold lâu nhất, nhiều rep nhất) + ước lượng 1RM (Epley) | ✅ |
+| Personal records | Session volume/dài nhất; PR từng bài — bài có tạ: tạ nặng nhất + 1RM ước tính (Epley, chỉ từ set ≤ 10 rep) + best set (kg × reps); bài không tạ: nhiều rep nhất; bài giữ: hold lâu nhất. Vượt bất kỳ mục nào là PR mới; tạ so với dung sai 0.05 kg nên đổi kg/lb không tạo PR giả | ✅ |
 | Achievements | 12 badges theo số buổi tập/phút tập/volume/streak tuần (2, 4, 12 tuần liên tiếp đạt weekly goal), hiện tiến độ badge chưa mở | ✅ |
 | Share summary | Card tổng kết → share ảnh PNG (`share_plus`), fallback text/copy | ✅ |
 | So sánh tuần/tháng | Delta % so với kỳ trước | 📋 |

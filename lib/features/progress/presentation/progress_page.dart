@@ -242,13 +242,20 @@ class ProgressPage extends StatelessWidget {
     String weight(double kg) =>
         '${WeightUnits.format(kg, metric)} ${WeightUnits.label(metric)}';
     final oneRepMax = record.estimatedOneRepMaxKg;
+    final bestSet = record.bestSet;
     return FTile(
       prefix: const Icon(FLucideIcons.trophy),
       title: Text(record.exerciseName),
+      // Lifts show all three bests: heaviest (suffix), estimated 1RM and
+      // the best set by volume.
       subtitle: Text(
-        record.kind == RecordKind.weight && oneRepMax > 0
-            ? '${_date(record.date)} • est. 1RM ${weight(oneRepMax)}'
-            : _date(record.date),
+        [
+          _date(record.date),
+          if (record.kind == RecordKind.weight && oneRepMax > 0)
+            'est. 1RM ${weight(oneRepMax)}',
+          if (record.kind == RecordKind.weight && bestSet != null)
+            'best set ${bestSet.amount} × ${weight(bestSet.weightKg)}',
+        ].join(' • '),
       ),
       suffix: Text(
         switch (record.kind) {
