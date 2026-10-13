@@ -106,16 +106,14 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   void initState() {
     super.initState();
     _startedAt = widget.clock();
-    // 2.5 kg, or 5 lb through the same conversion the form uses.
-    final step = _metric
-        ? Progression.metricStepKg
-        : WeightUnits.toKg(5, false);
     _hints = {
       for (final (index, exercise) in _exercises.indexed)
         index: ?Progression.forExercise(
           widget.controller.sessions,
           exercise,
-          weightStepKg: step,
+          category: widget.workout.category,
+          metric: _metric,
+          now: _startedAt,
           maxAmount: exercise.isTimed ? _maxSeconds : _maxReps,
           maxWeightKg: WeightUnits.maxKg,
         ),
@@ -677,33 +675,68 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     return timed ? '$amounts$load' : '$amounts reps$load';
   }
 
-  String _stepUpLabel(ProgressionHint hint) {
-    if (_exercise.isTimed) {
-      return 'You held every set last time — try ${hint.amount}s today.';
-    }
-    final target = hint.weightKg > 0
-        ? _weightLabel(hint.weightKg)
-        : '${hint.amount} reps';
-    return 'You hit every rep last time — try $target today.';
+  /// "Last time", or "Last 12-rep session" when alternating plans put a
+  /// session with another target after the one the hint follows.
+  String _lastLabel(ProgressionHint hint) {
+    if (!hint.otherTargetSince) return 'Last time';
+    final target = _exercise.isTimed
+        ? '${_exercise.durationSeconds}s'
+        : '${_exercise.reps}-rep';
+    return 'Last $target session';
+  }
+
+  /// What today's suggestion is and why; null when there is nothing to
+  /// add to "Last time" (mobility and cardio work).
+  String? _hintLabel(ProgressionHint hint) {
+    final timed = _exercise.isTimed;
+    final amount = timed ? '${hint.amount}s' : '${hint.amount} reps';
+    final load = hint.weightKg > 0 ? _weightLabel(hint.weightKg) : null;
+    return switch (hint.reason) {
+      ProgressionReason.stepUp when timed =>
+        'You held every set last time — try ${hint.amount}s today.',
+      ProgressionReason.stepUp when load == null =>
+        'You hit every rep last time — try $amount today.',
+      ProgressionReason.stepUp =>
+        'Top of the rep range twice in a row — try $load today.',
+      ProgressionReason.building =>
+        'Same weight — aim for $amount per set, then it goes up.',
+      ProgressionReason.repeat =>
+        'Match the plan first: ${load == null ? amount : '$amount @ $load'}.',
+      ProgressionReason.deload =>
+        'Missed reps three times in a row — reset to $load and build back.',
+      ProgressionReason.comeback =>
+        'First time in ${hint.weeksAway} weeks — start lighter at $load.',
+      ProgressionReason.newTarget =>
+        'New target — ${load == null ? amount : '$amount @ $load'} '
+            'matches last time\'s effort.',
+      ProgressionReason.capped when timed =>
+        'Strong hold — try a harder variation to keep progressing.',
+      ProgressionReason.capped when load == null =>
+        'Plenty of reps — try a harder variation or add weight.',
+      ProgressionReason.capped => 'Keep $load and own every rep.',
+      ProgressionReason.maintain => null,
+    };
   }
 
   List<Widget> _buildHint(BuildContext context, ProgressionHint hint) => [
     const SizedBox(height: AppSpacing.xs),
     Text(
-      'Last time: ${_lastSetsLabel(hint.lastSets)}',
+      '${_lastLabel(hint)}: ${_lastSetsLabel(hint.lastSets)}',
       key: const Key('last-time'),
       textAlign: TextAlign.center,
       style: TextStyle(color: context.theme.colors.mutedForeground),
     ),
-    if (hint.stepUp) ...[
+    if (_hintLabel(hint) case final label?) ...[
       const SizedBox(height: AppSpacing.xs),
       Text(
-        _stepUpLabel(hint),
-        key: const Key('step-up'),
+        label,
+        key: Key(hint.stepUp ? 'step-up' : 'progression-hint'),
         textAlign: TextAlign.center,
         style: TextStyle(
-          color: context.theme.colors.primary,
-          fontWeight: FontWeight.w600,
+          color: hint.stepUp
+              ? context.theme.colors.primary
+              : context.theme.colors.mutedForeground,
+          fontWeight: hint.stepUp ? FontWeight.w600 : null,
         ),
       ),
     ],
