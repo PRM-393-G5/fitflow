@@ -226,6 +226,86 @@ void main() {
     expect(find.text('70 kg'), findsOneWidget);
   });
 
+  testWidgets('a mistyped set can be fixed from session detail', (
+    tester,
+  ) async {
+    final day = DateTime.now().subtract(const Duration(days: 1));
+    final controller = await pumpPage(
+      tester,
+      const FScaffold(child: ProgressPage()),
+      sessions: [
+        WorkoutSession(
+          id: 'typo',
+          workoutId: 'w1',
+          workoutName: 'Push day',
+          startedAt: day.subtract(const Duration(minutes: 40)),
+          completedAt: day,
+          completedSets: 3,
+          volumeKg: 7200,
+          exercises: const [
+            Exercise(
+              id: 'bench',
+              name: 'Bench Press',
+              muscleGroup: 'Chest',
+              sets: 3,
+              reps: 10,
+              performedSets: [
+                SetEntry(amount: 10, weightKg: 60),
+                SetEntry(amount: 10, weightKg: 600), // meant 60
+                SetEntry(amount: 10, weightKg: 60),
+              ],
+            ),
+          ],
+        ),
+        session(3, workoutId: 'form-check', name: 'Squat Form Check (9 reps)'),
+      ],
+    );
+
+    await tester.scrollUntilVisible(
+      find.text('Push day'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Push day'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('edit-session')));
+    await tester.pumpAndSettle();
+
+    // Invalid input is refused with the field marked.
+    await tester.enterText(find.byKey(const Key('edit-amount-0-1')), '0');
+    await tester.tap(find.byKey(const Key('save-session-edit')));
+    await tester.pumpAndSettle();
+    expect(find.text('At least 1'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const Key('edit-amount-0-1')), '10');
+    await tester.enterText(find.byKey(const Key('edit-weight-0-1')), '60');
+    await tester.tap(find.byKey(const Key('save-session-edit')));
+    await tester.pumpAndSettle();
+
+    final saved = controller.sessions.firstWhere((item) => item.id == 'typo');
+    expect(saved.exercises.single.performedSets.map((set) => set.weightKg), [
+      60,
+      60,
+      60,
+    ]);
+    expect(saved.volumeKg, 1800);
+    // Back on the detail page, which shows the corrected session.
+    expect(find.text('Session detail'), findsOneWidget);
+    expect(find.text('1800 kg'), findsOneWidget);
+
+    // Form checks have nothing to edit.
+    await tester.tap(find.byType(FHeaderAction).first);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.textContaining('Squat Form Check'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.textContaining('Squat Form Check'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('edit-session')), findsNothing);
+  });
+
   testWidgets('achievements show progress toward locked badges', (
     tester,
   ) async {

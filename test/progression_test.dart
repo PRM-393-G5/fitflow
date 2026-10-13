@@ -668,6 +668,45 @@ void main() {
     );
   });
 
+  testWidgets('a load far above the best asks before logging', (tester) async {
+    final controller = await pumpWorkout(tester, [
+      done(day(1), row, sets(3, 10, 60)),
+    ]);
+
+    await tester.enterText(find.byKey(const Key('set-weight')), '600');
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+    expect(find.text('Log 600 kg?'), findsOneWidget);
+
+    // "Fix it" logs nothing and keeps the set open.
+    await tester.tap(find.byKey(const Key('fix-heavy-set')));
+    await tester.pumpAndSettle();
+    expect(find.text('Set 1 of 3'), findsOneWidget);
+
+    // A real jump within 1.25× / +10 kg of the best logs straight away.
+    await tester.enterText(find.byKey(const Key('set-weight')), '70');
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('skip-rest')));
+    await tester.pump();
+    expect(find.text('Set 2 of 3'), findsOneWidget);
+
+    // Confirming logs the heavy set as typed.
+    await tester.enterText(find.byKey(const Key('set-weight')), '200');
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-heavy-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('skip-rest')));
+    await tester.pump();
+    expect(find.text('Set 3 of 3'), findsOneWidget);
+    expect(controller.sessions, hasLength(1)); // not finished yet
+
+    // Leave the workout so its timers stop.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('last-time label names bodyweight sets', (tester) async {
     await pumpWorkout(tester, [
       done(day(1), row, const [

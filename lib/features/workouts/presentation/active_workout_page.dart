@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -7,6 +8,7 @@ import 'package:forui/forui.dart';
 import '../../../app/app_controller.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../domain/load_math.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
@@ -83,6 +85,10 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   /// exercise's first set.
   late final Map<int, ProgressionHint> _hints;
 
+  /// Heaviest load ever logged per exercise index, for the typo guard;
+  /// absent for exercises without loaded history.
+  late final Map<int, double> _historyBestKg;
+
   final _amountCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
 
@@ -117,6 +123,21 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
           maxAmount: exercise.isTimed ? _maxSeconds : _maxReps,
           maxWeightKg: WeightUnits.maxKg,
         ),
+    };
+    final heaviest = <String, double>{};
+    for (final session in widget.controller.sessions) {
+      for (final exercise in session.exercises) {
+        final name = exercise.name.trim().toLowerCase();
+        for (final set in exercise.performedSets) {
+          if (set.weightKg > (heaviest[name] ?? 0)) {
+            heaviest[name] = set.weightKg;
+          }
+        }
+      }
+    }
+    _historyBestKg = {
+      for (final (index, exercise) in _exercises.indexed)
+        index: ?heaviest[exercise.name.trim().toLowerCase()],
     };
     final first = _exercises.indexWhere((item) => item.sets > 0);
     if (first >= 0) {
@@ -192,10 +213,50 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     return null;
   }
 
-  void _completeSet() {
+  Future<void> _completeSet() async {
     if (_done || _resting || _holding || _saving || _dialogOpen) return;
     final entry = _readEntry();
-    if (entry != null) _logSet(entry);
+    if (entry == null || !await _loadConfirmed(entry.weightKg)) return;
+    if (mounted) _logSet(entry);
+  }
+
+  /// Loads far above anything logged for this exercise are likely typos
+  /// (600 for 60): above both 1.25× and +10 kg over the best — of history
+  /// and of this session's sets — they need a confirmation. Exercises
+  /// without loaded history are not checked.
+  Future<bool> _loadConfirmed(double kg) async {
+    final history = _historyBestKg[_exerciseIndex];
+    if (history == null) return true;
+    final best = (_entries[_exerciseIndex] ?? const <SetEntry>[]).fold(
+      history,
+      (best, set) => math.max(best, set.weightKg),
+    );
+    if (!LoadMath.heavier(kg, math.max(best * 1.25, best + 10))) return true;
+    return _whilePaused(
+      () async =>
+          await showAppDialog<bool>(
+            context: context,
+            title: 'Log ${_weightLabel(kg)}?',
+            body: Text(
+              'That is far above your best of ${_weightLabel(best)} on '
+              '${_exercise.name}. Check for a typo before logging it.',
+            ),
+            actions: [
+              FButton(
+                key: const Key('fix-heavy-set'),
+                variant: .ghost,
+                onPress: () => Navigator.pop(context, false),
+                child: const Text('Fix it'),
+              ),
+              FButton(
+                key: const Key('confirm-heavy-set'),
+                onPress: () => Navigator.pop(context, true),
+                child: const Text('Log it'),
+              ),
+            ],
+          ) ??
+          false,
+    );
   }
 
   /// Records [entry] for the current set and moves to the next one right
@@ -259,10 +320,11 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     setState(() => _restEndsAt = null);
   }
 
-  void _startHold() {
+  Future<void> _startHold() async {
     if (_done || _resting || _holding || _saving || _dialogOpen) return;
     final entry = _readEntry();
-    if (entry == null) return;
+    if (entry == null || !await _loadConfirmed(entry.weightKg)) return;
+    if (!mounted) return;
     setState(() {
       _holdTarget = entry.amount;
       _holdWeightKg = entry.weightKg;
