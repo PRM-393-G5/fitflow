@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -7,6 +8,7 @@ import 'package:forui/forui.dart';
 import '../../../app/app_controller.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../domain/load_math.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
@@ -14,6 +16,7 @@ import '../../../domain/personal_records.dart';
 import '../../../domain/progression.dart';
 import '../../squat_form/domain/squat_analyzer.dart';
 import '../../squat_form/presentation/squat_form_check_page.dart';
+import 'set_input.dart';
 import 'weight_units.dart';
 
 /// Opens the camera form check for one set; resolves to the counted reps
@@ -46,8 +49,8 @@ class ActiveWorkoutPage extends StatefulWidget {
 }
 
 class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
-  static const _maxReps = 1000;
-  static const _maxSeconds = 3600;
+  static const _maxReps = SetInput.maxReps;
+  static const _maxSeconds = SetInput.maxSeconds;
 
   late final DateTime _startedAt;
   int _exerciseIndex = 0;
@@ -83,6 +86,11 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   /// exercise's first set.
   late final Map<int, ProgressionHint> _hints;
 
+  /// Heaviest load per exercise (see [_loadKey]) for the typo guard:
+  /// history first, raised by loads confirmed in this session so Undo or
+  /// a second entry of the exercise doesn't ask again.
+  late final Map<String, double> _bestKg;
+
   final _amountCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
 
@@ -116,6 +124,14 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
           now: _startedAt,
           maxAmount: exercise.isTimed ? _maxSeconds : _maxReps,
           maxWeightKg: WeightUnits.maxKg,
+        ),
+    };
+    _bestKg = {
+      for (final exercise in _exercises)
+        _loadKey(exercise): PersonalRecords.heaviestLoad(
+          widget.controller.sessions,
+          exercise.name,
+          timed: exercise.isTimed,
         ),
     };
     final first = _exercises.indexWhere((item) => item.sets > 0);
@@ -156,32 +172,19 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
 
   /// Validates the inputs; null (with field errors shown) when invalid.
   SetEntry? _readEntry() {
-    final amount = int.tryParse(_amountCtrl.text.trim());
-    final weightText = _weightCtrl.text.trim();
-    final weight = weightText.isEmpty
-        ? 0.0
-        : WeightUnits.parseDecimal(weightText);
-    final timed = _exercise.isTimed;
-    final maxAmount = timed ? _maxSeconds : _maxReps;
-    setState(() {
-      _amountError = amount == null || amount < 1
-          ? (timed ? 'Enter at least 1 second' : 'Enter at least 1 rep')
-          : amount > maxAmount
-          ? (timed ? 'Max $maxAmount seconds' : 'Max $maxAmount reps')
-          : null;
-      _weightError = weight == null || weight < 0
-          ? 'Enter 0 or more'
-          : weight > WeightUnits.maxInput(_metric)
-          ? 'Max ${WeightUnits.maxLabel(_metric)}'
-          : null;
-    });
-    if (_amountError != null || _weightError != null) return null;
-    return SetEntry(
-      amount: amount!,
-      weightKg: weightText == _prefillWeightText
-          ? _prefillWeightKg
-          : WeightUnits.toKg(weight!, _metric),
+    final amount = SetInput.amount(_amountCtrl.text, timed: _exercise.isTimed);
+    final weight = SetInput.weight(
+      _weightCtrl.text,
+      metric: _metric,
+      prefillText: _prefillWeightText,
+      prefillKg: _prefillWeightKg,
     );
+    setState(() {
+      _amountError = amount.error;
+      _weightError = weight.error;
+    });
+    if (amount.value == null || weight.kg == null) return null;
+    return SetEntry(amount: amount.value!, weightKg: weight.kg!);
   }
 
   (int, int)? _nextPosition() {
@@ -192,10 +195,60 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     return null;
   }
 
-  void _completeSet() {
+  Future<void> _completeSet() async {
     if (_done || _resting || _holding || _saving || _dialogOpen) return;
     final entry = _readEntry();
-    if (entry != null) _logSet(entry);
+    if (entry == null || !await _loadConfirmed(entry.weightKg)) return;
+    if (mounted) _logSet(entry);
+  }
+
+  /// Exercises match across entries of a workout by name and kind.
+  static String _loadKey(Exercise exercise) =>
+      '${exercise.name.trim().toLowerCase()}|${exercise.isTimed}';
+
+  /// Loads far above anything logged for this exercise are likely typos
+  /// (600 for 60; see [LoadMath.looksMistyped]) and need a confirmation.
+  /// The best is history plus every set of the exercise logged so far in
+  /// this workout, so a first-ever session is guarded from its first set.
+  /// A weight the app filled in itself (the suggestion) is never asked.
+  Future<bool> _loadConfirmed(double kg) async {
+    if (_weightCtrl.text.trim() == _prefillWeightText) return true;
+    final key = _loadKey(_exercise);
+    var best = _bestKg[key] ?? 0;
+    for (final MapEntry(key: index, value: sets) in _entries.entries) {
+      if (_loadKey(_exercises[index]) != key) continue;
+      for (final set in sets) {
+        best = math.max(best, set.weightKg);
+      }
+    }
+    if (!LoadMath.looksMistyped(kg, best)) return true;
+    final confirmed = await _whilePaused(
+      () async =>
+          await showAppDialog<bool>(
+            context: context,
+            title: 'Log ${_weightLabel(kg)}?',
+            body: Text(
+              'That is far above your best of ${_weightLabel(best)} on '
+              '${_exercise.name}. Check for a typo before logging it.',
+            ),
+            actions: [
+              FButton(
+                key: const Key('fix-heavy-set'),
+                variant: .ghost,
+                onPress: () => Navigator.pop(context, false),
+                child: const Text('Fix it'),
+              ),
+              FButton(
+                key: const Key('confirm-heavy-set'),
+                onPress: () => Navigator.pop(context, true),
+                child: const Text('Log it'),
+              ),
+            ],
+          ) ??
+          false,
+    );
+    if (confirmed) _bestKg[key] = math.max(best, kg);
+    return confirmed;
   }
 
   /// Records [entry] for the current set and moves to the next one right
@@ -259,10 +312,11 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     setState(() => _restEndsAt = null);
   }
 
-  void _startHold() {
+  Future<void> _startHold() async {
     if (_done || _resting || _holding || _saving || _dialogOpen) return;
     final entry = _readEntry();
-    if (entry == null) return;
+    if (entry == null || !await _loadConfirmed(entry.weightKg)) return;
+    if (!mounted) return;
     setState(() {
       _holdTarget = entry.amount;
       _holdWeightKg = entry.weightKg;

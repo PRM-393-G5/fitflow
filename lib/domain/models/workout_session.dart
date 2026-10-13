@@ -24,6 +24,18 @@ class WorkoutSession {
   /// Empty for sessions recorded before this field existed.
   final List<Exercise> exercises;
 
+  WorkoutSession copyWith({List<Exercise>? exercises, double? volumeKg}) =>
+      WorkoutSession(
+        id: id,
+        workoutId: workoutId,
+        workoutName: workoutName,
+        startedAt: startedAt,
+        completedAt: completedAt,
+        completedSets: completedSets,
+        volumeKg: volumeKg ?? this.volumeKg,
+        exercises: exercises ?? this.exercises,
+      );
+
   int get durationMinutes {
     final minutes = completedAt.difference(startedAt).inMinutes;
     return minutes < 1 ? 1 : minutes;

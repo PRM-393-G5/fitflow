@@ -9,6 +9,7 @@ import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../../domain/workout_stats.dart';
 import '../../../core/widgets/app_card.dart';
+import 'edit_session_page.dart';
 
 class SessionDetailPage extends StatelessWidget {
   const SessionDetailPage({required this.session, super.key});
@@ -18,6 +19,11 @@ class SessionDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    // Re-read by id so an edit shows here right away.
+    final session = controller.sessions.firstWhere(
+      (item) => item.id == this.session.id,
+      orElse: () => this.session,
+    );
     final unit = controller.useMetric ? 'kg' : 'lb';
     final volume = controller.useMetric
         ? session.volumeKg
@@ -31,6 +37,18 @@ class SessionDetailPage extends StatelessWidget {
           FHeaderAction.back(onPress: () => Navigator.of(context).pop()),
         ],
         suffixes: [
+          if (EditSessionPage.canEdit(session))
+            FHeaderAction(
+              key: const Key('edit-session'),
+              icon: const Icon(FLucideIcons.pencil),
+              semanticsLabel: 'Edit session',
+              onPress: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      EditSessionPage(session: session, controller: controller),
+                ),
+              ),
+            ),
           FHeaderAction(
             key: const Key('delete-session'),
             icon: const Icon(FLucideIcons.trash2),

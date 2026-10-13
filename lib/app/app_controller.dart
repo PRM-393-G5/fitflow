@@ -472,6 +472,8 @@ class AppController extends ChangeNotifier {
     jsonEncode(weightEntries.map((item) => item.toJson()).toList()),
   );
 
+  /// Saves [session], replacing any session with the same id — also how
+  /// an edited session is stored (and synced).
   Future<void> addSession(WorkoutSession session) async {
     await repository.saveSession(session);
     sessions = [session, ...sessions.where((item) => item.id != session.id)]

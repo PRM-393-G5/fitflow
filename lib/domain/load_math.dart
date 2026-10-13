@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 /// Comparisons and rounding on stored loads.
 ///
 /// Weights are stored in kg but may be typed in lb: 60 kg shows as
@@ -13,6 +15,12 @@ abstract final class LoadMath {
 
   /// Whether [kg] is heavier than [thanKg] by more than the tolerance.
   static bool heavier(double kg, double thanKg) => kg > thanKg + toleranceKg;
+
+  /// Whether [kg] is far above [bestKg] — over both 1.25× and +10 kg —
+  /// and so likely a typo (600 for 60) rather than a real jump. Never
+  /// without a best to compare with.
+  static bool looksMistyped(double kg, double bestKg) =>
+      bestKg > 0 && heavier(kg, math.max(bestKg * 1.25, bestKg + 10));
 
   /// Whether [a] and [b] are the same load within the tolerance.
   static bool same(double a, double b) => (a - b).abs() <= toleranceKg;

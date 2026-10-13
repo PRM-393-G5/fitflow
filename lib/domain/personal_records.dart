@@ -118,6 +118,36 @@ abstract final class PersonalRecords {
     return records;
   }
 
+  /// Heaviest load ever logged for an exercise — name matched ignoring
+  /// case and spaces, timed and rep work kept apart — counting sets with
+  /// reps (or seconds) and the plan load of sessions from before per-set
+  /// logging. [exceptSessionId] leaves one session out. 0 without any.
+  static double heaviestLoad(
+    Iterable<WorkoutSession> sessions,
+    String name, {
+    required bool timed,
+    String? exceptSessionId,
+  }) {
+    final wanted = name.trim().toLowerCase();
+    var heaviest = 0.0;
+    for (final session in sessions) {
+      if (session.id == exceptSessionId) continue;
+      for (final exercise in session.exercises) {
+        if (exercise.isTimed != timed ||
+            exercise.name.trim().toLowerCase() != wanted) {
+          continue;
+        }
+        if (exercise.performedSets.isEmpty) {
+          heaviest = math.max(heaviest, exercise.weightKg);
+        }
+        for (final set in exercise.performedSets) {
+          if (set.amount > 0) heaviest = math.max(heaviest, set.weightKg);
+        }
+      }
+    }
+    return heaviest;
+  }
+
   /// Exercises in [performed] that beat a previous record of the same
   /// kind in [sessions], each name once — by the same rules that build
   /// the records. A first-ever performance sets a baseline rather than a

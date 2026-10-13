@@ -580,8 +580,9 @@ void main() {
 
   Future<AppController> pumpWorkout(
     WidgetTester tester,
-    List<WorkoutSession> history,
-  ) async {
+    List<WorkoutSession> history, {
+    List<Exercise>? exercises,
+  }) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
     final controller = AppController(
@@ -608,7 +609,7 @@ void main() {
             level: 'Beginner',
             category: 'Strength',
             description: '',
-            exercises: [row],
+            exercises: exercises ?? [row],
           ),
           controller: controller,
           clock: () => today,
@@ -666,6 +667,108 @@ void main() {
       find.text('Top of the rep range twice in a row — try 13 kg today.'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('a load far above the best asks before logging', (tester) async {
+    final controller = await pumpWorkout(tester, [
+      done(day(1), row, sets(3, 10, 60)),
+    ]);
+
+    await tester.enterText(find.byKey(const Key('set-weight')), '600');
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+    expect(find.text('Log 600 kg?'), findsOneWidget);
+
+    // "Fix it" logs nothing and keeps the set open.
+    await tester.tap(find.byKey(const Key('fix-heavy-set')));
+    await tester.pumpAndSettle();
+    expect(find.text('Set 1 of 3'), findsOneWidget);
+
+    // A real jump within 1.25× / +10 kg of the best logs straight away.
+    await tester.enterText(find.byKey(const Key('set-weight')), '70');
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('skip-rest')));
+    await tester.pump();
+    expect(find.text('Set 2 of 3'), findsOneWidget);
+
+    // Confirming logs the heavy set as typed; the next set, prefilled
+    // with it, is not asked again.
+    await tester.enterText(find.byKey(const Key('set-weight')), '200');
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-heavy-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('skip-rest')));
+    await tester.pump();
+    expect(find.text('Set 3 of 3'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+    expect(find.text('Log 200 kg?'), findsNothing);
+    await tester.tap(find.text('Finish').last);
+    await tester.pumpAndSettle();
+
+    final saved = controller.sessions.first.exercises.single.performedSets;
+    expect(saved.map((set) => set.weightKg), [70, 200, 200]);
+  });
+
+  testWidgets('a first-ever session is guarded by its own sets', (
+    tester,
+  ) async {
+    await pumpWorkout(tester, const []);
+
+    await tester.enterText(find.byKey(const Key('set-weight')), '60');
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('skip-rest')));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('set-weight')), '600');
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Log 600 kg?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('fix-heavy-set')));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets("the app's own suggestion is never asked about", (tester) async {
+    // 30-rep sets at 50 kg convert to 75 kg for today's 10 reps — far
+    // above 50 kg, but the app filled it in, so it is not a typo.
+    await pumpWorkout(tester, [
+      done(day(1), plan('Dumbbell Row', reps: 30, kg: 50), sets(3, 30, 50)),
+    ]);
+
+    expect(find.byKey(const Key('progression-hint')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('kg?'), findsNothing);
+    await tester.tap(find.byKey(const Key('skip-rest')));
+    await tester.pump();
+    expect(find.text('Set 2 of 3'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('starting a weighted hold is guarded too', (tester) async {
+    final plank = plan('Plank', sets: 2, seconds: 30, kg: 10);
+    await pumpWorkout(
+      tester,
+      [done(day(1), plank, sets(2, 30, 10))],
+      exercises: [plank],
+    );
+
+    await tester.enterText(find.byKey(const Key('set-weight')), '100');
+    await tester.tap(find.byKey(const Key('start-hold')));
+    await tester.pumpAndSettle();
+    expect(find.text('Log 100 kg?'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('fix-heavy-set')));
+    await tester.pumpAndSettle();
+    // No hold started: the button is still there.
+    expect(find.byKey(const Key('start-hold')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
   });
 
   testWidgets('last-time label names bodyweight sets', (tester) async {
