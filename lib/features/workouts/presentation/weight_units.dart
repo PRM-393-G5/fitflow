@@ -1,7 +1,9 @@
+import '../../../domain/load_math.dart';
+
 /// Weight entry in the user's unit system. Weights are always stored in kg;
 /// forms show and accept kg or lb depending on `AppController.useMetric`.
 abstract final class WeightUnits {
-  static const lbPerKg = 2.20462;
+  static const lbPerKg = LoadMath.lbPerKg;
 
   /// Heaviest weight any form accepts, in kg. Unbounded input (e.g. 1e308)
   /// would overflow rounding and JSON downstream.

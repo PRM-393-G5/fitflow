@@ -675,6 +675,16 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     return timed ? '$amounts$load' : '$amounts reps$load';
   }
 
+  /// "Last time", or "Last 12-rep session" when alternating plans put a
+  /// session with another target after the one the hint follows.
+  String _lastLabel(ProgressionHint hint) {
+    if (!hint.otherTargetSince) return 'Last time';
+    final target = _exercise.isTimed
+        ? '${_exercise.durationSeconds}s'
+        : '${_exercise.reps}-rep';
+    return 'Last $target session';
+  }
+
   /// What today's suggestion is and why; null when there is nothing to
   /// add to "Last time" (mobility and cardio work).
   String? _hintLabel(ProgressionHint hint) {
@@ -696,6 +706,9 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         'Missed reps three times in a row — reset to $load and build back.',
       ProgressionReason.comeback =>
         'First time in ${hint.weeksAway} weeks — start lighter at $load.',
+      ProgressionReason.newTarget =>
+        'New target — ${load == null ? amount : '$amount @ $load'} '
+            'matches last time\'s effort.',
       ProgressionReason.capped when timed =>
         'Strong hold — try a harder variation to keep progressing.',
       ProgressionReason.capped when load == null =>
@@ -708,7 +721,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   List<Widget> _buildHint(BuildContext context, ProgressionHint hint) => [
     const SizedBox(height: AppSpacing.xs),
     Text(
-      'Last time: ${_lastSetsLabel(hint.lastSets)}',
+      '${_lastLabel(hint)}: ${_lastSetsLabel(hint.lastSets)}',
       key: const Key('last-time'),
       textAlign: TextAlign.center,
       style: TextStyle(color: context.theme.colors.mutedForeground),

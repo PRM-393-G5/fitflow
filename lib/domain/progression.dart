@@ -25,6 +25,10 @@ enum ProgressionReason {
   /// First session after a long break: lighter for a session.
   comeback,
 
+  /// The plan's reps (or hold) changed: the last load converted to the
+  /// new target with Epley.
+  newTarget,
+
   /// Already at the cap for reps, hold time or the form's max load.
   capped,
 
@@ -41,6 +45,7 @@ class ProgressionHint {
     required this.weightKg,
     required this.reason,
     this.weeksAway = 0,
+    this.otherTargetSince = false,
   });
 
   /// Sets logged for the exercise in its most recent comparable session.
@@ -58,6 +63,10 @@ class ProgressionHint {
   /// Whole weeks since the exercise was last done, for
   /// [ProgressionReason.comeback].
   final int weeksAway;
+
+  /// True when [lastSets] is not the latest session of the exercise: a
+  /// session with another target came after it (alternating plans).
+  final bool otherTargetSince;
 
   /// True when today's suggestion is one step harder than last time.
   bool get stepUp => reason == ProgressionReason.stepUp;
@@ -94,9 +103,9 @@ enum _Outcome { top, success, incomplete, failed }
 ///   cap the user is pointed to a harder variation.
 /// - Mobility and cardio plans repeat last time's work.
 ///
-/// The working load of a session is the most common logged load (ties go
-/// to the heavier), so warm-up sets and drop sets don't count as the
-/// load that was trained.
+/// The working load of a session is its heaviest logged load; lighter
+/// warm-up or drop sets leave fewer working sets, which repeats the load
+/// instead of progressing or cutting it. Day counts are calendar days.
 abstract final class Progression {
   /// Reps above the plan's target that mark the top of the range.
   static const repRange = 2;
@@ -109,10 +118,12 @@ abstract final class Progression {
   static const breakDays = 28;
   static const longBreakDays = 84;
 
-  /// Muscle groups whose lifts move enough load for 5% steps.
-  static const lowerBody = {'Legs', 'Glutes', 'Calves', 'Hips', 'Full body'};
+  /// Muscle groups whose lifts move enough load for 5% steps. "Full
+  /// body" is the builder's default, so it gets the cautious 2.5%.
+  static const lowerBody = {'Legs', 'Glutes', 'Calves', 'Hips'};
 
-  /// Plan categories that are not progressively loaded.
+  /// Plan categories whose bodyweight and timed work (stretches, HIIT
+  /// intervals) is repeated rather than loaded up. Lifts still progress.
   static const maintainCategories = {'Mobility', 'Cardio'};
 
   /// The hint for performing [planned] today, from the newest session that
@@ -131,20 +142,19 @@ abstract final class Progression {
     int maxAmount = 1 << 30,
     double maxWeightKg = double.infinity,
   }) {
-    final history = _history(sessions, planned);
-    if (history.isEmpty) return null;
+    final today = now ?? DateTime.now();
     final target = _target(planned);
+    final history = _history(sessions, planned, target);
+    if (history.isEmpty) return null;
     final sameTarget = [
       for (final item in history)
         if (_target(item.exercise) == target) item,
     ];
-    final pool = sameTarget.isNotEmpty ? sameTarget : history;
-    final last = pool.first;
+    final newTarget = sameTarget.isEmpty;
+    final last = newTarget ? history.first : sameTarget.first;
     final sets = last.sets;
     final lowest = sets.map((set) => set.amount).reduce(math.min);
-    final daysAway = (now ?? DateTime.now())
-        .difference(history.first.date)
-        .inDays;
+    final daysAway = _days(history.first.date, today);
 
     ProgressionHint hint(
       ProgressionReason reason, {
@@ -157,15 +167,18 @@ abstract final class Progression {
       weightKg: math.min(weightKg, maxWeightKg),
       reason: reason,
       weeksAway: daysAway ~/ 7,
+      otherTargetSince: !identical(last, history.first),
     );
 
     final topWeight = sets.map((set) => set.weightKg).reduce(math.max);
     final load = topWeight > 0 ? topWeight : planned.weightKg;
+    final lift = !planned.isTimed && load > 0;
     // Without a step up, repeat what every set reached — but never
     // suggest less than the plan.
     final repeatAmount = math.max(lowest, target);
 
-    if (maintainCategories.contains(category)) {
+    if (planned.muscleGroup == 'Cardio' ||
+        (!lift && maintainCategories.contains(category))) {
       return hint(
         ProgressionReason.maintain,
         amount: repeatAmount,
@@ -173,7 +186,7 @@ abstract final class Progression {
       );
     }
 
-    if (planned.isTimed || load <= 0) {
+    if (!lift) {
       // A lighter set blocks the step up, as for lifts.
       final heldWeight = sets.every(
         (set) => !LoadMath.heavier(topWeight, set.weightKg),
@@ -195,8 +208,7 @@ abstract final class Progression {
           : hint(ProgressionReason.capped, amount: lowest, weightKg: load);
     }
 
-    final working = _workingWeight(sets);
-    if (working <= 0) {
+    if (topWeight <= 0) {
       // Sets logged without weight on a loaded plan read as a blank
       // field, not a switch to bodyweight: suggest the plan load again.
       return hint(
@@ -205,22 +217,30 @@ abstract final class Progression {
         weightKg: planned.weightKg,
       );
     }
+    final working = topWeight;
+    final workingReps = [
+      for (final set in sets)
+        if (LoadMath.same(set.weightKg, working)) set.amount,
+    ];
+    final lastOutcome = _outcome(sets, working, target, planned.sets);
 
-    // Consecutive sessions, newest first, at this load on this plan with
-    // no break in between.
+    // Consecutive same-plan sessions at this load, newest first, with no
+    // break between them — or between the newest and today, so an old
+    // run never steps up a load that hasn't been lifted for weeks.
     var topRun = 0;
     var failRun = 0;
     var countingTop = true;
     var countingFail = true;
-    DateTime? newer;
-    for (final item in pool) {
-      if (!LoadMath.same(_workingWeight(item.sets), working) ||
-          _target(item.exercise) != target ||
-          item.exercise.sets != planned.sets ||
-          (newer != null && newer.difference(item.date).inDays > breakDays)) {
+    var newer = today;
+    for (final item in sameTarget) {
+      if (item.exercise.sets != planned.sets ||
+          !LoadMath.same(_heaviest(item.sets), working) ||
+          _days(item.date, newer) > breakDays) {
         break;
       }
-      final outcome = _outcome(item.sets, working, target, planned.sets);
+      final outcome = identical(item, last)
+          ? lastOutcome
+          : _outcome(item.sets, working, target, planned.sets);
       countingTop = countingTop && outcome == _Outcome.top;
       countingFail = countingFail && outcome == _Outcome.failed;
       if (countingTop) topRun++;
@@ -228,6 +248,17 @@ abstract final class Progression {
       if (!countingTop && !countingFail) break;
       newer = item.date;
     }
+
+    // A changed target converts the last load with Epley, e.g. 100 kg × 5
+    // → 92.5 kg × 8, instead of judging old sets against the new target.
+    final base = newTarget
+        ? LoadMath.round(
+            working *
+                (1 + workingReps.reduce(math.min) / 30) /
+                (1 + target / 30),
+            metric: metric,
+          )
+        : working;
 
     final comebackCut = daysAway > longBreakDays
         ? 0.2
@@ -238,19 +269,22 @@ abstract final class Progression {
     if (comebackCut > 0 || deloadCut > 0) {
       final comeback = comebackCut >= deloadCut;
       final reduced = LoadMath.reduce(
-        working,
+        base,
         comeback ? comebackCut : deloadCut,
         metric: metric,
       );
-      return hint(
-        reduced == null
-            ? ProgressionReason.repeat
-            : comeback
-            ? ProgressionReason.comeback
-            : ProgressionReason.deload,
-        amount: target,
-        weightKg: reduced ?? working,
-      );
+      // Too light to cut: carry on as if no cut applied.
+      if (reduced != null) {
+        return hint(
+          comeback ? ProgressionReason.comeback : ProgressionReason.deload,
+          amount: target,
+          weightKg: reduced,
+        );
+      }
+    }
+
+    if (newTarget) {
+      return hint(ProgressionReason.newTarget, amount: target, weightKg: base);
     }
 
     if (topRun >= 2) {
@@ -264,15 +298,13 @@ abstract final class Progression {
           : hint(ProgressionReason.capped, amount: target, weightKg: working);
     }
 
-    final outcome = _outcome(sets, working, target, planned.sets);
-    if (outcome == _Outcome.top || outcome == _Outcome.success) {
-      final workingLowest = sets
-          .where((set) => LoadMath.same(set.weightKg, working))
-          .map((set) => set.amount)
-          .reduce(math.min);
+    if (lastOutcome == _Outcome.top || lastOutcome == _Outcome.success) {
       return hint(
         ProgressionReason.building,
-        amount: (workingLowest + 1).clamp(target, target + repRange),
+        amount: (workingReps.reduce(math.min) + 1).clamp(
+          target,
+          target + repRange,
+        ),
         weightKg: working,
       );
     }
@@ -280,17 +312,19 @@ abstract final class Progression {
   }
 
   /// Sessions that did the exercise, newest first; when it was done twice
-  /// in one session, the entry with more sets.
+  /// in one session, the entry planned with [target] (then the one with
+  /// more sets), so a top set and its back-off sets keep separate hints.
   static List<_Performance> _history(
     Iterable<WorkoutSession> sessions,
     Exercise planned,
+    int target,
   ) {
     final name = _normalize(planned.name);
     final ordered = WorkoutStats.training(sessions).toList()
       ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
     return [
       for (final session in ordered)
-        ?_bestEntry(session, name, planned.isTimed),
+        ?_bestEntry(session, name, planned.isTimed, target),
     ];
   }
 
@@ -298,8 +332,10 @@ abstract final class Progression {
     WorkoutSession session,
     String name,
     bool timed,
+    int target,
   ) {
     _Performance? best;
+    var bestMatches = false;
     for (final exercise in session.exercises) {
       if (_normalize(exercise.name) != name || exercise.isTimed != timed) {
         continue;
@@ -308,31 +344,28 @@ abstract final class Progression {
         for (final set in exercise.performedSets)
           if (set.amount > 0) set,
       ];
-      if (sets.isNotEmpty && (best == null || sets.length > best.sets.length)) {
+      if (sets.isEmpty) continue;
+      final matches = _target(exercise) == target;
+      if (best == null ||
+          (matches && !bestMatches) ||
+          (matches == bestMatches && sets.length > best.sets.length)) {
         best = (date: session.completedAt, exercise: exercise, sets: sets);
+        bestMatches = matches;
       }
     }
     return best;
   }
 
-  /// The most common load among loaded sets (within the tolerance); ties
-  /// go to the heavier. 0 when no set has a load.
-  static double _workingWeight(List<SetEntry> sets) {
-    var best = 0.0;
-    var bestCount = 0;
-    for (final candidate in sets) {
-      if (candidate.weightKg <= 0) continue;
-      final count = sets
-          .where((set) => LoadMath.same(set.weightKg, candidate.weightKg))
-          .length;
-      if (count > bestCount ||
-          (count == bestCount && candidate.weightKg > best)) {
-        best = candidate.weightKg;
-        bestCount = count;
-      }
-    }
-    return best;
-  }
+  static double _heaviest(List<SetEntry> sets) =>
+      sets.map((set) => set.weightKg).reduce(math.max);
+
+  /// Whole calendar days from [from] to [to], independent of the time of
+  /// day and DST shifts.
+  static int _days(DateTime from, DateTime to) => DateTime.utc(
+    to.year,
+    to.month,
+    to.day,
+  ).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
 
   /// A miss on any working set is a failure; fewer working sets than
   /// planned is only incomplete.

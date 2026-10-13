@@ -40,18 +40,24 @@ abstract final class LoadMath {
     return next / perKg;
   }
 
-  /// [kg] cut by [fraction], rounded down to the step grid; null when the
-  /// load is too light to cut (two steps or less) or rounding would leave
-  /// it unchanged.
+  /// [kg] cut by [fraction], rounded to the nearest load on the step grid
+  /// (11 kg − 10% → 10 kg, not 9); null when the load is too light to cut
+  /// (two steps or less) or rounding would leave it unchanged.
   static double? reduce(double kg, double fraction, {required bool metric}) {
     final perKg = metric ? 1.0 : lbPerKg;
     final shown = kg * perKg;
     if (shown <= 2 * step(shown, metric: metric)) return null;
     final target = shown * (1 - fraction);
-    final unit = step(target, metric: metric);
-    final next = (target / unit + 1e-9).floor() * unit;
+    final next = _snap(target, step(target, metric: metric));
     if (next <= 0 || next >= shown - toleranceKg * perKg) return null;
     return next / perKg;
+  }
+
+  /// [kg] rounded to the nearest load on the step grid of the user's unit.
+  static double round(double kg, {required bool metric}) {
+    final perKg = metric ? 1.0 : lbPerKg;
+    final shown = kg * perKg;
+    return _snap(shown, step(shown, metric: metric)) / perKg;
   }
 
   static int _atLeastOne(int steps) => steps < 1 ? 1 : steps;

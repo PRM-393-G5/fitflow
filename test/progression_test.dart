@@ -210,18 +210,24 @@ void main() {
       expect(result.weightKg, 2);
     });
 
-    test('a changed plan does not turn past successes into misses', () {
+    test('a changed target converts the last load with Epley', () {
       final eight = plan('Squat', reps: 8, kg: 50, muscle: 'Legs');
       final twelve = plan('Squat', reps: 12, kg: 50, muscle: 'Legs');
-      final result = hint([
+      final five = plan('Squat', reps: 5, kg: 100, muscle: 'Legs');
+      final moreReps = hint([
         done(day(8), eight, sets(3, 8, 50)),
         done(day(5), eight, sets(3, 8, 50)),
         done(day(1), eight, sets(3, 8, 50)),
       ], twelve);
+      final fewerToMore = hint([
+        done(day(8), five, sets(3, 5, 100)),
+      ], plan('Squat', reps: 8, kg: 100, muscle: 'Legs'));
 
-      expect(result.reason, ProgressionReason.repeat);
-      expect(result.weightKg, 50);
-      expect(result.amount, 12);
+      // Past successes are not judged against the new target (no deload).
+      expect(moreReps.reason, ProgressionReason.newTarget);
+      expect(moreReps.weightKg, 45); // 50 × (1 + 8/30) / (1 + 12/30)
+      expect(moreReps.amount, 12);
+      expect(fewerToMore.weightKg, 92.5); // 100 × 5 → 92.1 kg × 8
     });
 
     test('alternating plans follow the session with the same reps', () {
@@ -233,8 +239,91 @@ void main() {
       ], light);
 
       expect(result.lastDate, day(5));
+      expect(result.otherTargetSince, isTrue);
       expect(result.weightKg, 50);
       expect(result.reason, ProgressionReason.building);
+    });
+
+    test('the same exercise planned twice keeps separate hints', () {
+      final heavy = plan('Bench', reps: 5, kg: 80);
+      final light = plan('Bench', reps: 12, kg: 50);
+      WorkoutSession both(DateTime at) => WorkoutSession(
+        id: at.toIso8601String(),
+        workoutId: 'workout',
+        workoutName: 'Workout',
+        startedAt: at,
+        completedAt: at,
+        completedSets: 6,
+        volumeKg: 0,
+        exercises: [
+          heavy.copyWith(performedSets: sets(3, 5, 80)),
+          light.copyWith(performedSets: sets(3, 12, 50)),
+        ],
+      );
+      final history = [both(day(8)), both(day(4))];
+
+      expect(hint(history, light).weightKg, 50);
+      expect(hint(history, light).reason, ProgressionReason.building);
+      expect(hint(history, heavy).weightKg, 80);
+      expect(hint(history, heavy).otherTargetSince, isFalse);
+    });
+
+    test('lighter drop sets keep the top load', () {
+      final press = plan('Press', kg: 50);
+      final result = hint([
+        done(day(1), press, const [
+          SetEntry(amount: 10, weightKg: 50),
+          SetEntry(amount: 8, weightKg: 40),
+          SetEntry(amount: 8, weightKg: 40),
+        ]),
+      ], press);
+
+      expect(result.weightKg, 50);
+      expect(result.reason, ProgressionReason.repeat);
+    });
+
+    test('an old run never steps up a load not lifted for weeks', () {
+      final light = plan('Press', reps: 12, kg: 25);
+      final heavy = plan('Press', reps: 5, kg: 40);
+      final result = hint(
+        [
+          done(DateTime(2026, 10, 8), heavy, sets(3, 5, 40)),
+          done(DateTime(2026, 5, 4), light, sets(3, 14, 25)),
+          done(DateTime(2026, 5, 1), light, sets(3, 14, 25)),
+        ],
+        light,
+        now: DateTime(2026, 10, 10),
+      );
+
+      // Trained recently (no comeback), but the 2-for-2 run is stale.
+      expect(result.reason, ProgressionReason.building);
+      expect(result.weightKg, 25);
+    });
+
+    test('breaks count calendar days, not 24-hour periods', () {
+      final squat = plan('Squat', kg: 50, muscle: 'Legs');
+      final result = hint(
+        [done(DateTime(2026, 9, 1, 20), squat, sets(3, 10, 50))],
+        squat,
+        now: DateTime(2026, 9, 30, 8), // 29 days later, under 29 × 24 h
+      );
+
+      expect(result.reason, ProgressionReason.comeback);
+    });
+
+    test('a break on a load too light to cut keeps progressing', () {
+      final curl = plan('Curl', kg: 2);
+      final result = hint(
+        [
+          done(day(4), curl, sets(3, 12, 2)),
+          done(day(1), curl, sets(3, 12, 2)),
+        ],
+        curl,
+        now: day(4).add(const Duration(days: 30)),
+      );
+
+      expect(result.reason, ProgressionReason.building);
+      expect(result.weightKg, 2);
     });
 
     test('a break of over four weeks starts 10% lighter, 20% after 12', () {
@@ -421,6 +510,28 @@ void main() {
       expect(result.amount, 45);
       expect(result.weightKg, 10);
     });
+  });
+
+  test('lifts progress in any plan; cardio moves never load up', () {
+    final swing = plan('Kettlebell Swing', reps: 5, kg: 16, muscle: 'Legs');
+    final jacks = plan('Jumping Jacks', reps: 30, muscle: 'Cardio');
+
+    final lift = hint(
+      [
+        done(day(4), swing, sets(3, 7, 16)),
+        done(day(1), swing, sets(3, 7, 16)),
+      ],
+      swing,
+      category: 'Cardio',
+    );
+    final cardioMove = hint(
+      [done(day(1), jacks, sets(3, 30))],
+      jacks,
+      category: 'Strength',
+    );
+
+    expect(lift.reason, ProgressionReason.stepUp);
+    expect(cardioMove.reason, ProgressionReason.maintain);
   });
 
   test('mobility and cardio plans repeat last time without loading up', () {
