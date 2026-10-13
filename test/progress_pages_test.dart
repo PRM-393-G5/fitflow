@@ -247,17 +247,37 @@ void main() {
               id: 'bench',
               name: 'Bench Press',
               muscleGroup: 'Chest',
-              sets: 3,
+              sets: 4,
               reps: 10,
               performedSets: [
                 SetEntry(amount: 10, weightKg: 60),
                 SetEntry(amount: 10, weightKg: 600), // meant 60
                 SetEntry(amount: 10, weightKg: 60),
+                // An old out-of-range value that must not block saving.
+                SetEntry(amount: 0, weightKg: 60),
               ],
             ),
           ],
         ),
-        session(3, workoutId: 'form-check', name: 'Squat Form Check (9 reps)'),
+        WorkoutSession(
+          id: 'form',
+          workoutId: 'form-check',
+          workoutName: 'Squat Form Check (9 reps)',
+          startedAt: day.subtract(const Duration(days: 2, minutes: 2)),
+          completedAt: day.subtract(const Duration(days: 2)),
+          completedSets: 1,
+          volumeKg: 0,
+          exercises: const [
+            Exercise(
+              id: 'squat',
+              name: 'Squat',
+              muscleGroup: 'Legs',
+              sets: 1,
+              reps: 9,
+              performedSets: [SetEntry(amount: 9)],
+            ),
+          ],
+        ),
       ],
     );
 
@@ -275,10 +295,23 @@ void main() {
     await tester.enterText(find.byKey(const Key('edit-amount-0-1')), '0');
     await tester.tap(find.byKey(const Key('save-session-edit')));
     await tester.pumpAndSettle();
-    expect(find.text('At least 1'), findsOneWidget);
+    expect(find.text('Enter at least 1 rep'), findsOneWidget);
 
+    // A new far-heavier load asks first; "Fix it" saves nothing.
     await tester.enterText(find.byKey(const Key('edit-amount-0-1')), '10');
     await tester.enterText(find.byKey(const Key('edit-weight-0-1')), '60');
+    await tester.enterText(find.byKey(const Key('edit-weight-0-2')), '900');
+    await tester.tap(find.byKey(const Key('save-session-edit')));
+    await tester.pumpAndSettle();
+    expect(find.text('Save 900 kg?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('fix-heavy-edit')));
+    await tester.pumpAndSettle();
+    expect(
+      controller.sessions.firstWhere((item) => item.id == 'typo').volumeKg,
+      7200,
+    );
+
+    await tester.enterText(find.byKey(const Key('edit-weight-0-2')), '60');
     await tester.tap(find.byKey(const Key('save-session-edit')));
     await tester.pumpAndSettle();
 
@@ -287,13 +320,15 @@ void main() {
       60,
       60,
       60,
+      60,
     ]);
+    expect(saved.exercises.single.performedSets.last.amount, 0); // untouched
     expect(saved.volumeKg, 1800);
     // Back on the detail page, which shows the corrected session.
     expect(find.text('Session detail'), findsOneWidget);
     expect(find.text('1800 kg'), findsOneWidget);
 
-    // Form checks have nothing to edit.
+    // Form checks store a set but have nothing to edit.
     await tester.tap(find.byType(FHeaderAction).first);
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(

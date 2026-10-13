@@ -16,6 +16,7 @@ import '../../../domain/personal_records.dart';
 import '../../../domain/progression.dart';
 import '../../squat_form/domain/squat_analyzer.dart';
 import '../../squat_form/presentation/squat_form_check_page.dart';
+import 'set_input.dart';
 import 'weight_units.dart';
 
 /// Opens the camera form check for one set; resolves to the counted reps
@@ -48,8 +49,8 @@ class ActiveWorkoutPage extends StatefulWidget {
 }
 
 class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
-  static const _maxReps = 1000;
-  static const _maxSeconds = 3600;
+  static const _maxReps = SetInput.maxReps;
+  static const _maxSeconds = SetInput.maxSeconds;
 
   late final DateTime _startedAt;
   int _exerciseIndex = 0;
@@ -85,9 +86,10 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   /// exercise's first set.
   late final Map<int, ProgressionHint> _hints;
 
-  /// Heaviest load ever logged per exercise index, for the typo guard;
-  /// absent for exercises without loaded history.
-  late final Map<int, double> _historyBestKg;
+  /// Heaviest load per exercise (see [_loadKey]) for the typo guard:
+  /// history first, raised by loads confirmed in this session so Undo or
+  /// a second entry of the exercise doesn't ask again.
+  late final Map<String, double> _bestKg;
 
   final _amountCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
@@ -124,20 +126,13 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
           maxWeightKg: WeightUnits.maxKg,
         ),
     };
-    final heaviest = <String, double>{};
-    for (final session in widget.controller.sessions) {
-      for (final exercise in session.exercises) {
-        final name = exercise.name.trim().toLowerCase();
-        for (final set in exercise.performedSets) {
-          if (set.weightKg > (heaviest[name] ?? 0)) {
-            heaviest[name] = set.weightKg;
-          }
-        }
-      }
-    }
-    _historyBestKg = {
-      for (final (index, exercise) in _exercises.indexed)
-        index: ?heaviest[exercise.name.trim().toLowerCase()],
+    _bestKg = {
+      for (final exercise in _exercises)
+        _loadKey(exercise): PersonalRecords.heaviestLoad(
+          widget.controller.sessions,
+          exercise.name,
+          timed: exercise.isTimed,
+        ),
     };
     final first = _exercises.indexWhere((item) => item.sets > 0);
     if (first >= 0) {
@@ -177,32 +172,19 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
 
   /// Validates the inputs; null (with field errors shown) when invalid.
   SetEntry? _readEntry() {
-    final amount = int.tryParse(_amountCtrl.text.trim());
-    final weightText = _weightCtrl.text.trim();
-    final weight = weightText.isEmpty
-        ? 0.0
-        : WeightUnits.parseDecimal(weightText);
-    final timed = _exercise.isTimed;
-    final maxAmount = timed ? _maxSeconds : _maxReps;
-    setState(() {
-      _amountError = amount == null || amount < 1
-          ? (timed ? 'Enter at least 1 second' : 'Enter at least 1 rep')
-          : amount > maxAmount
-          ? (timed ? 'Max $maxAmount seconds' : 'Max $maxAmount reps')
-          : null;
-      _weightError = weight == null || weight < 0
-          ? 'Enter 0 or more'
-          : weight > WeightUnits.maxInput(_metric)
-          ? 'Max ${WeightUnits.maxLabel(_metric)}'
-          : null;
-    });
-    if (_amountError != null || _weightError != null) return null;
-    return SetEntry(
-      amount: amount!,
-      weightKg: weightText == _prefillWeightText
-          ? _prefillWeightKg
-          : WeightUnits.toKg(weight!, _metric),
+    final amount = SetInput.amount(_amountCtrl.text, timed: _exercise.isTimed);
+    final weight = SetInput.weight(
+      _weightCtrl.text,
+      metric: _metric,
+      prefillText: _prefillWeightText,
+      prefillKg: _prefillWeightKg,
     );
+    setState(() {
+      _amountError = amount.error;
+      _weightError = weight.error;
+    });
+    if (amount.value == null || weight.kg == null) return null;
+    return SetEntry(amount: amount.value!, weightKg: weight.kg!);
   }
 
   (int, int)? _nextPosition() {
@@ -220,19 +202,27 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     if (mounted) _logSet(entry);
   }
 
+  /// Exercises match across entries of a workout by name and kind.
+  static String _loadKey(Exercise exercise) =>
+      '${exercise.name.trim().toLowerCase()}|${exercise.isTimed}';
+
   /// Loads far above anything logged for this exercise are likely typos
-  /// (600 for 60): above both 1.25× and +10 kg over the best — of history
-  /// and of this session's sets — they need a confirmation. Exercises
-  /// without loaded history are not checked.
+  /// (600 for 60; see [LoadMath.looksMistyped]) and need a confirmation.
+  /// The best is history plus every set of the exercise logged so far in
+  /// this workout, so a first-ever session is guarded from its first set.
+  /// A weight the app filled in itself (the suggestion) is never asked.
   Future<bool> _loadConfirmed(double kg) async {
-    final history = _historyBestKg[_exerciseIndex];
-    if (history == null) return true;
-    final best = (_entries[_exerciseIndex] ?? const <SetEntry>[]).fold(
-      history,
-      (best, set) => math.max(best, set.weightKg),
-    );
-    if (!LoadMath.heavier(kg, math.max(best * 1.25, best + 10))) return true;
-    return _whilePaused(
+    if (_weightCtrl.text.trim() == _prefillWeightText) return true;
+    final key = _loadKey(_exercise);
+    var best = _bestKg[key] ?? 0;
+    for (final MapEntry(key: index, value: sets) in _entries.entries) {
+      if (_loadKey(_exercises[index]) != key) continue;
+      for (final set in sets) {
+        best = math.max(best, set.weightKg);
+      }
+    }
+    if (!LoadMath.looksMistyped(kg, best)) return true;
+    final confirmed = await _whilePaused(
       () async =>
           await showAppDialog<bool>(
             context: context,
@@ -257,6 +247,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
           ) ??
           false,
     );
+    if (confirmed) _bestKg[key] = math.max(best, kg);
+    return confirmed;
   }
 
   /// Records [entry] for the current set and moves to the next one right

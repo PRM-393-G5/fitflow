@@ -37,7 +37,7 @@ class SessionDetailPage extends StatelessWidget {
           FHeaderAction.back(onPress: () => Navigator.of(context).pop()),
         ],
         suffixes: [
-          if (formCheck == null && EditSessionPage.canEdit(session))
+          if (EditSessionPage.canEdit(session))
             FHeaderAction(
               key: const Key('edit-session'),
               icon: const Icon(FLucideIcons.pencil),

@@ -1,10 +1,17 @@
+import 'dart:math' as math;
+
 import 'package:forui/forui.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../app/app_controller.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_dialog.dart';
+import '../../../domain/load_math.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout_session.dart';
+import '../../../domain/personal_records.dart';
+import '../../../domain/workout_stats.dart';
+import '../../workouts/presentation/set_input.dart';
 import '../../workouts/presentation/weight_units.dart';
 
 /// Fixes the reps (or seconds) and weight of each logged set of a past
@@ -21,31 +28,38 @@ class EditSessionPage extends StatefulWidget {
   final WorkoutSession session;
   final AppController controller;
 
-  /// Whether [session] has logged sets to edit (form checks and sessions
-  /// from before per-set logging don't).
+  /// Whether [session] has logged sets to edit. Form checks don't: their
+  /// count is part of the result, not a set to correct; nor do sessions
+  /// from before per-set logging.
   static bool canEdit(WorkoutSession session) =>
+      session.workoutId != WorkoutStats.formCheckId &&
       session.exercises.any((exercise) => exercise.performedSets.isNotEmpty);
 
   @override
   State<EditSessionPage> createState() => _EditSessionPageState();
 }
 
-/// The fields of one logged set.
+/// The fields of one logged set, and the texts they started from.
 class _SetFields {
   _SetFields(this.entry, bool metric)
-    : prefillWeight = entry.weightKg > 0
+    : amountText = '${entry.amount}',
+      weightText = entry.weightKg > 0
           ? WeightUnits.format(entry.weightKg, metric)
-          : '',
-      amount = TextEditingController(text: '${entry.amount}') {
-    weight = TextEditingController(text: prefillWeight);
+          : '' {
+    amount = TextEditingController(text: amountText);
+    weight = TextEditingController(text: weightText);
   }
 
   final SetEntry entry;
-  final String prefillWeight;
-  final TextEditingController amount;
+  final String amountText;
+  final String weightText;
+  late final TextEditingController amount;
   late final TextEditingController weight;
   String? amountError;
   String? weightError;
+
+  bool get amountChanged => amount.text.trim() != amountText;
+  bool get weightChanged => weight.text.trim() != weightText;
 
   void dispose() {
     amount.dispose();
@@ -53,10 +67,15 @@ class _SetFields {
   }
 }
 
-class _EditSessionPageState extends State<EditSessionPage> {
-  static const _maxReps = 1000;
-  static const _maxSeconds = 3600;
+/// One validated change: set [setIndex] of exercise [exerciseIndex].
+typedef _Change = ({
+  int exerciseIndex,
+  int setIndex,
+  int? amount,
+  double? weightKg,
+});
 
+class _EditSessionPageState extends State<EditSessionPage> {
   late final bool _metric = widget.controller.useMetric;
   late final List<List<_SetFields>> _fields = [
     for (final exercise in widget.session.exercises)
@@ -74,63 +93,141 @@ class _EditSessionPageState extends State<EditSessionPage> {
     super.dispose();
   }
 
-  /// The edited set, or null (with errors shown) when a field is invalid.
-  /// An untouched weight keeps its stored kg, so a weight shown in lb is
-  /// not re-rounded.
-  SetEntry? _read(_SetFields fields, bool timed) {
-    final amount = int.tryParse(fields.amount.text.trim());
-    final text = fields.weight.text.trim();
-    final weight = text.isEmpty ? 0.0 : WeightUnits.parseDecimal(text);
-    final maxAmount = timed ? _maxSeconds : _maxReps;
-    fields.amountError = amount == null || amount < 1
-        ? (timed ? 'At least 1 s' : 'At least 1')
-        : amount > maxAmount
-        ? 'Max $maxAmount'
-        : null;
-    fields.weightError = weight == null || weight < 0
-        ? '0 or more'
-        : weight > WeightUnits.maxInput(_metric)
-        ? 'Max ${WeightUnits.maxLabel(_metric)}'
-        : null;
-    if (fields.amountError != null || fields.weightError != null) return null;
-    return SetEntry(
-      amount: amount!,
-      weightKg: text == fields.prefillWeight
-          ? fields.entry.weightKg
-          : WeightUnits.toKg(weight!, _metric),
-    );
-  }
-
-  Future<void> _save() async {
-    if (_saving) return;
+  /// The edited fields, validated; only fields the user changed are
+  /// checked, so a stored value outside today's limits never blocks
+  /// fixing another set. Null (with errors shown) when one is invalid.
+  List<_Change>? _changes() {
     var valid = true;
-    final exercises = <Exercise>[];
-    for (final (index, exercise) in widget.session.exercises.indexed) {
-      final sets = <SetEntry>[];
-      for (final fields in _fields[index]) {
-        final entry = _read(fields, exercise.isTimed);
-        if (entry == null) {
+    final changes = <_Change>[];
+    for (final (exerciseIndex, exercise) in widget.session.exercises.indexed) {
+      for (final (setIndex, fields) in _fields[exerciseIndex].indexed) {
+        final amount = fields.amountChanged
+            ? SetInput.amount(fields.amount.text, timed: exercise.isTimed)
+            : null;
+        final weight = fields.weightChanged
+            ? SetInput.weight(fields.weight.text, metric: _metric)
+            : null;
+        fields.amountError = amount?.error;
+        fields.weightError = weight?.error;
+        if (amount?.error != null || weight?.error != null) {
           valid = false;
-        } else {
-          sets.add(entry);
+        } else if (amount != null || weight != null) {
+          changes.add((
+            exerciseIndex: exerciseIndex,
+            setIndex: setIndex,
+            amount: amount?.value,
+            weightKg: weight?.kg,
+          ));
         }
       }
-      exercises.add(
-        exercise.performedSets.isEmpty
-            ? exercise
-            : exercise.copyWith(performedSets: sets),
-      );
     }
     setState(() {});
-    if (!valid) return;
-    setState(() => _saving = true);
-    final updated = widget.session.copyWith(
-      exercises: exercises,
-      volumeKg: exercises.fold<double>(
+    return valid ? changes : null;
+  }
+
+  /// [changes] applied to [base]: changed fields replace, untouched ones
+  /// keep [base]'s values. Null when [base] no longer has the same sets
+  /// (it changed on another device while this page was open).
+  static WorkoutSession? _apply(WorkoutSession base, List<_Change> changes) {
+    final exercises = [
+      for (final exercise in base.exercises) [...exercise.performedSets],
+    ];
+    for (final change in changes) {
+      if (change.exerciseIndex >= exercises.length ||
+          change.setIndex >= exercises[change.exerciseIndex].length) {
+        return null;
+      }
+      final sets = exercises[change.exerciseIndex];
+      final set = sets[change.setIndex];
+      sets[change.setIndex] = SetEntry(
+        amount: change.amount ?? set.amount,
+        weightKg: change.weightKg ?? set.weightKg,
+      );
+    }
+    final updated = [
+      for (final (index, exercise) in base.exercises.indexed)
+        exercise.copyWith(performedSets: exercises[index]),
+    ];
+    return base.copyWith(
+      exercises: updated,
+      volumeKg: updated.fold<double>(
         0,
         (sum, item) => sum + item.performedVolumeKg,
       ),
     );
+  }
+
+  /// Changed loads far above the exercise's best elsewhere — other
+  /// sessions and the other sets here.
+  List<({double kg, String exercise})> _suspicious(
+    WorkoutSession updated,
+    List<_Change> changes,
+  ) {
+    final sessions = widget.controller.sessions;
+    return [
+      for (final change in changes)
+        if (change.weightKg case final kg?)
+          if (LoadMath.looksMistyped(
+            kg,
+            _bestElsewhere(sessions, updated, change),
+          ))
+            (kg: kg, exercise: updated.exercises[change.exerciseIndex].name),
+    ];
+  }
+
+  static double _bestElsewhere(
+    List<WorkoutSession> sessions,
+    WorkoutSession updated,
+    _Change change,
+  ) {
+    final exercise = updated.exercises[change.exerciseIndex];
+    var best = PersonalRecords.heaviestLoad(
+      sessions,
+      exercise.name,
+      timed: exercise.isTimed,
+      exceptSessionId: updated.id,
+    );
+    for (final (index, other) in updated.exercises.indexed) {
+      if (other.isTimed != exercise.isTimed ||
+          other.name.trim().toLowerCase() !=
+              exercise.name.trim().toLowerCase()) {
+        continue;
+      }
+      for (final (setIndex, set) in other.performedSets.indexed) {
+        final self =
+            index == change.exerciseIndex && setIndex == change.setIndex;
+        if (!self && set.amount > 0) best = math.max(best, set.weightKg);
+      }
+    }
+    return best;
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final changes = _changes();
+    if (changes == null) return;
+    if (changes.isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
+    // Apply onto the latest copy: a sync may have updated the session
+    // while this page was open, and untouched fields keep its values.
+    final latest = widget.controller.sessions
+        .where((item) => item.id == widget.session.id)
+        .firstOrNull;
+    final updated = latest == null ? null : _apply(latest, changes);
+    if (updated == null) {
+      showFToast(
+        context: context,
+        title: const Text('This session changed. Reopen it to edit.'),
+      );
+      Navigator.of(context).pop();
+      return;
+    }
+    final suspicious = _suspicious(updated, changes);
+    if (suspicious.isNotEmpty && !await _confirmHeavy(suspicious)) return;
+    if (!mounted) return;
+    setState(() => _saving = true);
     try {
       await widget.controller.addSession(updated);
     } catch (e) {
@@ -145,6 +242,36 @@ class _EditSessionPageState extends State<EditSessionPage> {
     }
     if (mounted) Navigator.of(context).pop();
   }
+
+  String _weight(double kg) =>
+      '${WeightUnits.format(kg, _metric)} ${WeightUnits.label(_metric)}';
+
+  Future<bool> _confirmHeavy(
+    List<({double kg, String exercise})> loads,
+  ) async =>
+      await showAppDialog<bool>(
+        context: context,
+        title: 'Save ${_weight(loads.first.kg)}?',
+        body: Text(
+          '${loads.map((load) => '${_weight(load.kg)} on ${load.exercise}').join(', ')} '
+          'is far above your best on that exercise. Check for a typo '
+          'before saving.',
+        ),
+        actions: [
+          FButton(
+            key: const Key('fix-heavy-edit'),
+            variant: .ghost,
+            onPress: () => Navigator.pop(context, false),
+            child: const Text('Fix it'),
+          ),
+          FButton(
+            key: const Key('confirm-heavy-edit'),
+            onPress: () => Navigator.pop(context, true),
+            child: const Text('Save it'),
+          ),
+        ],
+      ) ??
+      false;
 
   @override
   Widget build(BuildContext context) {
