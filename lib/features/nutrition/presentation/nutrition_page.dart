@@ -118,7 +118,8 @@ class _NutritionPageState extends State<NutritionPage>
   }
 
   /// TDEE and today's targets from the body profile and latest weight;
-  /// null while the profile is incomplete.
+  /// null while the profile is incomplete, and for minors (no targets
+  /// under 18 — see [NutritionTargets.daily]).
   ({double tdee, DailyTargets targets})? _targets(AppController controller) {
     final height = controller.heightCm;
     final age = controller.age;
@@ -133,17 +134,15 @@ class _NutritionPageState extends State<NutritionPage>
       isMale: controller.isMale,
       activityLevel: controller.activityLevel,
     );
-    return (
+    final targets = NutritionTargets.daily(
       tdee: tdee,
-      targets: NutritionTargets.daily(
-        tdee: tdee,
-        goal: controller.goal,
-        weightKg: weight,
-        heightCm: height,
-        age: age,
-        isMale: controller.isMale,
-      ),
+      goal: controller.goal,
+      weightKg: weight,
+      heightCm: height,
+      age: age,
+      isMale: controller.isMale,
     );
+    return targets == null ? null : (tdee: tdee, targets: targets);
   }
 
   Future<MealPlan> _generatePlan(DailyTargets targets, String? goal) async {
@@ -164,10 +163,13 @@ class _NutritionPageState extends State<NutritionPage>
           schema: AiMealPrompt.schema,
           schemaName: 'meal_plan',
         );
-        return AiMealParser.parse(json, targetKcal: targetKcal).forTargets(
-          proteinG: targets.proteinG,
-          goal: AiMealPrompt.goalText(goal, targets.limit),
-        );
+        // At the floor a menu under the target would go below the
+        // minimum safe intake: reject it (and retry once).
+        return AiMealParser.parse(
+          json,
+          targetKcal: targetKcal,
+          minKcal: targets.limit == TargetLimit.floor ? targetKcal : null,
+        ).forTargets(targets, goal);
       } on FormatException catch (e) {
         parseError = e;
       }
@@ -486,9 +488,7 @@ class _NutritionPageState extends State<NutritionPage>
         ? _cache.plan
         : null;
     final targetChanged =
-        plan != null &&
-        targets != null &&
-        plan.outdatedFor(targets, AiMealPrompt.goalText(goal, targets.limit));
+        plan != null && targets != null && plan.outdatedFor(targets, goal);
 
     final isToday = _viewDay == _today;
     final oldest = FoodLog.oldestKeptDay(_today);
@@ -525,7 +525,10 @@ class _NutritionPageState extends State<NutritionPage>
           ),
           const SizedBox(height: AppSpacing.md),
           if (tdee == null) ...[
-            const _ProfileNeededCard(),
+            if ((controller.age ?? BodyMetrics.adultAge) < BodyMetrics.adultAge)
+              const _MinorCard()
+            else
+              const _ProfileNeededCard(),
             const SizedBox(height: AppSpacing.md),
           ],
           _SummaryCard(
@@ -847,6 +850,34 @@ class _NutritionPageState extends State<NutritionPage>
       await AppScope.of(context).replaceMeal(entry.id, _typed(meal, type));
     }
   }
+}
+
+/// In place of targets for users under 18.
+class _MinorCard extends StatelessWidget {
+  const _MinorCard();
+  @override
+  Widget build(BuildContext context) => AppCard(
+    key: const Key('nutrition-minor'),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Calorie targets are for adults. Under 18, energy needs change '
+          'as you grow — ask a doctor or school nurse what is right for '
+          'you. You can still log what you eat.',
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        FButton(
+          variant: .ghost,
+          size: .sm,
+          onPress: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const BodyMetricsPage()),
+          ),
+          child: const Text('Turned 18? Update your age'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _ProfileNeededCard extends StatelessWidget {
@@ -1432,17 +1463,14 @@ class _SummaryCard extends StatelessWidget {
       'Your BMI is under ${BodyMetrics.underweightBmi}, so the target stays '
           'at maintenance instead of a deficit. Talk to a doctor or '
           'dietitian before trying to lose weight.',
-    TargetLimit.minor =>
-      'Under ${BodyMetrics.adultAge}, the target stays at maintenance — '
-          'growing bodies need enough energy. Check with a doctor before '
-          'eating less or more.',
     TargetLimit.floor =>
       'The deficit stops at ${thousands(target.kcal)} kcal — FitFlow sets '
           'no lower intake without medical supervision.',
     TargetLimit.lowMaintenance =>
-      'Your maintenance is already at the lowest intake FitFlow sets '
-          'without medical supervision, so there is no deficit. Talk to a '
-          'doctor or dietitian about losing weight.',
+      'Your maintenance is at or near the lowest intake FitFlow sets for a '
+          'diet without medical supervision, so there is no deficit — the '
+          'target is what your body uses. Talk to a doctor or dietitian '
+          'about losing weight.',
     null => null,
   };
 

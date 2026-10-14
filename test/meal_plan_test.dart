@@ -84,7 +84,7 @@ void main() {
 
   group('daily targets', () {
     // TDEE for the profile, so each case starts from the real number.
-    DailyTargets daily({
+    DailyTargets? targetsFor({
       required String? goal,
       required double kg,
       required double cm,
@@ -106,6 +106,22 @@ void main() {
       isMale: male,
     );
 
+    DailyTargets daily({
+      required String? goal,
+      required double kg,
+      required double cm,
+      required int age,
+      bool male = true,
+      int activity = 2,
+    }) => targetsFor(
+      goal: goal,
+      kg: kg,
+      cm: cm,
+      age: age,
+      male: male,
+      activity: activity,
+    )!;
+
     test('adjust by a share of TDEE, not a flat amount', () {
       // 80 kg, 180 cm, 30 y, moderate: TDEE ≈ 2,759 kcal.
       final lose = daily(goal: 'Cardio', kg: 80, cm: 180, age: 30);
@@ -116,6 +132,9 @@ void main() {
       expect(build.kcal, 3035); // +10%
       expect(keep.kcal, 2759);
       expect(lose.limit, isNull);
+      expect(lose.phase, TargetPhase.deficit);
+      expect(build.phase, TargetPhase.surplus);
+      expect(keep.phase, TargetPhase.maintenance);
       // A big TDEE caps the deficit at 500 kcal.
       expect(
         NutritionTargets.daily(
@@ -125,7 +144,7 @@ void main() {
           heightCm: 190,
           age: 30,
           isMale: true,
-        ).kcal,
+        )!.kcal,
         3100,
       );
     });
@@ -159,37 +178,33 @@ void main() {
       expect(build.proteinG, 72); // 1.6 × 45
     });
 
-    test('under 18 stays at maintenance', () {
-      // 14-year-old, 50 kg, 160 cm, sedentary: TDEE ≈ 1,523 kcal.
-      final lose = daily(
-        goal: 'Cardio',
-        kg: 50,
-        cm: 160,
-        age: 14,
-        male: false,
-        activity: 0,
-      );
-
-      expect(lose.kcal, 1523);
-      expect(lose.limit, TargetLimit.minor);
-      expect(lose.proteinG, 60); // maintenance: 1.2 × 50
-      // Adult BMI cutoffs don't apply: an 80 kg, 160 cm teen (adult BMI
-      // 31) counts total weight, 1.2 × 80.
+    test('no targets under 18', () {
+      for (final goal in ['Cardio', 'Strength', 'Mobility', null]) {
+        expect(
+          targetsFor(goal: goal, kg: 50, cm: 160, age: 17, male: false),
+          isNull,
+        );
+      }
       expect(
-        daily(goal: 'Strength', kg: 80, cm: 160, age: 14, male: false).proteinG,
-        96,
-      );
-      expect(
-        daily(goal: 'Mobility', kg: 50, cm: 160, age: 14, male: false).limit,
-        isNull,
+        targetsFor(goal: 'Cardio', kg: 50, cm: 160, age: 18, male: false),
+        isNotNull,
       );
     });
 
-    test('a deficit stops at 1,500 kcal for men, or never starts', () {
-      // 70 y man, 55 kg, sedentary: TDEE ≈ 1,521; −15% would be 1,293.
-      final man = daily(goal: 'Cardio', kg: 55, cm: 170, age: 70, activity: 0);
-      // 60 y woman, 45 kg, 150 cm: TDEE ≈ 1,112, already under her
-      // 1,200 kcal floor — there is no room for a deficit at all.
+    test('a deficit stops at the floor, or never starts', () {
+      // 70 y man, 60 kg, 175 cm, sedentary: TDEE ≈ 1,619; −15% would be
+      // 1,376, so the deficit stops at 1,500 — still 119 kcal under.
+      final man = daily(goal: 'Cardio', kg: 60, cm: 175, age: 70, activity: 0);
+      // 55 kg at 170 cm: TDEE ≈ 1,521, only 21 kcal above his floor —
+      // too little room for a deficit worth having.
+      final close = daily(
+        goal: 'Cardio',
+        kg: 55,
+        cm: 170,
+        age: 70,
+        activity: 0,
+      );
+      // 60 y woman, 45 kg, 150 cm: TDEE ≈ 1,112, under her 1,200 floor.
       final woman = daily(
         goal: 'Cardio',
         kg: 45,
@@ -201,15 +216,18 @@ void main() {
 
       expect(man.kcal, 1500);
       expect(man.limit, TargetLimit.floor);
-      expect(man.phase, TargetPhase.deficit); // a smaller deficit
-      expect(man.proteinG, 99); // 1.8 × 55
+      expect(man.phase, TargetPhase.deficit);
+      expect(man.proteinG, 108); // 1.8 × 60
+      expect(close.kcal, 1521);
+      expect(close.limit, TargetLimit.lowMaintenance);
+      expect(close.phase, TargetPhase.maintenance);
+      expect(close.proteinG, 66); // maintenance: 1.2 × 55
       expect(woman.kcal, 1112);
       expect(woman.limit, TargetLimit.lowMaintenance);
-      expect(woman.phase, TargetPhase.maintenance);
-      expect(woman.proteinG, 54); // maintenance: 1.2 × 45
+      expect(woman.proteinG, 54); // 1.2 × 45
     });
 
-    test('protein is highest in a deficit and capped at BMI 25 weight', () {
+    test('protein follows the phase and is capped at BMI 25 weight', () {
       expect(daily(goal: 'Cardio', kg: 80, cm: 180, age: 30).proteinG, 144);
       expect(daily(goal: 'Strength', kg: 80, cm: 180, age: 30).proteinG, 128);
       expect(daily(goal: null, kg: 80, cm: 180, age: 30).proteinG, 96);
@@ -226,7 +244,7 @@ void main() {
         heightCm: 200,
         age: 22,
         isMale: true,
-      );
+      )!;
 
       expect(build.kcal, 5326);
       expect(build.limit, isNull);
@@ -244,22 +262,9 @@ void main() {
       }
     });
 
-    test('phase is what was applied, not what was picked', () {
-      expect(
-        daily(goal: 'Cardio', kg: 80, cm: 180, age: 30).phase,
-        TargetPhase.deficit,
-      );
-      expect(
-        daily(goal: 'Strength', kg: 80, cm: 180, age: 30).phase,
-        TargetPhase.surplus,
-      );
-      expect(
-        daily(goal: 'Cardio', kg: 50, cm: 160, age: 14, male: false).phase,
-        TargetPhase.maintenance,
-      );
-    });
-
     test('a saved menu is outdated when kcal, protein or goal change', () {
+      // At maintenance either way, so the kcal match; protein, goal and
+      // limit don't.
       final lose = daily(
         goal: 'Cardio',
         kg: 45,
@@ -280,32 +285,40 @@ void main() {
         date: DateTime(2026, 10, 21),
         targetKcal: lose.kcal,
         meals: const [],
-      ).forTargets(proteinG: 99, goal: 'Lose fat');
+      ).forTargets(lose, 'Cardio');
       final restored = MealPlan.fromJson(
         jsonDecode(jsonEncode(saved.toJson())) as Map<String, dynamic>,
       );
 
-      // Same kcal (both at maintenance), but protein and goal differ.
       expect(lose.kcal, keep.kcal);
-      expect(restored.proteinG, 99);
-      expect(restored.goal, 'Lose fat');
-      expect(restored.outdatedFor(keep, 'Stay mobile'), isTrue);
-      expect(
-        restored
-            .forTargets(proteinG: keep.proteinG, goal: 'Stay mobile')
-            .outdatedFor(keep, 'Stay mobile'),
-        isFalse,
-      );
+      expect(restored.goal, 'Cardio');
+      expect(restored.limit, 'lowMaintenance');
+      expect(restored.outdatedFor(lose, 'Cardio'), isFalse);
+      expect(restored.outdatedFor(keep, 'Mobility'), isTrue);
       // Older saved menus only knew their kcal.
       expect(
         MealPlan(
           date: DateTime(2026, 10, 21),
           targetKcal: keep.kcal,
           meals: const [],
-        ).outdatedFor(keep, 'Stay mobile'),
+        ).outdatedFor(keep, 'Mobility'),
         isFalse,
       );
     });
+  });
+
+  test('a menu under the minimum is rejected', () {
+    final json = plan(
+      meals: [
+        meal(items: [item(kcal: 400)]),
+      ],
+    );
+
+    expect(
+      () => AiMealParser.parse(json, targetKcal: 1500, minKcal: 1500),
+      throwsFormatException,
+    );
+    expect(AiMealParser.parse(json, targetKcal: 1500).totalKcal, 400);
   });
 
   test('photo analysis parses dishes into a meal', () {
@@ -361,11 +374,7 @@ void main() {
       allOf(contains('User goal: Lose fat'), isNot(contains('Cardio'))),
     );
     // A held-back target never tells the model to plan for fat loss.
-    for (final limit in [
-      TargetLimit.underweight,
-      TargetLimit.minor,
-      TargetLimit.lowMaintenance,
-    ]) {
+    for (final limit in [TargetLimit.underweight, TargetLimit.lowMaintenance]) {
       expect(
         AiMealPrompt.user(
           targetKcal: 1643,
@@ -385,7 +394,10 @@ void main() {
         goal: 'Cardio',
         limit: TargetLimit.floor,
       ),
-      contains('do not go below the target'),
+      allOf(
+        contains('do not go below the target'),
+        contains('at least 1500 kcal'),
+      ),
     );
   });
 

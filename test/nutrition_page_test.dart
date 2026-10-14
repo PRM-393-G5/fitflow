@@ -156,6 +156,22 @@ void main() {
     expect(find.textContaining('/ 1,643'), findsNothing);
   });
 
+  testWidgets('under 18 shows no calorie targets', (tester) async {
+    await pumpNutrition(tester, {
+      'onboarding_v1': '{"done":true,"goal":"Cardio"}',
+      'body_profile_v1':
+          '{"heightCm":160,"age":16,"isMale":false,"activityLevel":1}',
+      'body_weights_v1': jsonEncode([
+        {'date': DateTime.now().toIso8601String(), 'weightKg': 50.0},
+      ]),
+    });
+
+    expect(find.byKey(const Key('nutrition-minor')), findsOneWidget);
+    expect(find.text('kcal eaten today'), findsOneWidget); // no "/ target"
+    expect(find.textContaining('TDEE'), findsNothing);
+    expect(find.byKey(const Key('nutrition-open-metrics')), findsNothing);
+  });
+
   testWidgets('groups the log into meal slots and logs into a chosen slot', (
     tester,
   ) async {

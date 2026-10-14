@@ -685,13 +685,7 @@ class AppController extends ChangeNotifier {
     final json = _decode(_profileKey);
     if (json == null) return;
     heightCm = (json['heightCm'] as num?)?.toDouble();
-    // Age is typed once; it grows with the years since it was entered
-    // (profiles saved before ageSetAt existed keep the typed age).
-    final typedAge = json['age'] as int?;
-    final setAt = DateTime.tryParse(json['ageSetAt'] as String? ?? '');
-    age = typedAge == null || setAt == null
-        ? typedAge
-        : typedAge + _fullYearsSince(setAt);
+    age = json['age'] as int?;
     isMale = json['isMale'] as bool? ?? true;
     activityLevel = json['activityLevel'] as int? ?? 1;
   }
@@ -711,7 +705,6 @@ class AppController extends ChangeNotifier {
       jsonEncode({
         'heightCm': heightCm,
         'age': age,
-        'ageSetAt': _dateOnly(DateTime.now()),
         'isMale': isMale,
         'activityLevel': activityLevel,
       }),
@@ -719,22 +712,6 @@ class AppController extends ChangeNotifier {
     await _pushMeta();
     notifyListeners();
   }
-
-  /// Whole years from [from] to today.
-  static int _fullYearsSince(DateTime from) {
-    final now = DateTime.now();
-    final years =
-        now.year -
-        from.year -
-        (now.month < from.month ||
-                (now.month == from.month && now.day < from.day)
-            ? 1
-            : 0);
-    return years < 0 ? 0 : years;
-  }
-
-  static String _dateOnly(DateTime date) =>
-      DateTime(date.year, date.month, date.day).toIso8601String();
 
   void _decodeSchedule() {
     final json = _decode(_scheduleKey);
