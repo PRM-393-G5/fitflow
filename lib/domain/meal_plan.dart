@@ -513,13 +513,15 @@ typedef DailyTargets = ({
 /// - A deficit never goes below 1,200 kcal for women or 1,500 kcal for
 ///   men (the usual unsupervised minimum), nor below TDEE itself when
 ///   TDEE is lower.
-/// - Protein per kg (ISSN; Morton et al. 2018; Helms et al. 2014): 1.8 g
-///   when losing fat — more than when building, to keep muscle in a
-///   deficit — 1.6 g building, 1.2 g otherwise. Above BMI 25 it is
-///   counted on the weight at BMI 25, not on total weight.
+/// - Protein per kg follows the adjustment actually applied (ISSN; Morton
+///   et al. 2018; Helms et al. 2014): 1.8 g in a deficit — more than when
+///   building, to keep muscle — 1.6 g in a surplus, 1.2 g at
+///   maintenance. Adults above BMI 25 count the weight at BMI 25, not
+///   total weight.
+/// - Nothing is clamped beyond these rules, so a surplus stays a surplus
+///   and maintenance stays TDEE.
 /// - Fat 25% of calories; carbs fill the rest.
 abstract final class NutritionTargets {
-  static const underweightBmi = 18.5;
   static const referenceBmi = 25.0;
 
   /// The lowest daily intake FitFlow sets without medical supervision.
@@ -533,17 +535,18 @@ abstract final class NutritionTargets {
     required int age,
     required bool isMale,
   }) {
-    final bmi = weightKg / pow(heightCm / 100, 2);
+    final bmi = BodyMetrics.bmi(weightKg: weightKg, heightCm: heightCm);
+    final adult = age >= BodyMetrics.adultAge;
     var adjustment = switch (goal) {
       'Cardio' => -min(tdee * 0.15, 500.0),
       'Strength' => min(tdee * 0.10, 300.0),
       _ => 0.0,
     };
     TargetLimit? limit;
-    if (age < BodyMetrics.adultAge && adjustment != 0) {
+    if (!adult && adjustment != 0) {
       adjustment = 0;
       limit = TargetLimit.minor;
-    } else if (bmi < underweightBmi && adjustment < 0) {
+    } else if (bmi < BodyMetrics.underweightBmi && adjustment < 0) {
       adjustment = 0;
       limit = TargetLimit.underweight;
     }
@@ -555,14 +558,14 @@ abstract final class NutritionTargets {
         limit = TargetLimit.floor;
       }
     }
-    final target = kcal.clamp(800, 5000).round();
+    final target = kcal.round();
 
-    final perKg = switch (goal) {
-      'Cardio' => 1.8,
-      'Strength' => 1.6,
-      _ => 1.2,
-    };
-    final referenceKg = bmi > referenceBmi
+    final perKg = adjustment < 0
+        ? 1.8
+        : adjustment > 0
+        ? 1.6
+        : 1.2;
+    final referenceKg = adult && bmi > referenceBmi
         ? referenceBmi * pow(heightCm / 100, 2)
         : weightKg;
     final protein = (referenceKg * perKg).round();
@@ -637,11 +640,15 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
       ? const {'Breakfast': 25, 'Lunch': 35, 'Dinner': 30, 'Snack': 10}
       : const {'Breakfast': 30, 'Lunch': 40, 'Dinner': 30};
 
+  /// [limit] is the safety rule that held the target back, if any: an
+  /// underweight user or a minor then gets a maintenance goal, never the
+  /// fat-loss goal they picked.
   static String user({
     required int targetKcal,
     required int proteinG,
     required int meals,
     String? goal,
+    TargetLimit? limit,
     String? preferences,
   }) {
     final buffer = StringBuffer(
@@ -658,7 +665,16 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
     buffer.write('\nSplit: $shares');
     // The label ("Lose fat"), not the stored workout category ("Cardio"),
     // which reads as endurance training to the model.
-    if (goal != null) buffer.write('\nUser goal: ${goalLabel(goal)}');
+    final goalText = switch (limit) {
+      TargetLimit.underweight || TargetLimit.minor =>
+        'maintain weight and eat enough — no calorie deficit',
+      TargetLimit.floor when goal != null =>
+        '${goalLabel(goal)}, already at the minimum safe intake — do not '
+            'go below the target',
+      _ when goal != null => goalLabel(goal),
+      _ => null,
+    };
+    if (goalText != null) buffer.write('\nUser goal: $goalText');
     if (preferences != null && preferences.isNotEmpty) {
       buffer.write('\nPreferences/restrictions: $preferences');
     }

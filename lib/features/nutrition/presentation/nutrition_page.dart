@@ -117,28 +117,37 @@ class _NutritionPageState extends State<NutritionPage>
     super.dispose();
   }
 
-  /// TDEE from the body profile, or null when the profile is incomplete.
-  double? _tdee(AppController controller) {
+  /// TDEE and today's targets from the body profile and latest weight;
+  /// null while the profile is incomplete.
+  ({double tdee, DailyTargets targets})? _targets(AppController controller) {
     final height = controller.heightCm;
     final age = controller.age;
     final weight = controller.weightEntries.isEmpty
         ? null
         : controller.weightEntries.last.weightKg;
     if (height == null || age == null || weight == null) return null;
-    return BodyMetrics.tdee(
+    final tdee = BodyMetrics.tdee(
       weightKg: weight,
       heightCm: height,
       age: age,
       isMale: controller.isMale,
       activityLevel: controller.activityLevel,
     );
+    return (
+      tdee: tdee,
+      targets: NutritionTargets.daily(
+        tdee: tdee,
+        goal: controller.goal,
+        weightKg: weight,
+        heightCm: height,
+        age: age,
+        isMale: controller.isMale,
+      ),
+    );
   }
 
-  Future<MealPlan> _generatePlan(
-    int targetKcal,
-    int proteinG,
-    String? goal,
-  ) async {
+  Future<MealPlan> _generatePlan(DailyTargets targets, String? goal) async {
+    final targetKcal = targets.kcal;
     FormatException? parseError;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
@@ -146,9 +155,10 @@ class _NutritionPageState extends State<NutritionPage>
           system: AiMealPrompt.system,
           user: AiMealPrompt.user(
             targetKcal: targetKcal,
-            proteinG: proteinG,
+            proteinG: targets.proteinG,
             meals: _cache.mealCount,
             goal: goal,
+            limit: targets.limit,
             preferences: _prefsCtrl.text.trim(),
           ),
           schema: AiMealPrompt.schema,
@@ -162,7 +172,7 @@ class _NutritionPageState extends State<NutritionPage>
     throw parseError!;
   }
 
-  Future<void> _generate(int targetKcal, int proteinG) async {
+  Future<void> _generate(DailyTargets targets) async {
     if (_generating) return;
     if (_cache.plan?.isOn(_today) ?? false) {
       final replace = await _confirm(
@@ -179,7 +189,7 @@ class _NutritionPageState extends State<NutritionPage>
     final epoch = controller.dataEpoch;
     setState(() => _generating = true);
     try {
-      final plan = await _generatePlan(targetKcal, proteinG, goal);
+      final plan = await _generatePlan(targets, goal);
       // The account changed mid-request — don't save into the new one.
       if (!mounted || epoch != controller.dataEpoch) return;
       setState(() => _cache = _cache.withPlan(plan));
@@ -464,24 +474,11 @@ class _NutritionPageState extends State<NutritionPage>
   Widget build(BuildContext context) {
     _rollOver();
     final controller = AppScope.of(context);
-    final tdee = _tdee(controller);
+    final profile = _targets(controller);
+    final tdee = profile?.tdee;
+    final targets = profile?.targets;
     final goal = controller.goal;
-    final weight = controller.weightEntries.isEmpty
-        ? null
-        : controller.weightEntries.last.weightKg;
-    // _tdee is only non-null with a complete profile and a weight.
-    final targets = tdee == null
-        ? null
-        : NutritionTargets.daily(
-            tdee: tdee,
-            goal: goal,
-            weightKg: weight!,
-            heightCm: controller.heightCm!,
-            age: controller.age!,
-            isMale: controller.isMale,
-          );
     final targetKcal = targets?.kcal;
-    final proteinG = targets?.proteinG;
     final plan = _cache.plan != null && _cache.plan!.isOn(_today)
         ? _cache.plan
         : null;
@@ -530,8 +527,9 @@ class _NutritionPageState extends State<NutritionPage>
             eaten: eaten,
             dayText: dayText,
             tdee: tdee,
-            targets: targets,
-            isMale: controller.isMale,
+            // Targets come from today's weight and goal; past days are
+            // shown without them rather than judged against today's.
+            targets: isToday ? targets : null,
             goal: goal,
             onChangeGoal: () => _changeGoal(controller),
           ),
@@ -725,9 +723,7 @@ class _NutritionPageState extends State<NutritionPage>
                   ),
                 ],
               ),
-              onGenerate: targetKcal == null
-                  ? null
-                  : () => _generate(targetKcal, proteinG!),
+              onGenerate: targets == null ? null : () => _generate(targets),
             ),
             if (plan != null) ...[
               if (targetChanged) ...[
@@ -1397,7 +1393,6 @@ class _SummaryCard extends StatelessWidget {
     required this.dayText,
     required this.tdee,
     required this.targets,
-    required this.isMale,
     required this.goal,
     required this.onChangeGoal,
   });
@@ -1410,23 +1405,22 @@ class _SummaryCard extends StatelessWidget {
   final String dayText;
   final double? tdee;
   final DailyTargets? targets;
-  final bool isMale;
   final String? goal;
   final VoidCallback onChangeGoal;
 
-  /// Why the target is held back, in words; null when it isn't.
-  String? _limitText(TargetLimit? limit) => switch (limit) {
+  /// Why [target] is held back, in words; null when it isn't.
+  String? _limitText(DailyTargets target) => switch (target.limit) {
     TargetLimit.underweight =>
-      'Your BMI is under 18.5, so the target stays at maintenance instead '
-          'of a deficit. Talk to a doctor or dietitian before trying to '
-          'lose weight.',
+      'Your BMI is under ${BodyMetrics.underweightBmi}, so the target stays '
+          'at maintenance instead of a deficit. Talk to a doctor or '
+          'dietitian before trying to lose weight.',
     TargetLimit.minor =>
-      'Under 18, the target stays at maintenance — growing bodies need '
-          'enough energy. Check with a doctor before eating less or more.',
+      'Under ${BodyMetrics.adultAge}, the target stays at maintenance — '
+          'growing bodies need enough energy. Check with a doctor before '
+          'eating less or more.',
     TargetLimit.floor =>
-      'The target is held at ${thousands(NutritionTargets.floorKcal(isMale: isMale))} kcal '
-          'or your maintenance, whichever is lower — FitFlow sets nothing '
-          'lower without medical supervision.',
+      'The target is held at ${thousands(target.kcal)} kcal — FitFlow sets '
+          'no lower intake without medical supervision.',
     null => null,
   };
 
@@ -1436,7 +1430,11 @@ class _SummaryCard extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final muted = textTheme.bodySmall?.copyWith(color: colors.mutedForeground);
     final target = targets;
-    final limitText = _limitText(target?.limit);
+    final limitText = target == null ? null : _limitText(target);
+    // Over target is only a warning for a deficit; at maintenance or in a
+    // surplus (e.g. held back for an underweight user), eating more is
+    // fine.
+    final deficit = target != null && tdee != null && target.kcal < tdee!;
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1478,7 +1476,7 @@ class _SummaryCard extends StatelessWidget {
                 value: (eaten.kcal / target.kcal).clamp(0.0, 1.0),
                 minHeight: 8,
                 backgroundColor: colors.muted,
-                color: eaten.kcal > target.kcal
+                color: deficit && eaten.kcal > target.kcal
                     ? colors.destructive
                     : colors.primary,
               ),

@@ -125,15 +125,34 @@ void main() {
         {'date': DateTime.now().toIso8601String(), 'weightKg': 45.0},
       ]),
       'food_log_v1': jsonEncode(
-        (FoodLog()..add(DateTime.now(), meal('Toast', 200))).toJson(),
+        (FoodLog()
+              ..add(DateTime.now(), meal('Toast', 200))
+              ..add(
+                DateTime.now().subtract(const Duration(days: 1)),
+                meal('Rice', 1900),
+              ))
+            .toJson(),
       ),
     });
 
     expect(find.text('/ 1,643 kcal eaten today'), findsOneWidget);
-    expect(find.text('20 / 81 g'), findsOneWidget); // protein, 1.8 × 45
+    expect(find.text('20 / 54 g'), findsOneWidget); // maintenance protein
     expect(find.byKey(const Key('nutrition-target-limit')), findsOneWidget);
     expect(find.textContaining('BMI is under 18.5'), findsOneWidget);
     expect(find.byKey(const Key('nutrition-disclaimer')), findsOneWidget);
+
+    // Past days aren't judged against today's target.
+    final now = DateTime.now();
+    await tester.tap(
+      find.byKey(
+        Key(
+          'nutrition-day-${FoodLog.dayKey(DateTime(now.year, now.month, now.day - 1))}',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('kcal eaten on yesterday'), findsOneWidget);
+    expect(find.textContaining('/ 1,643'), findsNothing);
   });
 
   testWidgets('groups the log into meal slots and logs into a chosen slot', (

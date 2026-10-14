@@ -151,9 +151,12 @@ void main() {
 
       expect(lose.kcal, 1643);
       expect(lose.limit, TargetLimit.underweight);
+      // No deficit means no deficit-level protein either: 1.2 × 45.
+      expect(lose.proteinG, 54);
       // Gaining is still fine.
       expect(build.kcal, 1808);
       expect(build.limit, isNull);
+      expect(build.proteinG, 72); // 1.6 × 45
     });
 
     test('under 18 stays at maintenance', () {
@@ -169,6 +172,13 @@ void main() {
 
       expect(lose.kcal, 1523);
       expect(lose.limit, TargetLimit.minor);
+      expect(lose.proteinG, 60); // maintenance: 1.2 × 50
+      // Adult BMI cutoffs don't apply: an 80 kg, 160 cm teen (adult BMI
+      // 31) counts total weight, 1.2 × 80.
+      expect(
+        daily(goal: 'Strength', kg: 80, cm: 160, age: 14, male: false).proteinG,
+        96,
+      );
       expect(
         daily(goal: 'Mobility', kg: 50, cm: 160, age: 14, male: false).limit,
         isNull,
@@ -201,6 +211,21 @@ void main() {
       expect(daily(goal: null, kg: 80, cm: 180, age: 30).proteinG, 96);
       // 130 kg at 180 cm (BMI 40) counts as 81 kg, the BMI-25 weight.
       expect(daily(goal: 'Cardio', kg: 130, cm: 180, age: 30).proteinG, 146);
+    });
+
+    test('nothing clamps a surplus below maintenance', () {
+      // A big athlete's TDEE is above the old 5,000 kcal ceiling.
+      final build = NutritionTargets.daily(
+        tdee: 5026,
+        goal: 'Strength',
+        weightKg: 150,
+        heightCm: 200,
+        age: 22,
+        isMale: true,
+      );
+
+      expect(build.kcal, 5326);
+      expect(build.limit, isNull);
     });
 
     test('macros add up to the calorie target', () {
@@ -262,6 +287,29 @@ void main() {
         goal: 'Cardio',
       ),
       allOf(contains('User goal: Lose fat'), isNot(contains('Cardio'))),
+    );
+    // A held-back target never tells the model to plan for fat loss.
+    for (final limit in [TargetLimit.underweight, TargetLimit.minor]) {
+      expect(
+        AiMealPrompt.user(
+          targetKcal: 1643,
+          proteinG: 54,
+          meals: 3,
+          goal: 'Cardio',
+          limit: limit,
+        ),
+        allOf(contains('no calorie deficit'), isNot(contains('Lose fat'))),
+      );
+    }
+    expect(
+      AiMealPrompt.user(
+        targetKcal: 1500,
+        proteinG: 100,
+        meals: 3,
+        goal: 'Cardio',
+        limit: TargetLimit.floor,
+      ),
+      contains('do not go below the target'),
     );
   });
 

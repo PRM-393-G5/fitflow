@@ -18,6 +18,9 @@ abstract final class BodyMetrics {
     return weightKg / (meters * meters);
   }
 
+  /// WHO adult cutoff below which BMI counts as underweight.
+  static const underweightBmi = 18.5;
+
   /// Below this age the adult BMI categories don't apply (WHO uses
   /// BMI-for-age percentiles for children and teens).
   static const adultAge = 18;
@@ -27,7 +30,7 @@ abstract final class BodyMetrics {
   static String bmiCategory(double bmi, {int? age}) {
     if (age != null && age < adultAge) return 'Use BMI-for-age';
     return switch (bmi) {
-      < 18.5 => 'Underweight',
+      < underweightBmi => 'Underweight',
       < 25 => 'Normal',
       < 30 => 'Overweight',
       _ => 'Obese',
