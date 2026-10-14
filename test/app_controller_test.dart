@@ -56,6 +56,35 @@ void main() {
     expect(controller.sessions, isEmpty);
   });
 
+  test('a typed age grows with the years since it was entered', () async {
+    final now = DateTime.now();
+    final controller = await controllerWith({
+      'body_profile_v1': jsonEncode({
+        'heightCm': 170,
+        'age': 17,
+        'ageSetAt': DateTime(
+          now.year - 2,
+          now.month,
+          now.day,
+        ).toIso8601String(),
+      }),
+    });
+
+    expect(controller.age, 19);
+
+    await controller.saveBodyProfile(
+      heightCm: 170,
+      age: 19,
+      isMale: false,
+      activityLevel: 1,
+    );
+    final saved = jsonDecode(
+      controller.preferences.getString('body_profile_v1')!,
+    ) as Map<String, dynamic>;
+    expect(saved['age'], 19);
+    expect(saved['ageSetAt'], isNotNull);
+  });
+
   test('clearing data resets in-memory user state', () async {
     final controller = await controllerWith({
       'body_profile_v1': jsonEncode({'heightCm': 180, 'age': 30}),

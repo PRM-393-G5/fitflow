@@ -136,6 +136,7 @@ void main() {
     });
 
     expect(find.text('/ 1,643 kcal eaten today'), findsOneWidget);
+    expect(find.text('1,443 kcal to go'), findsOneWidget);
     expect(find.text('20 / 54 g'), findsOneWidget); // maintenance protein
     expect(find.byKey(const Key('nutrition-target-limit')), findsOneWidget);
     expect(find.textContaining('BMI is under 18.5'), findsOneWidget);

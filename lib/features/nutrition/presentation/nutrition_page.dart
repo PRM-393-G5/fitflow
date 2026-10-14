@@ -164,7 +164,10 @@ class _NutritionPageState extends State<NutritionPage>
           schema: AiMealPrompt.schema,
           schemaName: 'meal_plan',
         );
-        return AiMealParser.parse(json, targetKcal: targetKcal);
+        return AiMealParser.parse(json, targetKcal: targetKcal).forTargets(
+          proteinG: targets.proteinG,
+          goal: AiMealPrompt.goalText(goal, targets.limit),
+        );
       } on FormatException catch (e) {
         parseError = e;
       }
@@ -483,7 +486,9 @@ class _NutritionPageState extends State<NutritionPage>
         ? _cache.plan
         : null;
     final targetChanged =
-        plan != null && targetKcal != null && plan.targetKcal != targetKcal;
+        plan != null &&
+        targets != null &&
+        plan.outdatedFor(targets, AiMealPrompt.goalText(goal, targets.limit));
 
     final isToday = _viewDay == _today;
     final oldest = FoodLog.oldestKeptDay(_today);
@@ -736,9 +741,12 @@ class _NutritionPageState extends State<NutritionPage>
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(
                         child: Text(
-                          'Target changed — regenerate. This menu was planned '
-                          'for ${plan.targetKcal} kcal; your target is now '
-                          '$targetKcal kcal.',
+                          plan.targetKcal != targetKcal
+                              ? 'Target changed — regenerate. This menu was '
+                                    'planned for ${plan.targetKcal} kcal; your '
+                                    'target is now $targetKcal kcal.'
+                              : 'Your goal or protein target changed since '
+                                    'this menu was planned — regenerate.',
                         ),
                       ),
                     ],
@@ -867,6 +875,21 @@ class _ProfileNeededCard extends StatelessWidget {
   );
 }
 
+/// Kilocalories against a target, shared by the day summary and the
+/// suggested menu.
+class _KcalProgress extends StatelessWidget {
+  const _KcalProgress({required this.eaten, required this.target});
+
+  final int eaten;
+  final int target;
+
+  // 0 / 0 is NaN, which clamp passes through.
+  @override
+  Widget build(BuildContext context) => FDeterminateProgress(
+    value: target <= 0 ? 0 : (eaten / target).clamp(0.0, 1.0),
+  );
+}
+
 class _PlanView extends StatelessWidget {
   const _PlanView({required this.plan, required this.onLog});
 
@@ -881,12 +904,7 @@ class _PlanView extends StatelessWidget {
     children: [
       Semantics(
         label: '${plan.totalKcal} of ${plan.targetKcal} kilocalories',
-        child: FDeterminateProgress(
-          // 0 / 0 is NaN, which clamp passes through.
-          value: plan.targetKcal <= 0
-              ? 0
-              : (plan.totalKcal / plan.targetKcal).clamp(0.0, 1.0),
-        ),
+        child: _KcalProgress(eaten: plan.totalKcal, target: plan.targetKcal),
       ),
       const SizedBox(height: AppSpacing.sm),
       Text('${plan.totalKcal} / ${plan.targetKcal} kcal suggested'),
@@ -1419,8 +1437,12 @@ class _SummaryCard extends StatelessWidget {
           'growing bodies need enough energy. Check with a doctor before '
           'eating less or more.',
     TargetLimit.floor =>
-      'The target is held at ${thousands(target.kcal)} kcal — FitFlow sets '
+      'The deficit stops at ${thousands(target.kcal)} kcal — FitFlow sets '
           'no lower intake without medical supervision.',
+    TargetLimit.lowMaintenance =>
+      'Your maintenance is already at the lowest intake FitFlow sets '
+          'without medical supervision, so there is no deficit. Talk to a '
+          'doctor or dietitian about losing weight.',
     null => null,
   };
 
@@ -1431,10 +1453,6 @@ class _SummaryCard extends StatelessWidget {
     final muted = textTheme.bodySmall?.copyWith(color: colors.mutedForeground);
     final target = targets;
     final limitText = target == null ? null : _limitText(target);
-    // Over target is only a warning for a deficit; at maintenance or in a
-    // surplus (e.g. held back for an underweight user), eating more is
-    // fine.
-    final deficit = target != null && tdee != null && target.kcal < tdee!;
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1470,17 +1488,22 @@ class _SummaryCard extends StatelessWidget {
           ),
           if (target != null) ...[
             const SizedBox(height: AppSpacing.sm),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: (eaten.kcal / target.kcal).clamp(0.0, 1.0),
-                minHeight: 8,
-                backgroundColor: colors.muted,
-                color: deficit && eaten.kcal > target.kcal
-                    ? colors.destructive
-                    : colors.primary,
+            _KcalProgress(eaten: eaten.kcal, target: target.kcal),
+            const SizedBox(height: AppSpacing.xs),
+            if (eaten.kcal <= target.kcal)
+              Text(
+                '${thousands(target.kcal - eaten.kcal)} kcal to go',
+                style: muted,
+              )
+            // Over target is only worth flagging in a deficit: at
+            // maintenance or in a surplus (e.g. held back for an
+            // underweight user) eating more is fine.
+            else if (target.phase == TargetPhase.deficit)
+              Text(
+                '${thousands(eaten.kcal - target.kcal)} kcal over target',
+                key: const Key('nutrition-over-target'),
+                style: muted,
               ),
-            ),
           ],
           const SizedBox(height: AppSpacing.md),
           Row(

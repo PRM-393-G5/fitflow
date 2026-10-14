@@ -185,11 +185,11 @@ void main() {
       );
     });
 
-    test('a deficit stops at 1,500 kcal for men and 1,200 for women', () {
+    test('a deficit stops at 1,500 kcal for men, or never starts', () {
       // 70 y man, 55 kg, sedentary: TDEE ≈ 1,521; −15% would be 1,293.
       final man = daily(goal: 'Cardio', kg: 55, cm: 170, age: 70, activity: 0);
-      // 60 y woman, 45 kg, 150 cm: TDEE ≈ 1,112, already under 1,200 —
-      // the floor never pushes the target above maintenance.
+      // 60 y woman, 45 kg, 150 cm: TDEE ≈ 1,112, already under her
+      // 1,200 kcal floor — there is no room for a deficit at all.
       final woman = daily(
         goal: 'Cardio',
         kg: 45,
@@ -201,8 +201,12 @@ void main() {
 
       expect(man.kcal, 1500);
       expect(man.limit, TargetLimit.floor);
+      expect(man.phase, TargetPhase.deficit); // a smaller deficit
+      expect(man.proteinG, 99); // 1.8 × 55
       expect(woman.kcal, 1112);
-      expect(woman.limit, TargetLimit.floor);
+      expect(woman.limit, TargetLimit.lowMaintenance);
+      expect(woman.phase, TargetPhase.maintenance);
+      expect(woman.proteinG, 54); // maintenance: 1.2 × 45
     });
 
     test('protein is highest in a deficit and capped at BMI 25 weight', () {
@@ -228,11 +232,79 @@ void main() {
       expect(build.limit, isNull);
     });
 
-    test('macros add up to the calorie target', () {
-      final targets = daily(goal: 'Cardio', kg: 80, cm: 180, age: 30);
-      final kcal = targets.proteinG * 4 + targets.carbsG * 4 + targets.fatG * 9;
+    test('macros add up to the calorie target, however large', () {
+      for (final targets in [
+        daily(goal: 'Cardio', kg: 80, cm: 180, age: 30),
+        // ≈ 6,235 kcal: carbs past the old 1,000 g cap.
+        daily(goal: 'Strength', kg: 200, cm: 195, age: 20, activity: 4),
+      ]) {
+        final kcal =
+            targets.proteinG * 4 + targets.carbsG * 4 + targets.fatG * 9;
+        expect((kcal - targets.kcal).abs(), lessThan(10));
+      }
+    });
 
-      expect((kcal - targets.kcal).abs(), lessThan(10));
+    test('phase is what was applied, not what was picked', () {
+      expect(
+        daily(goal: 'Cardio', kg: 80, cm: 180, age: 30).phase,
+        TargetPhase.deficit,
+      );
+      expect(
+        daily(goal: 'Strength', kg: 80, cm: 180, age: 30).phase,
+        TargetPhase.surplus,
+      );
+      expect(
+        daily(goal: 'Cardio', kg: 50, cm: 160, age: 14, male: false).phase,
+        TargetPhase.maintenance,
+      );
+    });
+
+    test('a saved menu is outdated when kcal, protein or goal change', () {
+      final lose = daily(
+        goal: 'Cardio',
+        kg: 45,
+        cm: 150,
+        age: 60,
+        male: false,
+        activity: 0,
+      );
+      final keep = daily(
+        goal: 'Mobility',
+        kg: 45,
+        cm: 150,
+        age: 60,
+        male: false,
+        activity: 0,
+      );
+      final saved = MealPlan(
+        date: DateTime(2026, 10, 21),
+        targetKcal: lose.kcal,
+        meals: const [],
+      ).forTargets(proteinG: 99, goal: 'Lose fat');
+      final restored = MealPlan.fromJson(
+        jsonDecode(jsonEncode(saved.toJson())) as Map<String, dynamic>,
+      );
+
+      // Same kcal (both at maintenance), but protein and goal differ.
+      expect(lose.kcal, keep.kcal);
+      expect(restored.proteinG, 99);
+      expect(restored.goal, 'Lose fat');
+      expect(restored.outdatedFor(keep, 'Stay mobile'), isTrue);
+      expect(
+        restored
+            .forTargets(proteinG: keep.proteinG, goal: 'Stay mobile')
+            .outdatedFor(keep, 'Stay mobile'),
+        isFalse,
+      );
+      // Older saved menus only knew their kcal.
+      expect(
+        MealPlan(
+          date: DateTime(2026, 10, 21),
+          targetKcal: keep.kcal,
+          meals: const [],
+        ).outdatedFor(keep, 'Stay mobile'),
+        isFalse,
+      );
     });
   });
 
@@ -289,7 +361,11 @@ void main() {
       allOf(contains('User goal: Lose fat'), isNot(contains('Cardio'))),
     );
     // A held-back target never tells the model to plan for fat loss.
-    for (final limit in [TargetLimit.underweight, TargetLimit.minor]) {
+    for (final limit in [
+      TargetLimit.underweight,
+      TargetLimit.minor,
+      TargetLimit.lowMaintenance,
+    ]) {
       expect(
         AiMealPrompt.user(
           targetKcal: 1643,

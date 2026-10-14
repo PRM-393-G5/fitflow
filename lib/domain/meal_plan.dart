@@ -133,12 +133,37 @@ class MealPlan {
     required this.targetKcal,
     required this.meals,
     this.note = '',
+    this.proteinG,
+    this.goal,
   });
 
   final DateTime date;
   final int targetKcal;
   final List<Meal> meals;
   final String note;
+
+  /// The protein target and the goal text the plan was asked for; null in
+  /// plans saved before they were recorded.
+  final int? proteinG;
+  final String? goal;
+
+  /// This plan, recording what it was generated for.
+  MealPlan forTargets({required int proteinG, required String? goal}) =>
+      MealPlan(
+        date: date,
+        targetKcal: targetKcal,
+        meals: meals,
+        note: note,
+        proteinG: proteinG,
+        goal: goal,
+      );
+
+  /// Whether today's [targets] (and [goal] text) differ from what this
+  /// plan was generated for — calories, protein or goal.
+  bool outdatedFor(DailyTargets targets, String? goal) =>
+      targetKcal != targets.kcal ||
+      (proteinG != null && proteinG != targets.proteinG) ||
+      (proteinG != null && this.goal != goal);
 
   int get totalKcal => meals.fold(0, (sum, meal) => sum + meal.kcal);
 
@@ -152,6 +177,8 @@ class MealPlan {
     'targetKcal': targetKcal,
     'meals': meals.map((meal) => meal.toJson()).toList(),
     'note': note,
+    'proteinG': ?proteinG,
+    'goal': ?goal,
   };
 
   /// Throws [FormatException] when the date is missing or malformed.
@@ -167,6 +194,8 @@ class MealPlan {
           if (item is Map<String, dynamic>) Meal.fromJson(item),
       ],
       note: note is String ? note : '',
+      proteinG: _num(json['proteinG'])?.toInt(),
+      goal: json['goal'] is String ? json['goal'] as String : null,
     );
   }
 }
@@ -487,17 +516,26 @@ enum TargetLimit {
   /// Under 18: maintenance only, and adult BMI categories don't apply.
   minor,
 
-  /// The deficit would go below the unsupervised minimum intake.
+  /// The deficit stops at the unsupervised minimum intake (still a
+  /// deficit, just a smaller one).
   floor,
+
+  /// Maintenance is already at or below that minimum, so there is no
+  /// room for a deficit at all.
+  lowMaintenance,
 }
 
-/// A day's calorie and macro targets; [limit] says why a safety rule
-/// changed them, if one did.
+/// Which side of maintenance a target is on, as actually applied.
+enum TargetPhase { deficit, maintenance, surplus }
+
+/// A day's calorie and macro targets. [phase] is the adjustment actually
+/// applied; [limit] says why a safety rule changed it, if one did.
 typedef DailyTargets = ({
   int kcal,
   int proteinG,
   int fatG,
   int carbsG,
+  TargetPhase phase,
   TargetLimit? limit,
 });
 
@@ -510,20 +548,16 @@ typedef DailyTargets = ({
 ///   for a small woman and 11% for a large man.
 /// - No deficit with BMI under 18.5 (WHO underweight) and no adjustment
 ///   under 18 (growth needs vary; adult cutoffs don't apply).
-/// - A deficit never goes below 1,200 kcal for women or 1,500 kcal for
-///   men (the usual unsupervised minimum), nor below TDEE itself when
-///   TDEE is lower.
-/// - Protein per kg follows the adjustment actually applied (ISSN; Morton
-///   et al. 2018; Helms et al. 2014): 1.8 g in a deficit — more than when
-///   building, to keep muscle — 1.6 g in a surplus, 1.2 g at
-///   maintenance. Adults above BMI 25 count the weight at BMI 25, not
-///   total weight.
-/// - Nothing is clamped beyond these rules, so a surplus stays a surplus
-///   and maintenance stays TDEE.
-/// - Fat 25% of calories; carbs fill the rest.
+/// - A deficit stops at 1,200 kcal for women or 1,500 kcal for men (the
+///   usual unsupervised minimum); with maintenance already at or below
+///   that, there is no deficit.
+/// - Protein per kg follows [TargetPhase] (ISSN; Morton et al. 2018; Helms
+///   et al. 2014): 1.8 g in a deficit — more than when building, to keep
+///   muscle — 1.6 g in a surplus, 1.2 g at maintenance. Adults above BMI
+///   25 count the weight at BMI 25, not total weight.
+/// - Nothing is clamped beyond these rules: a surplus stays a surplus and
+///   maintenance stays TDEE. Fat is 25% of calories; carbs fill the rest.
 abstract final class NutritionTargets {
-  static const referenceBmi = 25.0;
-
   /// The lowest daily intake FitFlow sets without medical supervision.
   static int floorKcal({required bool isMale}) => isMale ? 1500 : 1200;
 
@@ -549,24 +583,30 @@ abstract final class NutritionTargets {
     } else if (bmi < BodyMetrics.underweightBmi && adjustment < 0) {
       adjustment = 0;
       limit = TargetLimit.underweight;
-    }
-    var kcal = tdee + adjustment;
-    if (adjustment < 0) {
-      final floor = min(floorKcal(isMale: isMale).toDouble(), tdee);
-      if (kcal < floor) {
-        kcal = floor;
+    } else if (adjustment < 0) {
+      final floor = floorKcal(isMale: isMale);
+      if (tdee <= floor) {
+        adjustment = 0;
+        limit = TargetLimit.lowMaintenance;
+      } else if (tdee + adjustment < floor) {
+        adjustment = floor - tdee;
         limit = TargetLimit.floor;
       }
     }
-    final target = kcal.round();
-
-    final perKg = adjustment < 0
-        ? 1.8
+    final phase = adjustment < 0
+        ? TargetPhase.deficit
         : adjustment > 0
-        ? 1.6
-        : 1.2;
-    final referenceKg = adult && bmi > referenceBmi
-        ? referenceBmi * pow(heightCm / 100, 2)
+        ? TargetPhase.surplus
+        : TargetPhase.maintenance;
+    final target = (tdee + adjustment).round();
+
+    final perKg = switch (phase) {
+      TargetPhase.deficit => 1.8,
+      TargetPhase.surplus => 1.6,
+      TargetPhase.maintenance => 1.2,
+    };
+    final referenceKg = adult && bmi > BodyMetrics.overweightBmi
+        ? BodyMetrics.overweightBmi * pow(heightCm / 100, 2)
         : weightKg;
     final protein = (referenceKg * perKg).round();
     return (
@@ -574,6 +614,7 @@ abstract final class NutritionTargets {
       proteinG: protein,
       fatG: fatG(target),
       carbsG: carbsG(targetKcal: target, proteinG: protein),
+      phase: phase,
       limit: limit,
     );
   }
@@ -583,9 +624,7 @@ abstract final class NutritionTargets {
 
   /// Carbs fill the remainder after protein and fat (4 kcal/g).
   static int carbsG({required int targetKcal, required int proteinG}) =>
-      ((targetKcal - proteinG * 4 - fatG(targetKcal) * 9) / 4)
-          .clamp(0, 1000)
-          .round();
+      max(0, ((targetKcal - proteinG * 4 - fatG(targetKcal) * 9) / 4).round());
 }
 
 /// Prompt contract for AI meal suggestions.
@@ -640,9 +679,24 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
       ? const {'Breakfast': 25, 'Lunch': 35, 'Dinner': 30, 'Snack': 10}
       : const {'Breakfast': 30, 'Lunch': 40, 'Dinner': 30};
 
-  /// [limit] is the safety rule that held the target back, if any: an
-  /// underweight user or a minor then gets a maintenance goal, never the
-  /// fat-loss goal they picked.
+  /// The goal as the model should read it: the label ("Lose fat"), not
+  /// the stored workout category ("Cardio"), which reads as endurance
+  /// training; and when a safety rule held the target at maintenance,
+  /// maintenance — never the fat-loss goal that was picked.
+  static String? goalText(String? goal, TargetLimit? limit) => switch (limit) {
+    TargetLimit.underweight ||
+    TargetLimit.minor ||
+    TargetLimit.lowMaintenance =>
+      'maintain weight and eat enough — no calorie deficit',
+    TargetLimit.floor when goal != null =>
+      '${goalLabel(goal)}, already at the minimum safe intake — do not '
+          'go below the target',
+    _ when goal != null => goalLabel(goal),
+    _ => null,
+  };
+
+  /// [limit] is the safety rule that held the target back, if any; see
+  /// [goalText].
   static String user({
     required int targetKcal,
     required int proteinG,
@@ -663,17 +717,7 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
         )
         .join(', ');
     buffer.write('\nSplit: $shares');
-    // The label ("Lose fat"), not the stored workout category ("Cardio"),
-    // which reads as endurance training to the model.
-    final goalText = switch (limit) {
-      TargetLimit.underweight || TargetLimit.minor =>
-        'maintain weight and eat enough — no calorie deficit',
-      TargetLimit.floor when goal != null =>
-        '${goalLabel(goal)}, already at the minimum safe intake — do not '
-            'go below the target',
-      _ when goal != null => goalLabel(goal),
-      _ => null,
-    };
+    final goalText = AiMealPrompt.goalText(goal, limit);
     if (goalText != null) buffer.write('\nUser goal: $goalText');
     if (preferences != null && preferences.isNotEmpty) {
       buffer.write('\nPreferences/restrictions: $preferences');

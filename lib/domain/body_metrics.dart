@@ -18,8 +18,10 @@ abstract final class BodyMetrics {
     return weightKg / (meters * meters);
   }
 
-  /// WHO adult cutoff below which BMI counts as underweight.
+  /// WHO adult cutoffs: underweight below, overweight and obese from.
   static const underweightBmi = 18.5;
+  static const overweightBmi = 25.0;
+  static const obeseBmi = 30.0;
 
   /// Below this age the adult BMI categories don't apply (WHO uses
   /// BMI-for-age percentiles for children and teens).
@@ -31,8 +33,8 @@ abstract final class BodyMetrics {
     if (age != null && age < adultAge) return 'Use BMI-for-age';
     return switch (bmi) {
       < underweightBmi => 'Underweight',
-      < 25 => 'Normal',
-      < 30 => 'Overweight',
+      < overweightBmi => 'Normal',
+      < obeseBmi => 'Overweight',
       _ => 'Obese',
     };
   }
