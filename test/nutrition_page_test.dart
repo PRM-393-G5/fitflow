@@ -113,6 +113,29 @@ void main() {
     expect(find.textContaining('Build muscle'), findsOneWidget);
   });
 
+  testWidgets('shows eaten vs target and why a deficit is held back', (
+    tester,
+  ) async {
+    await pumpNutrition(tester, {
+      'onboarding_v1': '{"done":true,"goal":"Cardio"}',
+      // 45 kg at 165 cm: BMI 16.5, TDEE ≈ 1,643 kcal.
+      'body_profile_v1':
+          '{"heightCm":165,"age":25,"isMale":false,"activityLevel":1}',
+      'body_weights_v1': jsonEncode([
+        {'date': DateTime.now().toIso8601String(), 'weightKg': 45.0},
+      ]),
+      'food_log_v1': jsonEncode(
+        (FoodLog()..add(DateTime.now(), meal('Toast', 200))).toJson(),
+      ),
+    });
+
+    expect(find.text('/ 1,643 kcal eaten today'), findsOneWidget);
+    expect(find.text('20 / 81 g'), findsOneWidget); // protein, 1.8 × 45
+    expect(find.byKey(const Key('nutrition-target-limit')), findsOneWidget);
+    expect(find.textContaining('BMI is under 18.5'), findsOneWidget);
+    expect(find.byKey(const Key('nutrition-disclaimer')), findsOneWidget);
+  });
+
   testWidgets('groups the log into meal slots and logs into a chosen slot', (
     tester,
   ) async {

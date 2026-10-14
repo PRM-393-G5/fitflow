@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'body_metrics.dart';
+import 'training_options.dart';
+
 /// One suggested food item inside a meal.
 class MealItem {
   const MealItem({
@@ -476,27 +479,100 @@ class FoodLog {
   }
 }
 
-/// Calorie and macro targets derived from TDEE and the onboarding goal.
-abstract final class NutritionTargets {
-  /// Goal-based adjustment on top of maintenance calories.
-  /// Strength = lean surplus, Cardio = fat-loss deficit, Mobility = maintain.
-  static int targetKcal({required double tdee, required String? goal}) {
-    final delta = switch (goal) {
-      'Strength' => 300,
-      'Cardio' => -400,
-      _ => 0,
-    };
-    return (tdee + delta).clamp(1200, 5000).round();
-  }
+/// Why a daily target was held back from the goal's usual adjustment.
+enum TargetLimit {
+  /// BMI under 18.5: no calorie deficit.
+  underweight,
 
-  /// Protein per kg of body weight by goal.
-  static int proteinG({required double weightKg, required String? goal}) {
-    final factor = switch (goal) {
-      'Strength' => 1.8,
-      'Cardio' => 1.4,
+  /// Under 18: maintenance only, and adult BMI categories don't apply.
+  minor,
+
+  /// The deficit would go below the unsupervised minimum intake.
+  floor,
+}
+
+/// A day's calorie and macro targets; [limit] says why a safety rule
+/// changed them, if one did.
+typedef DailyTargets = ({
+  int kcal,
+  int proteinG,
+  int fatG,
+  int carbsG,
+  TargetLimit? limit,
+});
+
+/// Calorie and macro targets from TDEE, the goal and the body profile,
+/// with safety rules for groups a generic deficit is wrong for.
+///
+/// - Lose fat: 15% under TDEE, at most 500 kcal (about 0.5 kg a week);
+///   build muscle: 10% over, at most 300 kcal; otherwise maintenance.
+///   A percentage scales with the person — a flat −400 kcal is over 20%
+///   for a small woman and 11% for a large man.
+/// - No deficit with BMI under 18.5 (WHO underweight) and no adjustment
+///   under 18 (growth needs vary; adult cutoffs don't apply).
+/// - A deficit never goes below 1,200 kcal for women or 1,500 kcal for
+///   men (the usual unsupervised minimum), nor below TDEE itself when
+///   TDEE is lower.
+/// - Protein per kg (ISSN; Morton et al. 2018; Helms et al. 2014): 1.8 g
+///   when losing fat — more than when building, to keep muscle in a
+///   deficit — 1.6 g building, 1.2 g otherwise. Above BMI 25 it is
+///   counted on the weight at BMI 25, not on total weight.
+/// - Fat 25% of calories; carbs fill the rest.
+abstract final class NutritionTargets {
+  static const underweightBmi = 18.5;
+  static const referenceBmi = 25.0;
+
+  /// The lowest daily intake FitFlow sets without medical supervision.
+  static int floorKcal({required bool isMale}) => isMale ? 1500 : 1200;
+
+  static DailyTargets daily({
+    required double tdee,
+    required String? goal,
+    required double weightKg,
+    required double heightCm,
+    required int age,
+    required bool isMale,
+  }) {
+    final bmi = weightKg / pow(heightCm / 100, 2);
+    var adjustment = switch (goal) {
+      'Cardio' => -min(tdee * 0.15, 500.0),
+      'Strength' => min(tdee * 0.10, 300.0),
+      _ => 0.0,
+    };
+    TargetLimit? limit;
+    if (age < BodyMetrics.adultAge && adjustment != 0) {
+      adjustment = 0;
+      limit = TargetLimit.minor;
+    } else if (bmi < underweightBmi && adjustment < 0) {
+      adjustment = 0;
+      limit = TargetLimit.underweight;
+    }
+    var kcal = tdee + adjustment;
+    if (adjustment < 0) {
+      final floor = min(floorKcal(isMale: isMale).toDouble(), tdee);
+      if (kcal < floor) {
+        kcal = floor;
+        limit = TargetLimit.floor;
+      }
+    }
+    final target = kcal.clamp(800, 5000).round();
+
+    final perKg = switch (goal) {
+      'Cardio' => 1.8,
+      'Strength' => 1.6,
       _ => 1.2,
     };
-    return (weightKg * factor).round();
+    final referenceKg = bmi > referenceBmi
+        ? referenceBmi * pow(heightCm / 100, 2)
+        : weightKg;
+    final protein = (referenceKg * perKg).round();
+    return (
+      kcal: target,
+      proteinG: protein,
+      fatG: fatG(target),
+      carbsG: carbsG(targetKcal: target, proteinG: protein),
+      limit: limit,
+    );
   }
 
   /// Fat at 25% of target calories (9 kcal/g).
@@ -580,7 +656,9 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
         )
         .join(', ');
     buffer.write('\nSplit: $shares');
-    if (goal != null) buffer.write('\nUser goal: $goal');
+    // The label ("Lose fat"), not the stored workout category ("Cardio"),
+    // which reads as endurance training to the model.
+    if (goal != null) buffer.write('\nUser goal: ${goalLabel(goal)}');
     if (preferences != null && preferences.isNotEmpty) {
       buffer.write('\nPreferences/restrictions: $preferences');
     }

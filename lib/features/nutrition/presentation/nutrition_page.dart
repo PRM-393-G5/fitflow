@@ -469,12 +469,19 @@ class _NutritionPageState extends State<NutritionPage>
     final weight = controller.weightEntries.isEmpty
         ? null
         : controller.weightEntries.last.weightKg;
-    final targetKcal = tdee == null
+    // _tdee is only non-null with a complete profile and a weight.
+    final targets = tdee == null
         ? null
-        : NutritionTargets.targetKcal(tdee: tdee, goal: goal);
-    final proteinG = weight == null
-        ? null
-        : NutritionTargets.proteinG(weightKg: weight, goal: goal);
+        : NutritionTargets.daily(
+            tdee: tdee,
+            goal: goal,
+            weightKg: weight!,
+            heightCm: controller.heightCm!,
+            age: controller.age!,
+            isMale: controller.isMale,
+          );
+    final targetKcal = targets?.kcal;
+    final proteinG = targets?.proteinG;
     final plan = _cache.plan != null && _cache.plan!.isOn(_today)
         ? _cache.plan
         : null;
@@ -523,6 +530,8 @@ class _NutritionPageState extends State<NutritionPage>
             eaten: eaten,
             dayText: dayText,
             tdee: tdee,
+            targets: targets,
+            isMale: controller.isMale,
             goal: goal,
             onChangeGoal: () => _changeGoal(controller),
           ),
@@ -1387,6 +1396,8 @@ class _SummaryCard extends StatelessWidget {
     required this.eaten,
     required this.dayText,
     required this.tdee,
+    required this.targets,
+    required this.isMale,
     required this.goal,
     required this.onChangeGoal,
   });
@@ -1398,20 +1409,43 @@ class _SummaryCard extends StatelessWidget {
   final ({int kcal, double proteinG, double carbsG, double fatG}) eaten;
   final String dayText;
   final double? tdee;
+  final DailyTargets? targets;
+  final bool isMale;
   final String? goal;
   final VoidCallback onChangeGoal;
+
+  /// Why the target is held back, in words; null when it isn't.
+  String? _limitText(TargetLimit? limit) => switch (limit) {
+    TargetLimit.underweight =>
+      'Your BMI is under 18.5, so the target stays at maintenance instead '
+          'of a deficit. Talk to a doctor or dietitian before trying to '
+          'lose weight.',
+    TargetLimit.minor =>
+      'Under 18, the target stays at maintenance — growing bodies need '
+          'enough energy. Check with a doctor before eating less or more.',
+    TargetLimit.floor =>
+      'The target is held at ${thousands(NutritionTargets.floorKcal(isMale: isMale))} kcal '
+          'or your maintenance, whichever is lower — FitFlow sets nothing '
+          'lower without medical supervision.',
+    null => null,
+  };
 
   @override
   Widget build(BuildContext context) {
     final colors = context.theme.colors;
     final textTheme = Theme.of(context).textTheme;
     final muted = textTheme.bodySmall?.copyWith(color: colors.mutedForeground);
+    final target = targets;
+    final limitText = _limitText(target?.limit);
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Semantics(
-            label: '${eaten.kcal} kilocalories eaten $dayText',
+            label: target == null
+                ? '${eaten.kcal} kilocalories eaten $dayText'
+                : '${eaten.kcal} of ${target.kcal} kilocalories eaten '
+                      '$dayText',
             excludeSemantics: true,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -1424,18 +1458,52 @@ class _SummaryCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.xs),
-                Expanded(child: Text('kcal eaten $dayText', style: muted)),
+                Expanded(
+                  child: Text(
+                    target == null
+                        ? 'kcal eaten $dayText'
+                        : '/ ${thousands(target.kcal)} kcal eaten $dayText',
+                    key: const Key('nutrition-eaten'),
+                    style: muted,
+                  ),
+                ),
               ],
             ),
           ),
+          if (target != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: (eaten.kcal / target.kcal).clamp(0.0, 1.0),
+                minHeight: 8,
+                backgroundColor: colors.muted,
+                color: eaten.kcal > target.kcal
+                    ? colors.destructive
+                    : colors.primary,
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           Row(
             key: const Key('nutrition-macros'),
             spacing: AppSpacing.md,
             children: [
-              _macro(context, 'Protein', eaten.proteinG, _proteinColor),
-              _macro(context, 'Carbs', eaten.carbsG, _carbsColor),
-              _macro(context, 'Fat', eaten.fatG, _fatColor),
+              _macro(
+                context,
+                'Protein',
+                eaten.proteinG,
+                _proteinColor,
+                target?.proteinG,
+              ),
+              _macro(
+                context,
+                'Carbs',
+                eaten.carbsG,
+                _carbsColor,
+                target?.carbsG,
+              ),
+              _macro(context, 'Fat', eaten.fatG, _fatColor, target?.fatG),
             ],
           ),
           if (tdee != null) ...[
@@ -1466,12 +1534,36 @@ class _SummaryCard extends StatelessWidget {
               ],
             ),
           ],
+          if (limitText != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              key: const Key('nutrition-target-limit'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(FLucideIcons.shieldAlert, size: 16, color: colors.primary),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(child: Text(limitText, style: textTheme.bodySmall)),
+              ],
+            ),
+          ],
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Estimates for healthy adults, not medical advice.',
+            key: const Key('nutrition-disclaimer'),
+            style: muted,
+          ),
         ],
       ),
     );
   }
 
-  Widget _macro(BuildContext context, String label, double grams, Color color) {
+  Widget _macro(
+    BuildContext context,
+    String label,
+    double grams,
+    Color color, [
+    int? target,
+  ]) {
     final colors = context.theme.colors;
     return Expanded(
       child: Row(
@@ -1484,19 +1576,23 @@ class _SummaryCard extends StatelessWidget {
             child: const SizedBox(width: 4, height: 32),
           ),
           const SizedBox(width: AppSpacing.sm),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelMedium
-                    ?.copyWith(color: colors.mutedForeground),
-              ),
-              Text(
-                '${grams.round()} g',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ],
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelMedium
+                      ?.copyWith(color: colors.mutedForeground),
+                ),
+                Text(
+                  target == null
+                      ? '${grams.round()} g'
+                      : '${grams.round()} / $target g',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
           ),
         ],
       ),

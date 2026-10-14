@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prm/domain/body_metrics.dart';
 import 'package:prm/domain/meal_plan.dart';
 
 Map<String, dynamic> plan({List<Map<String, dynamic>>? meals}) => {
@@ -81,17 +82,133 @@ void main() {
     expect(decoded.targetKcal, 2000);
   });
 
-  test('target calories adjust by goal', () {
-    expect(NutritionTargets.targetKcal(tdee: 2400, goal: 'Strength'), 2700);
-    expect(NutritionTargets.targetKcal(tdee: 2400, goal: 'Cardio'), 2000);
-    expect(NutritionTargets.targetKcal(tdee: 2400, goal: 'Mobility'), 2400);
-    expect(NutritionTargets.targetKcal(tdee: 1000, goal: 'Cardio'), 1200);
-  });
+  group('daily targets', () {
+    // TDEE for the profile, so each case starts from the real number.
+    DailyTargets daily({
+      required String? goal,
+      required double kg,
+      required double cm,
+      required int age,
+      bool male = true,
+      int activity = 2,
+    }) => NutritionTargets.daily(
+      tdee: BodyMetrics.tdee(
+        weightKg: kg,
+        heightCm: cm,
+        age: age,
+        isMale: male,
+        activityLevel: activity,
+      ),
+      goal: goal,
+      weightKg: kg,
+      heightCm: cm,
+      age: age,
+      isMale: male,
+    );
 
-  test('protein target scales with weight and goal', () {
-    expect(NutritionTargets.proteinG(weightKg: 80, goal: 'Strength'), 144);
-    expect(NutritionTargets.proteinG(weightKg: 80, goal: 'Cardio'), 112);
-    expect(NutritionTargets.proteinG(weightKg: 80, goal: null), 96);
+    test('adjust by a share of TDEE, not a flat amount', () {
+      // 80 kg, 180 cm, 30 y, moderate: TDEE ≈ 2,759 kcal.
+      final lose = daily(goal: 'Cardio', kg: 80, cm: 180, age: 30);
+      final build = daily(goal: 'Strength', kg: 80, cm: 180, age: 30);
+      final keep = daily(goal: 'Mobility', kg: 80, cm: 180, age: 30);
+
+      expect(lose.kcal, 2345); // −15%
+      expect(build.kcal, 3035); // +10%
+      expect(keep.kcal, 2759);
+      expect(lose.limit, isNull);
+      // A big TDEE caps the deficit at 500 kcal.
+      expect(
+        NutritionTargets.daily(
+          tdee: 3600,
+          goal: 'Cardio',
+          weightKg: 100,
+          heightCm: 190,
+          age: 30,
+          isMale: true,
+        ).kcal,
+        3100,
+      );
+    });
+
+    test('no deficit for an underweight BMI', () {
+      // 45 kg, 165 cm: BMI 16.5. TDEE ≈ 1,643 kcal (light activity).
+      final lose = daily(
+        goal: 'Cardio',
+        kg: 45,
+        cm: 165,
+        age: 25,
+        male: false,
+        activity: 1,
+      );
+      final build = daily(
+        goal: 'Strength',
+        kg: 45,
+        cm: 165,
+        age: 25,
+        male: false,
+        activity: 1,
+      );
+
+      expect(lose.kcal, 1643);
+      expect(lose.limit, TargetLimit.underweight);
+      // Gaining is still fine.
+      expect(build.kcal, 1808);
+      expect(build.limit, isNull);
+    });
+
+    test('under 18 stays at maintenance', () {
+      // 14-year-old, 50 kg, 160 cm, sedentary: TDEE ≈ 1,523 kcal.
+      final lose = daily(
+        goal: 'Cardio',
+        kg: 50,
+        cm: 160,
+        age: 14,
+        male: false,
+        activity: 0,
+      );
+
+      expect(lose.kcal, 1523);
+      expect(lose.limit, TargetLimit.minor);
+      expect(
+        daily(goal: 'Mobility', kg: 50, cm: 160, age: 14, male: false).limit,
+        isNull,
+      );
+    });
+
+    test('a deficit stops at 1,500 kcal for men and 1,200 for women', () {
+      // 70 y man, 55 kg, sedentary: TDEE ≈ 1,521; −15% would be 1,293.
+      final man = daily(goal: 'Cardio', kg: 55, cm: 170, age: 70, activity: 0);
+      // 60 y woman, 45 kg, 150 cm: TDEE ≈ 1,112, already under 1,200 —
+      // the floor never pushes the target above maintenance.
+      final woman = daily(
+        goal: 'Cardio',
+        kg: 45,
+        cm: 150,
+        age: 60,
+        male: false,
+        activity: 0,
+      );
+
+      expect(man.kcal, 1500);
+      expect(man.limit, TargetLimit.floor);
+      expect(woman.kcal, 1112);
+      expect(woman.limit, TargetLimit.floor);
+    });
+
+    test('protein is highest in a deficit and capped at BMI 25 weight', () {
+      expect(daily(goal: 'Cardio', kg: 80, cm: 180, age: 30).proteinG, 144);
+      expect(daily(goal: 'Strength', kg: 80, cm: 180, age: 30).proteinG, 128);
+      expect(daily(goal: null, kg: 80, cm: 180, age: 30).proteinG, 96);
+      // 130 kg at 180 cm (BMI 40) counts as 81 kg, the BMI-25 weight.
+      expect(daily(goal: 'Cardio', kg: 130, cm: 180, age: 30).proteinG, 146);
+    });
+
+    test('macros add up to the calorie target', () {
+      final targets = daily(goal: 'Cardio', kg: 80, cm: 180, age: 30);
+      final kcal = targets.proteinG * 4 + targets.carbsG * 4 + targets.fatG * 9;
+
+      expect((kcal - targets.kcal).abs(), lessThan(10));
+    });
   });
 
   test('photo analysis parses dishes into a meal', () {
@@ -134,6 +251,17 @@ void main() {
     expect(
       AiMealPrompt.user(targetKcal: 2000, proteinG: 120, meals: 3),
       contains('Lunch 40% (~800 kcal)'),
+    );
+    // The model gets the goal's label, not the workout category it is
+    // stored as.
+    expect(
+      AiMealPrompt.user(
+        targetKcal: 2000,
+        proteinG: 120,
+        meals: 3,
+        goal: 'Cardio',
+      ),
+      allOf(contains('User goal: Lose fat'), isNot(contains('Cardio'))),
     );
   });
 

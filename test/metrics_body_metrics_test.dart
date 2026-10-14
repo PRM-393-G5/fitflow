@@ -8,6 +8,9 @@ void main() {
     expect(BodyMetrics.bmiCategory(24.9), 'Normal');
     expect(BodyMetrics.bmiCategory(25), 'Overweight');
     expect(BodyMetrics.bmiCategory(30), 'Obese');
+    // Adult cutoffs don't apply to teens.
+    expect(BodyMetrics.bmiCategory(17.9, age: 14), 'Use BMI-for-age');
+    expect(BodyMetrics.bmiCategory(17.9, age: 18), 'Underweight');
   });
 
   test('decimal parsing accepts a comma separator', () {

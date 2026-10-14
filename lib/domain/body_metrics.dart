@@ -18,13 +18,21 @@ abstract final class BodyMetrics {
     return weightKg / (meters * meters);
   }
 
-  /// WHO adult BMI category.
-  static String bmiCategory(double bmi) => switch (bmi) {
-    < 18.5 => 'Underweight',
-    < 25 => 'Normal',
-    < 30 => 'Overweight',
-    _ => 'Obese',
-  };
+  /// Below this age the adult BMI categories don't apply (WHO uses
+  /// BMI-for-age percentiles for children and teens).
+  static const adultAge = 18;
+
+  /// WHO adult BMI category; for [age] under [adultAge] a pointer to
+  /// BMI-for-age instead.
+  static String bmiCategory(double bmi, {int? age}) {
+    if (age != null && age < adultAge) return 'Use BMI-for-age';
+    return switch (bmi) {
+      < 18.5 => 'Underweight',
+      < 25 => 'Normal',
+      < 30 => 'Overweight',
+      _ => 'Obese',
+    };
+  }
 
   static double bmr({
     required double weightKg,

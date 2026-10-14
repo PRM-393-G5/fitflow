@@ -359,7 +359,7 @@ class _BodyProfileCard extends StatelessWidget {
                     context,
                     'BMI',
                     bmi!.toStringAsFixed(1),
-                    BodyMetrics.bmiCategory(bmi),
+                    BodyMetrics.bmiCategory(bmi, age: age),
                   ),
                   _value(context, 'BMR', '${bmr!.round()} kcal'),
                   _value(context, 'TDEE', '${tdee!.round()} kcal'),
