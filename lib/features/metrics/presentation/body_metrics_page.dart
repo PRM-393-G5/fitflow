@@ -293,12 +293,16 @@ class _BodyProfileCard extends StatelessWidget {
     final age = controller.age;
     final hasProfile = height != null && age != null;
     final weight = latestKg;
+    // BMR and TDEE are adult formulas, as on Nutrition.
+    final adult = age == null || BodyMetrics.adultFormulasApply(age);
 
     double? bmi;
     double? bmr;
     double? tdee;
     if (hasProfile && weight != null) {
       bmi = BodyMetrics.bmi(weightKg: weight, heightCm: height);
+    }
+    if (hasProfile && weight != null && adult) {
       bmr = BodyMetrics.bmr(
         weightKg: weight,
         heightCm: height,
@@ -349,7 +353,7 @@ class _BodyProfileCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
             if (weight == null)
               Text(
-                age >= BodyMetrics.adultAge
+                adult
                     ? 'Log your weight to see BMI/BMR/TDEE.'
                     : 'Log your weight to see BMI.',
                 key: const Key('metrics-weight-hint'),
@@ -363,14 +367,13 @@ class _BodyProfileCard extends StatelessWidget {
                     bmi!.toStringAsFixed(1),
                     BodyMetrics.bmiCategory(bmi, age: age),
                   ),
-                  // Mifflin-St Jeor is an adult formula, as on Nutrition.
-                  if (age >= BodyMetrics.adultAge) ...[
+                  if (adult) ...[
                     _value(context, 'BMR', '${bmr!.round()} kcal'),
                     _value(context, 'TDEE', '${tdee!.round()} kcal'),
                   ],
                 ],
               ),
-              if (age < BodyMetrics.adultAge) ...[
+              if (!adult) ...[
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   'BMR and TDEE use adult formulas, so they are not shown '

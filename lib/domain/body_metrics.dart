@@ -27,10 +27,14 @@ abstract final class BodyMetrics {
   /// BMI-for-age percentiles for children and teens).
   static const adultAge = 18;
 
+  /// Whether the adult formulas here (BMR, TDEE, BMI categories) apply
+  /// at [age] — the one place that rule lives.
+  static bool adultFormulasApply(int age) => age >= adultAge;
+
   /// WHO adult BMI category; for [age] under [adultAge] a pointer to
   /// BMI-for-age instead.
   static String bmiCategory(double bmi, {int? age}) {
-    if (age != null && age < adultAge) return 'Use BMI-for-age';
+    if (age != null && !adultFormulasApply(age)) return 'Use BMI-for-age';
     return switch (bmi) {
       < underweightBmi => 'Underweight',
       < overweightBmi => 'Normal',

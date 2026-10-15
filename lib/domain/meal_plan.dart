@@ -521,11 +521,12 @@ enum TargetLimit {
   /// BMI under 18.5: no calorie deficit.
   underweight,
 
-  /// The deficit stops at the unsupervised minimum intake (a smaller
-  /// deficit — shrinking to nothing as maintenance nears the minimum).
+  /// The deficit stops at the minimum intake (a smaller deficit —
+  /// shrinking to nothing as maintenance nears the minimum).
   floor,
 
-  /// Maintenance is at or below that minimum, so there is no deficit.
+  /// Estimated maintenance is below the minimum intake, so the target is
+  /// held at the minimum — no deficit.
   lowMaintenance,
 }
 
@@ -543,12 +544,10 @@ typedef DailyTargets = ({
   TargetLimit? limit,
 
   /// The range a suggested day menu must total: ±10% of [kcal], but
-  /// never under the lower of the floor and [kcal], nor under maintenance
-  /// for an underweight BMI whatever the goal. [menuAimKcal] is its
-  /// middle, what the model is asked for.
+  /// never under the floor, nor under maintenance for an underweight BMI
+  /// whatever the goal. Menus outside it are scaled to [kcal].
   int minMenuKcal,
   int maxMenuKcal,
-  int menuAimKcal,
 });
 
 /// Calorie and macro targets from TDEE, the goal and the body profile,
@@ -561,20 +560,21 @@ typedef DailyTargets = ({
 /// - No targets at all under 18: Mifflin-St Jeor and these rules are for
 ///   adults, and growth needs vary.
 /// - No deficit with BMI under 18.5 (WHO underweight).
-/// - A deficit stops at 1,200 kcal for women or 1,500 kcal for men (the
-///   usual minimum for a diet without medical supervision); with
-///   maintenance at or below that, there is no deficit — the target is
-///   what the body uses, even when that is below the floor. The deficit shrinks continuously as maintenance
-///   nears the floor, so nothing jumps at a threshold.
+/// - No target goes below 1,200 kcal for women or 1,500 kcal for men (the
+///   usual minimum without medical supervision; below it nutrient needs
+///   are hard to meet). A deficit stops there, shrinking continuously as
+///   maintenance nears it, so nothing jumps; an estimated maintenance
+///   below it holds the target at the minimum.
 /// - Protein per kg (ISSN; Morton et al. 2018; Helms et al. 2014): 1.2 g
 ///   at maintenance, 1.6 g in a surplus, and in a deficit rising from
 ///   1.2 g to 1.8 g at [fullDeficitKcal] or more — more than when
 ///   building, to keep muscle. Above BMI 25 it counts the weight at BMI
 ///   25, not total weight.
-/// - Nothing is clamped beyond these rules: a surplus stays a surplus and
-///   maintenance stays TDEE. Fat is 25% of calories; carbs fill the rest.
+/// - Nothing is clamped beyond these rules (no upper cap: a big
+///   athlete's surplus stays a surplus). Fat is 25% of calories; carbs
+///   fill the rest.
 abstract final class NutritionTargets {
-  /// The lowest intake a diet cuts to without medical supervision.
+  /// The lowest daily target FitFlow sets without medical supervision.
   static int floorKcal({required bool isMale}) => isMale ? 1500 : 1200;
 
   /// Deficit from which protein is at the full 1.8 g/kg.
@@ -582,7 +582,7 @@ abstract final class NutritionTargets {
 
   /// Whether FitFlow sets targets at [age]: adults only — Mifflin-St
   /// Jeor and these rules are for adults, and growth needs vary.
-  static bool appliesTo(int age) => age >= BodyMetrics.adultAge;
+  static bool appliesTo(int age) => BodyMetrics.adultFormulasApply(age);
 
   /// Today's targets, or null when they don't apply ([appliesTo]).
   static DailyTargets? daily({
@@ -605,19 +605,20 @@ abstract final class NutritionTargets {
     if (bmi < BodyMetrics.underweightBmi && adjustment < 0) {
       adjustment = 0;
       limit = TargetLimit.underweight;
-    } else if (adjustment < 0) {
-      if (tdee <= floor) {
-        adjustment = 0;
-        limit = TargetLimit.lowMaintenance;
-      } else if (tdee + adjustment < floor) {
-        adjustment = floor - tdee;
-        limit = TargetLimit.floor;
-      }
     }
-    final phase = adjustment < 0
-        ? TargetPhase.deficit
-        : adjustment > 0
+    // Lifting a low estimate to the floor is not a surplus the goal asked
+    // for, so the phase follows the goal's intent.
+    final planned = adjustment;
+    if (tdee + adjustment < floor) {
+      // Never below the minimum: a deficit stops there; a maintenance (or
+      // surplus) estimate under it is lifted to it.
+      limit = tdee <= floor ? TargetLimit.lowMaintenance : TargetLimit.floor;
+      adjustment = floor - tdee;
+    }
+    final phase = planned > 0
         ? TargetPhase.surplus
+        : adjustment < 0
+        ? TargetPhase.deficit
         : TargetPhase.maintenance;
     final target = (tdee + adjustment).round();
 
@@ -630,12 +631,12 @@ abstract final class NutritionTargets {
         ? BodyMetrics.overweightBmi * pow(heightCm / 100, 2)
         : weightKg;
     final protein = (referenceKg * perKg).round();
-    // A menu may undershoot by 10%, but never below the floor (or below
-    // the target when that is already under the floor), and never below
-    // maintenance for an underweight BMI, whatever the goal.
-    var minMenu = max((target * 0.9).round(), min(floor, target));
+    // A menu may miss by 10%, but never below the floor, and never below
+    // maintenance for an underweight BMI, whatever the goal. The target
+    // itself is always inside this range.
+    var minMenu = max((target * 0.9).round(), floor);
     if (bmi < BodyMetrics.underweightBmi) minMenu = max(minMenu, tdee.round());
-    final maxMenu = max((target * 1.1).round(), minMenu);
+    final maxMenu = (target * 1.1).round();
     return (
       kcal: target,
       proteinG: protein,
@@ -645,7 +646,6 @@ abstract final class NutritionTargets {
       limit: limit,
       minMenuKcal: minMenu,
       maxMenuKcal: maxMenu,
-      menuAimKcal: ((minMenu + maxMenu) / 2).round(),
     );
   }
 
@@ -663,7 +663,7 @@ abstract final class AiMealPrompt {
 You are a nutritionist generating a day meal plan as JSON. Rules:
 - Split the day into exactly the requested meals, following the kcal
   split given in the request.
-- Total calories within the range given in the request.
+- Total calories within +/-10% of the target.
 - Every item carries realistic kcal and macro estimates (grams).
 - Use common, recognizable dish names in English.
 - note is one short sentence of advice for the user's goal.''';
@@ -724,19 +724,14 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
   };
 
   /// [limit] is the safety rule that held the target back, if any; see
-  /// [goalText]. The total must land in [minKcal]–[maxKcal] (default
-  /// ±10% of [targetKcal]). [correction] explains why a previous menu
-  /// was rejected.
+  /// [goalText].
   static String user({
     required int targetKcal,
     required int proteinG,
     required int meals,
     String? goal,
     TargetLimit? limit,
-    int? minKcal,
-    int? maxKcal,
     String? preferences,
-    String? correction,
   }) {
     final buffer = StringBuffer(
       'Create a day meal plan.\nTarget: $targetKcal kcal, ~$proteinG g '
@@ -752,12 +747,7 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
     buffer.write('\nSplit: $shares');
     final goalText = AiMealPrompt.goalText(goal, limit);
     if (goalText != null) buffer.write('\nUser goal: $goalText');
-    buffer.write(
-      '\nTotal: between ${minKcal ?? (targetKcal * 0.9).round()} and '
-      '${maxKcal ?? (targetKcal * 1.1).round()} kcal — never below the '
-      'minimum.',
-    );
-    if (correction != null) buffer.write('\n$correction');
+
     if (preferences != null && preferences.isNotEmpty) {
       buffer.write('\nPreferences/restrictions: $preferences');
     }
@@ -824,8 +814,10 @@ abstract final class AiMealParser {
     );
   }
 
-  /// A menu totalling under [minKcal] or over [maxKcal] is rejected
-  /// ([FormatException]) — see [DailyTargets.minMenuKcal].
+  /// A menu totalling under [minKcal] or over [maxKcal] has its portions
+  /// scaled (kcal and macros, via [Meal.withKcal]) to total [targetKcal]
+  /// — models miss sums, and this always lands in range without another
+  /// call. See [DailyTargets.minMenuKcal].
   static MealPlan parse(
     Map<String, dynamic> json, {
     required int targetKcal,
@@ -839,23 +831,33 @@ abstract final class AiMealParser {
     if (meals.isEmpty) {
       throw const FormatException('AI plan has no meals');
     }
-    final plan = MealPlan(
+    final total = meals.fold<int>(0, (sum, meal) => sum + meal.kcal);
+    final outOfRange =
+        (minKcal != null && total < minKcal) ||
+        (maxKcal != null && total > maxKcal);
+    if (outOfRange && total <= 0) {
+      throw const FormatException('AI plan has no calories to scale');
+    }
+    return MealPlan(
       date: DateTime.now(),
       targetKcal: targetKcal,
-      meals: meals,
+      meals: outOfRange
+          ? _scaled(meals, targetKcal / total, targetKcal)
+          : meals,
       note: _text(json['note'], ''),
     );
-    if (minKcal != null && plan.totalKcal < minKcal) {
-      throw FormatException(
-        'AI plan totals ${plan.totalKcal} kcal, under the $minKcal minimum',
-      );
-    }
-    if (maxKcal != null && plan.totalKcal > maxKcal) {
-      throw FormatException(
-        'AI plan totals ${plan.totalKcal} kcal, over the $maxKcal maximum',
-      );
-    }
-    return plan;
+  }
+
+  /// [meals] scaled by [factor], with rounding drift absorbed by the last
+  /// meal so they total exactly [target].
+  static List<Meal> _scaled(List<Meal> meals, double factor, int target) {
+    final scaled = [
+      for (final meal in meals) meal.withKcal((meal.kcal * factor).round()),
+    ];
+    final drift = target - scaled.fold<int>(0, (sum, meal) => sum + meal.kcal);
+    final last = scaled.last;
+    scaled[scaled.length - 1] = last.withKcal(max(0, last.kcal + drift));
+    return scaled;
   }
 
   static Meal _meal(Map<String, dynamic> json, String fallbackLabel) => Meal(

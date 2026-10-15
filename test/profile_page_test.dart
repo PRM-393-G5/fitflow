@@ -98,6 +98,18 @@ void main() {
     expect(find.text('Lose fat · Advanced'), findsOneWidget);
   });
 
+  testWidgets('the goal picker skips calorie targets under 18', (tester) async {
+    await pumpProfile(tester, {
+      'body_profile_v1':
+          '{"heightCm":160,"age":16,"isMale":false,"activityLevel":1}',
+    });
+
+    await tester.tap(find.byKey(const Key('profile-goal')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Plans and suggestions follow these.'), findsOneWidget);
+  });
+
   test('relative sync times', () {
     final now = DateTime(2026, 10, 16, 12);
     expect(ProfilePage.ago(now, now: now), 'just now');

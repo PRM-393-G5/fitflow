@@ -157,29 +157,22 @@ class _NutritionPageState extends State<NutritionPage>
   Future<MealPlan> _generatePlan(DailyTargets targets, String? goal) async {
     final targetKcal = targets.kcal;
     FormatException? parseError;
-    String? correction;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
         final json = await _service.generateJson(
           system: AiMealPrompt.system,
           user: AiMealPrompt.user(
-            // Aim mid-range: asking for the minimum itself makes any small
-            // undershoot fail.
-            targetKcal: targets.menuAimKcal,
+            targetKcal: targetKcal,
             proteinG: targets.proteinG,
             meals: _cache.mealCount,
             goal: goal,
             limit: targets.limit,
-            minKcal: targets.minMenuKcal,
-            maxKcal: targets.maxMenuKcal,
             preferences: _prefsCtrl.text.trim(),
-            correction: correction,
           ),
           schema: AiMealPrompt.schema,
           schemaName: 'meal_plan',
         );
-        // A menu outside the allowed range is rejected and retried once,
-        // saying why.
+        // A menu outside the allowed range is scaled into it.
         return AiMealParser.parse(
           json,
           targetKcal: targetKcal,
@@ -188,9 +181,6 @@ class _NutritionPageState extends State<NutritionPage>
         ).forTargets(targets, goal);
       } on FormatException catch (e) {
         parseError = e;
-        correction =
-            'The previous menu was rejected (${e.message}). Keep the day '
-            'between ${targets.minMenuKcal} and ${targets.maxMenuKcal} kcal.';
       }
     }
     throw parseError!;
@@ -417,12 +407,15 @@ class _NutritionPageState extends State<NutritionPage>
     if (meal != null && mounted) await _logMeal(meal);
   }
 
-  Future<void> _changeGoal(AppController controller) async {
+  Future<void> _changeGoal(
+    AppController controller,
+    _NoTargets? missing,
+  ) async {
     final picked = await showAppDialog<String>(
       context: context,
       title: 'Your goal',
       body: Text(
-        _targets(controller).missing == _NoTargets.minor
+        missing == _NoTargets.minor
             ? 'Your goal picks your suggested workouts. Calorie targets are '
                   'for adults.'
             : 'Your calorie and protein targets follow your goal.',
@@ -562,11 +555,9 @@ class _NutritionPageState extends State<NutritionPage>
             // Targets come from today's weight and goal; past days are
             // shown without them rather than judged against today's.
             targets: isToday ? targets : null,
-            // Minors can still set a goal (it drives workout picks).
-            showGoal: missing != _NoTargets.profile,
-            minor: missing == _NoTargets.minor,
+            missing: missing,
             goal: goal,
-            onChangeGoal: () => _changeGoal(controller),
+            onChangeGoal: () => _changeGoal(controller, missing),
           ),
           const SizedBox(height: AppSpacing.lg),
           SectionHeader(
@@ -716,6 +707,7 @@ class _NutritionPageState extends State<NutritionPage>
             _AiPlanCard(
               configured: OpenAiService.configured,
               targetKcal: targetKcal,
+              allowOptions: missing != _NoTargets.minor,
               unavailable: switch (missing) {
                 _NoTargets.minor => 'Menu suggestions are for adults only.',
                 _NoTargets.profile =>
@@ -780,25 +772,30 @@ class _NutritionPageState extends State<NutritionPage>
                       Expanded(
                         child: Text(
                           plan.targetKcal != targetKcal
-                              ? 'Target changed — regenerate. This menu was '
-                                    'planned for ${plan.targetKcal} kcal; your '
-                                    'target is now $targetKcal kcal.'
+                              ? 'Target changed — regenerate. Today\'s menu '
+                                    'was planned for ${plan.targetKcal} kcal; '
+                                    'your target is now $targetKcal kcal.'
                               : 'Your goal or protein target changed since '
-                                    'this menu was planned — regenerate.',
+                                    'today\'s menu was planned — regenerate.',
                         ),
                       ),
                     ],
                   ),
                 ),
               ],
-              const SizedBox(height: AppSpacing.md),
-              _PlanView(
-                plan: plan,
-                onLog: (meal) {
-                  _logMeal(meal, day: _today).ignore();
-                  _showSnack('${meal.label} logged to today.');
-                },
-              ),
+              // A menu planned for other targets (e.g. a deficit a safety
+              // rule now forbids) isn't shown or loggable until it is
+              // regenerated.
+              if (!targetChanged) ...[
+                const SizedBox(height: AppSpacing.md),
+                _PlanView(
+                  plan: plan,
+                  onLog: (meal) {
+                    _logMeal(meal, day: _today).ignore();
+                    _showSnack('${meal.label} logged to today.');
+                  },
+                ),
+              ],
             ],
           ],
         ],
@@ -1477,8 +1474,7 @@ class _SummaryCard extends StatelessWidget {
     required this.dayText,
     required this.tdee,
     required this.targets,
-    required this.showGoal,
-    required this.minor,
+    required this.missing,
     required this.goal,
     required this.onChangeGoal,
   });
@@ -1491,10 +1487,10 @@ class _SummaryCard extends StatelessWidget {
   final String dayText;
   final double? tdee;
   final DailyTargets? targets;
-  final bool showGoal;
 
-  /// Under 18: no targets, so no note about adult estimates either.
-  final bool minor;
+  /// Why there are no targets, if there aren't; minors still get the
+  /// goal row (the goal drives workout picks).
+  final _NoTargets? missing;
   final String? goal;
   final VoidCallback onChangeGoal;
 
@@ -1505,13 +1501,13 @@ class _SummaryCard extends StatelessWidget {
           'at maintenance instead of a deficit. Talk to a doctor or '
           'dietitian before trying to lose weight.',
     TargetLimit.floor =>
-      'The deficit stops at ${thousands(target.kcal)} kcal — FitFlow cuts '
-          'no lower without medical supervision.',
+      'The deficit stops at ${thousands(target.kcal)} kcal, the lowest '
+          'target FitFlow sets without medical supervision.',
     TargetLimit.lowMaintenance =>
-      'Your maintenance is below the lowest intake FitFlow cuts to without '
-          'medical supervision, so there is no deficit — the target is what '
-          'your body uses. Talk to a doctor or dietitian about losing '
-          'weight.',
+      'Your estimated maintenance is below ${thousands(target.kcal)} kcal, '
+          'the lowest target FitFlow sets without medical supervision, so '
+          'the target is held there — no deficit. Talk to a doctor or '
+          'dietitian about losing weight.',
     null => null,
   };
 
@@ -1564,14 +1560,12 @@ class _SummaryCard extends StatelessWidget {
                 '${thousands(target.kcal - eaten.kcal)} kcal to go',
                 style: muted,
               )
-            // Over target is only worth flagging in a deficit, and only
-            // past the range a suggested menu may total: at maintenance or
-            // in a surplus (e.g. held back for an underweight user), and
-            // for a menu the app itself suggested, eating more is fine.
-            else if (target.phase == TargetPhase.deficit &&
-                eaten.kcal > target.maxMenuKcal)
+            // Stated plainly, not as a warning: above target is fine at
+            // maintenance or in a surplus, and a suggested menu may land a
+            // little over it.
+            else
               Text(
-                '${thousands(eaten.kcal - target.kcal)} kcal over target',
+                '${thousands(eaten.kcal - target.kcal)} kcal above target',
                 key: const Key('nutrition-over-target'),
                 style: muted,
               ),
@@ -1598,7 +1592,7 @@ class _SummaryCard extends StatelessWidget {
               _macro(context, 'Fat', eaten.fatG, _fatColor, target?.fatG),
             ],
           ),
-          if (showGoal) ...[
+          if (missing != _NoTargets.profile) ...[
             const SizedBox(height: AppSpacing.sm),
             Row(
               children: [
@@ -1638,7 +1632,8 @@ class _SummaryCard extends StatelessWidget {
               ],
             ),
           ],
-          if (!minor) ...[
+          // Only next to targets — the estimates it is about.
+          if (target != null) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
               'Estimates for healthy adults, not medical advice.',
@@ -1895,6 +1890,7 @@ class _AiPlanCard extends StatelessWidget {
     required this.configured,
     required this.targetKcal,
     required this.unavailable,
+    required this.allowOptions,
     required this.hasPlan,
     required this.generating,
     required this.showOptions,
@@ -1909,6 +1905,9 @@ class _AiPlanCard extends StatelessWidget {
 
   /// Why there is no menu to generate, if there isn't.
   final String? unavailable;
+
+  /// False when menus are off for good (minors): no settings to show.
+  final bool allowOptions;
   final bool hasPlan;
   final bool generating;
   final bool showOptions;
@@ -1952,25 +1951,30 @@ class _AiPlanCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(subtitle, style: muted),
-          const SizedBox(height: AppSpacing.sm),
-          FButton(
-            key: const Key('nutrition-plan-options'),
-            variant: .ghost,
-            size: .sm,
-            mainAxisSize: .min,
-            onPress: onToggleOptions,
-            prefix: const Icon(FLucideIcons.slidersHorizontal),
-            suffix: Icon(
-              showOptions ? FLucideIcons.chevronUp : FLucideIcons.chevronDown,
-            ),
-            child: Flexible(
-              child: Text(
-                showOptions ? 'Options' : 'Options: $optionsSummary',
-                overflow: TextOverflow.ellipsis,
+          if (allowOptions) ...[
+            const SizedBox(height: AppSpacing.sm),
+            FButton(
+              key: const Key('nutrition-plan-options'),
+              variant: .ghost,
+              size: .sm,
+              mainAxisSize: .min,
+              onPress: onToggleOptions,
+              prefix: const Icon(FLucideIcons.slidersHorizontal),
+              suffix: Icon(
+                showOptions ? FLucideIcons.chevronUp : FLucideIcons.chevronDown,
+              ),
+              child: Flexible(
+                child: Text(
+                  showOptions ? 'Options' : 'Options: $optionsSummary',
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
-          ),
-          if (showOptions) ...[const SizedBox(height: AppSpacing.sm), options],
+            if (showOptions) ...[
+              const SizedBox(height: AppSpacing.sm),
+              options,
+            ],
+          ],
           if (!configured) ...[
             const SizedBox(height: AppSpacing.md),
             const Text(

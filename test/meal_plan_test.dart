@@ -204,7 +204,8 @@ void main() {
         age: 70,
         activity: 0,
       );
-      // 60 y woman, 45 kg, 150 cm: TDEE ≈ 1,112, under her 1,200 floor.
+      // 60 y woman, 45 kg, 150 cm: TDEE ≈ 1,112, under her 1,200 floor —
+      // the target is held at the floor, with no deficit.
       final woman = daily(
         goal: 'Cardio',
         kg: 45,
@@ -223,8 +224,9 @@ void main() {
       expect(close.limit, TargetLimit.floor);
       expect(close.phase, TargetPhase.deficit);
       expect(close.proteinG, 68); // ≈ 1.24 g/kg
-      expect(woman.kcal, 1112);
+      expect(woman.kcal, 1200);
       expect(woman.limit, TargetLimit.lowMaintenance);
+      expect(woman.phase, TargetPhase.maintenance);
       expect(woman.proteinG, 54); // 1.2 × 45
     });
 
@@ -269,10 +271,8 @@ void main() {
 
       expect((lose.minMenuKcal, lose.maxMenuKcal), (2111, 2580));
       expect((keep.minMenuKcal, keep.maxMenuKcal), (2483, 3035));
-      // At the floor the target itself is the minimum, and the model is
-      // asked for the middle of the range, not its edge.
+      // At the floor the target itself is the minimum.
       expect((floor.minMenuKcal, floor.maxMenuKcal), (1500, 1650));
-      expect(floor.menuAimKcal, 1575);
       // A ruled-out deficit can't come back through the menu.
       expect(underweight.minMenuKcal, underweight.kcal);
     });
@@ -292,10 +292,10 @@ void main() {
       }
     });
 
-    test('a maintenance target under the floor is its own minimum', () {
-      // 60 y woman, 45 kg, 150 cm: maintenance 1,112 is below 1,200, so a
-      // menu 10% under it would be a diet under the floor.
-      for (final goal in ['Mobility', 'Cardio']) {
+    test('a maintenance estimate under the floor is lifted to it', () {
+      // 60 y woman, 45 kg, 150 cm: maintenance ≈ 1,112 is below 1,200, so
+      // the target — and the menu minimum — is 1,200, whatever the goal.
+      for (final goal in ['Mobility', 'Cardio', null]) {
         final targets = daily(
           goal: goal,
           kg: 45,
@@ -304,8 +304,9 @@ void main() {
           male: false,
           activity: 0,
         );
-        expect(targets.kcal, 1112);
-        expect(targets.minMenuKcal, 1112, reason: goal);
+        expect(targets.kcal, 1200, reason: goal);
+        expect(targets.limit, TargetLimit.lowMaintenance, reason: goal);
+        expect(targets.minMenuKcal, 1200, reason: goal);
       }
     });
 
@@ -389,29 +390,41 @@ void main() {
     });
   });
 
-  test('a menu outside the allowed range is rejected', () {
+  test('a menu outside the allowed range is scaled to the target', () {
     final json = plan(
       meals: [
         meal(items: [item(kcal: 400)]),
+        meal(items: [item(kcal: 600)]),
       ],
     );
 
-    expect(
-      () => AiMealParser.parse(json, targetKcal: 1500, minKcal: 1500),
-      throwsFormatException,
+    // 1,000 kcal against 1,500–1,650: portions scale up to 1,500.
+    final up = AiMealParser.parse(
+      json,
+      targetKcal: 1500,
+      minKcal: 1500,
+      maxKcal: 1650,
     );
+    expect(up.totalKcal, 1500);
+    expect(up.meals.first.kcal, 600); // ×1.5, proportions kept
+    // Over the range scales down; inside it is left alone.
     expect(
-      () => AiMealParser.parse(json, targetKcal: 300, maxKcal: 330),
-      throwsFormatException,
+      AiMealParser.parse(
+        json,
+        targetKcal: 800,
+        minKcal: 720,
+        maxKcal: 880,
+      ).totalKcal,
+      800,
     );
     expect(
       AiMealParser.parse(
         json,
-        targetKcal: 400,
-        minKcal: 360,
-        maxKcal: 440,
+        targetKcal: 1050,
+        minKcal: 945,
+        maxKcal: 1155,
       ).totalKcal,
-      400,
+      1000,
     );
   });
 
@@ -489,25 +502,6 @@ void main() {
         limit: TargetLimit.floor,
       ),
       contains('do not go below the target'),
-    );
-    // The total range is stated, by default ±10%.
-    expect(
-      AiMealPrompt.user(targetKcal: 2000, proteinG: 120, meals: 3),
-      contains('Total: between 1800 and 2200 kcal'),
-    );
-    expect(
-      AiMealPrompt.user(
-        targetKcal: 1500,
-        proteinG: 100,
-        meals: 3,
-        minKcal: 1500,
-        maxKcal: 1650,
-        correction: 'The previous menu was rejected.',
-      ),
-      allOf(
-        contains('Total: between 1500 and 1650 kcal'),
-        contains('The previous menu was rejected.'),
-      ),
     );
   });
 

@@ -110,6 +110,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('vegan'), findsOneWidget);
     expect(find.byKey(const Key('nutrition-target-changed')), findsOneWidget);
+    // A menu planned for another target isn't shown (or loggable).
+    expect(find.text('Oatmeal'), findsNothing);
     expect(find.textContaining('Build muscle'), findsOneWidget);
   });
 
@@ -174,6 +176,7 @@ void main() {
     expect(find.byKey(const Key('nutrition-change-goal')), findsOneWidget);
     expect(find.text('Menu suggestions are for adults only.'), findsOneWidget);
     expect(find.byKey(const Key('nutrition-disclaimer')), findsNothing);
+    expect(find.byKey(const Key('nutrition-plan-options')), findsNothing);
     await tester.tap(find.byKey(const Key('nutrition-change-goal')));
     await tester.pumpAndSettle();
     expect(
