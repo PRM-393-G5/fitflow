@@ -130,7 +130,7 @@ class _NutritionPageState extends State<NutritionPage>
         : controller.weightEntries.last.weightKg;
     const minor = (tdee: null, targets: null, missing: _NoTargets.minor);
     // A known under-18 age needs no profile check: there are no targets.
-    if (age != null && !NutritionTargets.appliesTo(age)) return minor;
+    if (age != null && !BodyMetrics.adultFormulasApply(age)) return minor;
     if (height == null || age == null || weight == null) {
       return (tdee: null, targets: null, missing: _NoTargets.profile);
     }
@@ -166,7 +166,7 @@ class _NutritionPageState extends State<NutritionPage>
             proteinG: targets.proteinG,
             meals: _cache.mealCount,
             goal: goal,
-            limit: targets.limit,
+            targets: targets,
             preferences: _prefsCtrl.text.trim(),
           ),
           schema: AiMealPrompt.schema,
@@ -186,9 +186,7 @@ class _NutritionPageState extends State<NutritionPage>
     throw parseError!;
   }
 
-  /// [targets] and [goal] are taken together when the page builds, so a
-  /// goal synced in while the dialog is open can't pair with them.
-  Future<void> _generate(DailyTargets targets, String? goal) async {
+  Future<void> _generate() async {
     if (_generating) return;
     if (_cache.plan?.isOn(_today) ?? false) {
       final replace = await _confirm(
@@ -199,6 +197,11 @@ class _NutritionPageState extends State<NutritionPage>
       if (!replace || !mounted) return;
     }
     final controller = AppScope.of(context);
+    // Read after the dialog, together, so a sync while it was open can't
+    // pair stale targets with a new goal (or save an outdated menu).
+    final targets = _targets(controller).targets;
+    final goal = controller.goal;
+    if (targets == null) return;
     // Compare against the controller, not [_epoch]: the page only catches
     // up on its next rebuild, which may come after the response.
     final epoch = controller.dataEpoch;
@@ -707,13 +710,7 @@ class _NutritionPageState extends State<NutritionPage>
             _AiPlanCard(
               configured: OpenAiService.configured,
               targetKcal: targetKcal,
-              allowOptions: missing != _NoTargets.minor,
-              unavailable: switch (missing) {
-                _NoTargets.minor => 'Menu suggestions are for adults only.',
-                _NoTargets.profile =>
-                  'Set up your body profile to get a menu for your target.',
-                null => null,
-              },
+              missing: missing,
               hasPlan: plan != null,
               generating: _generating,
               showOptions: _showPlanOptions,
@@ -756,9 +753,7 @@ class _NutritionPageState extends State<NutritionPage>
                   ),
                 ],
               ),
-              onGenerate: targets == null
-                  ? null
-                  : () => _generate(targets, goal),
+              onGenerate: targets == null ? null : _generate,
             ),
             if (plan != null) ...[
               if (targetChanged) ...[
@@ -783,10 +778,10 @@ class _NutritionPageState extends State<NutritionPage>
                   ),
                 ),
               ],
-              // A menu planned for other targets (e.g. a deficit a safety
-              // rule now forbids) isn't shown or loggable until it is
-              // regenerated.
-              if (!targetChanged) ...[
+              // A menu now under the safe minimum (e.g. a deficit a safety
+              // rule has since removed) isn't shown or loggable; other
+              // changes only show the banner above.
+              if (targets == null || !plan.unsafeFor(targets)) ...[
                 const SizedBox(height: AppSpacing.md),
                 _PlanView(
                   plan: plan,
@@ -1497,17 +1492,17 @@ class _SummaryCard extends StatelessWidget {
   /// Why [target] is held back, in words; null when it isn't.
   String? _limitText(DailyTargets target) => switch (target.limit) {
     TargetLimit.underweight =>
-      'Your BMI is under ${BodyMetrics.underweightBmi}, so the target stays '
-          'at maintenance instead of a deficit. Talk to a doctor or '
-          'dietitian before trying to lose weight.',
+      'Your BMI is close to or under ${BodyMetrics.underweightBmi}, so '
+          'FitFlow shrinks or removes the calorie deficit. Talk to a doctor '
+          'or dietitian before trying to lose weight.',
     TargetLimit.floor =>
       'The deficit stops at ${thousands(target.kcal)} kcal, the lowest '
           'target FitFlow sets without medical supervision.',
     TargetLimit.lowMaintenance =>
       'Your estimated maintenance is below ${thousands(target.kcal)} kcal, '
           'the lowest target FitFlow sets without medical supervision, so '
-          'the target is held there — no deficit. Talk to a doctor or '
-          'dietitian about losing weight.',
+          'the target is held there.'
+          '${goal == 'Cardio' ? ' There is no deficit — talk to a doctor or dietitian about losing weight.' : ''}',
     null => null,
   };
 
@@ -1889,8 +1884,7 @@ class _AiPlanCard extends StatelessWidget {
   const _AiPlanCard({
     required this.configured,
     required this.targetKcal,
-    required this.unavailable,
-    required this.allowOptions,
+    required this.missing,
     required this.hasPlan,
     required this.generating,
     required this.showOptions,
@@ -1903,11 +1897,9 @@ class _AiPlanCard extends StatelessWidget {
   final bool configured;
   final int? targetKcal;
 
-  /// Why there is no menu to generate, if there isn't.
-  final String? unavailable;
-
-  /// False when menus are off for good (minors): no settings to show.
-  final bool allowOptions;
+  /// Why there is no target to plan for, if there isn't; minors get no
+  /// menu settings either.
+  final _NoTargets? missing;
   final bool hasPlan;
   final bool generating;
   final bool showOptions;
@@ -1922,9 +1914,12 @@ class _AiPlanCard extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final muted = textTheme.bodySmall?.copyWith(color: colors.mutedForeground);
     final target = targetKcal;
-    final subtitle = target == null
-        ? unavailable ?? ''
-        : 'A full day menu for your ${thousands(target)} kcal target.';
+    final subtitle = switch (missing) {
+      _NoTargets.minor => 'Menu suggestions are for adults only.',
+      _NoTargets.profile =>
+        'Set up your body profile to get a menu for your target.',
+      null => 'A full day menu for your ${thousands(target ?? 0)} kcal target.',
+    };
     return AppCard(
       style: .delta(
         decoration: .boxDelta(
@@ -1951,7 +1946,7 @@ class _AiPlanCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(subtitle, style: muted),
-          if (allowOptions) ...[
+          if (missing != _NoTargets.minor) ...[
             const SizedBox(height: AppSpacing.sm),
             FButton(
               key: const Key('nutrition-plan-options'),

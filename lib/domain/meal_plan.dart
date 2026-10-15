@@ -161,6 +161,11 @@ class MealPlan {
     limit: targets.limit,
   );
 
+  /// Whether following this menu would now go under the safe minimum
+  /// for [targets] — e.g. a deficit menu once a safety rule removed the
+  /// deficit. Such a menu is not shown; other changes only flag it.
+  bool unsafeFor(DailyTargets targets) => totalKcal < targets.minMenuKcal;
+
   /// Whether today's [targets] or [goal] differ from what this plan was
   /// generated for.
   bool outdatedFor(DailyTargets targets, String? goal) {
@@ -518,7 +523,8 @@ class FoodLog {
 
 /// Why a daily target was held back from the goal's usual adjustment.
 enum TargetLimit {
-  /// BMI under 18.5: no calorie deficit.
+  /// BMI under 19.5: the deficit tapers from full at 19.5 to none at
+  /// 18.5 (WHO underweight), so it never jumps at the cutoff.
   underweight,
 
   /// The deficit stops at the minimum intake (a smaller deficit —
@@ -526,7 +532,7 @@ enum TargetLimit {
   floor,
 
   /// Estimated maintenance is below the minimum intake, so the target is
-  /// held at the minimum — no deficit.
+  /// held at the minimum (whatever the goal) — and there is no deficit.
   lowMaintenance,
 }
 
@@ -559,7 +565,8 @@ typedef DailyTargets = ({
 ///   for a small woman and 11% for a large man.
 /// - No targets at all under 18: Mifflin-St Jeor and these rules are for
 ///   adults, and growth needs vary.
-/// - No deficit with BMI under 18.5 (WHO underweight).
+/// - No deficit with BMI under 18.5 (WHO underweight), tapering in from
+///   BMI 19.5 so a 0.1 kg weigh-in never swings the target.
 /// - No target goes below 1,200 kcal for women or 1,500 kcal for men (the
 ///   usual minimum without medical supervision; below it nutrient needs
 ///   are hard to meet). A deficit stops there, shrinking continuously as
@@ -580,11 +587,13 @@ abstract final class NutritionTargets {
   /// Deficit from which protein is at the full 1.8 g/kg.
   static const fullDeficitKcal = 300;
 
-  /// Whether FitFlow sets targets at [age]: adults only — Mifflin-St
-  /// Jeor and these rules are for adults, and growth needs vary.
-  static bool appliesTo(int age) => BodyMetrics.adultFormulasApply(age);
+  /// BMI above [BodyMetrics.underweightBmi] over which a deficit tapers
+  /// in.
+  static const underweightTaperBmi = 1.0;
 
-  /// Today's targets, or null when they don't apply ([appliesTo]).
+  /// Today's targets, or null under 18
+  /// ([BodyMetrics.adultFormulasApply]): Mifflin-St Jeor and these rules
+  /// are for adults, and growth needs vary.
   static DailyTargets? daily({
     required double tdee,
     required String? goal,
@@ -593,7 +602,7 @@ abstract final class NutritionTargets {
     required int age,
     required bool isMale,
   }) {
-    if (!appliesTo(age)) return null;
+    if (!BodyMetrics.adultFormulasApply(age)) return null;
     final bmi = BodyMetrics.bmi(weightKg: weightKg, heightCm: heightCm);
     var adjustment = switch (goal) {
       'Cardio' => -min(tdee * 0.15, 500.0),
@@ -602,8 +611,10 @@ abstract final class NutritionTargets {
     };
     TargetLimit? limit;
     final floor = floorKcal(isMale: isMale);
-    if (bmi < BodyMetrics.underweightBmi && adjustment < 0) {
-      adjustment = 0;
+    final taper = ((bmi - BodyMetrics.underweightBmi) / underweightTaperBmi)
+        .clamp(0.0, 1.0);
+    if (adjustment < 0 && taper < 1) {
+      adjustment *= taper;
       limit = TargetLimit.underweight;
     }
     // Lifting a low estimate to the floor is not a surplus the goal asked
@@ -611,8 +622,9 @@ abstract final class NutritionTargets {
     final planned = adjustment;
     if (tdee + adjustment < floor) {
       // Never below the minimum: a deficit stops there; a maintenance (or
-      // surplus) estimate under it is lifted to it.
-      limit = tdee <= floor ? TargetLimit.lowMaintenance : TargetLimit.floor;
+      // surplus) estimate under it is lifted to it. An underweight reason
+      // matters more and is kept.
+      limit ??= tdee <= floor ? TargetLimit.lowMaintenance : TargetLimit.floor;
       adjustment = floor - tdee;
     }
     final phase = planned > 0
@@ -713,24 +725,27 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
   /// the stored workout category ("Cardio"), which reads as endurance
   /// training; and when a safety rule held the target at maintenance,
   /// maintenance — never the fat-loss goal that was picked.
-  static String? goalText(String? goal, TargetLimit? limit) => switch (limit) {
-    TargetLimit.underweight || TargetLimit.lowMaintenance =>
-      'maintain weight and eat enough — no calorie deficit',
-    TargetLimit.floor when goal != null =>
-      '${goalLabel(goal)}, already at the minimum safe intake — do not '
-          'go below the target',
-    _ when goal != null => goalLabel(goal),
-    _ => null,
-  };
+  static String? goalText(String? goal, DailyTargets targets) {
+    if (goal == null) return null;
+    // Fat loss without a deficit (a safety rule removed it) is maintenance;
+    // every other goal keeps its label.
+    if (goal == 'Cardio' && targets.phase != TargetPhase.deficit) {
+      return 'maintain weight and eat enough — no calorie deficit';
+    }
+    if (targets.limit == TargetLimit.floor) {
+      return '${goalLabel(goal)}, already at the minimum safe intake — do '
+          'not go below the target';
+    }
+    return goalLabel(goal);
+  }
 
-  /// [limit] is the safety rule that held the target back, if any; see
-  /// [goalText].
+  /// [targets] (if given) set how the goal reads; see [goalText].
   static String user({
     required int targetKcal,
     required int proteinG,
     required int meals,
     String? goal,
-    TargetLimit? limit,
+    DailyTargets? targets,
     String? preferences,
   }) {
     final buffer = StringBuffer(
@@ -745,7 +760,9 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
         )
         .join(', ');
     buffer.write('\nSplit: $shares');
-    final goalText = AiMealPrompt.goalText(goal, limit);
+    final goalText = targets == null
+        ? (goal == null ? null : goalLabel(goal))
+        : AiMealPrompt.goalText(goal, targets);
     if (goalText != null) buffer.write('\nUser goal: $goalText');
 
     if (preferences != null && preferences.isNotEmpty) {
@@ -797,6 +814,9 @@ You are a nutritionist identifying dishes in a food photo. Rules:
 /// empty meals dropped. Throws [FormatException] when nothing usable
 /// remains.
 abstract final class AiMealParser {
+  /// Largest share by which a menu's portions are rescaled; see [parse].
+  static const maxScale = 0.25;
+
   /// Parses the photo-analysis response into detected dishes plus the
   /// model's caveat note. Throws [FormatException] when nothing was
   /// identified.
@@ -816,8 +836,9 @@ abstract final class AiMealParser {
 
   /// A menu totalling under [minKcal] or over [maxKcal] has its portions
   /// scaled (kcal and macros, via [Meal.withKcal]) to total [targetKcal]
-  /// — models miss sums, and this always lands in range without another
-  /// call. See [DailyTargets.minMenuKcal].
+  /// — models miss sums. Scaling is capped at ±[maxScale] so portions
+  /// still match their dish names; a menu further off is rejected
+  /// ([FormatException]) for a retry. See [DailyTargets.minMenuKcal].
   static MealPlan parse(
     Map<String, dynamic> json, {
     required int targetKcal,
@@ -835,29 +856,23 @@ abstract final class AiMealParser {
     final outOfRange =
         (minKcal != null && total < minKcal) ||
         (maxKcal != null && total > maxKcal);
-    if (outOfRange && total <= 0) {
-      throw const FormatException('AI plan has no calories to scale');
+    final factor = total <= 0 ? 0.0 : targetKcal / total;
+    if (outOfRange && (factor < 1 - maxScale || factor > 1 + maxScale)) {
+      throw FormatException(
+        'AI plan totals $total kcal, too far from $targetKcal to rescale',
+      );
     }
     return MealPlan(
       date: DateTime.now(),
       targetKcal: targetKcal,
       meals: outOfRange
-          ? _scaled(meals, targetKcal / total, targetKcal)
+          ? [
+              for (final meal in meals)
+                meal.withKcal((meal.kcal * factor).round()),
+            ]
           : meals,
       note: _text(json['note'], ''),
     );
-  }
-
-  /// [meals] scaled by [factor], with rounding drift absorbed by the last
-  /// meal so they total exactly [target].
-  static List<Meal> _scaled(List<Meal> meals, double factor, int target) {
-    final scaled = [
-      for (final meal in meals) meal.withKcal((meal.kcal * factor).round()),
-    ];
-    final drift = target - scaled.fold<int>(0, (sum, meal) => sum + meal.kcal);
-    final last = scaled.last;
-    scaled[scaled.length - 1] = last.withKcal(max(0, last.kcal + drift));
-    return scaled;
   }
 
   static Meal _meal(Map<String, dynamic> json, String fallbackLabel) => Meal(

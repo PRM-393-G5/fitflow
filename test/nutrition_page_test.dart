@@ -141,7 +141,10 @@ void main() {
     expect(find.text('1,443 kcal to go'), findsOneWidget);
     expect(find.text('20 / 54 g'), findsOneWidget); // maintenance protein
     expect(find.byKey(const Key('nutrition-target-limit')), findsOneWidget);
-    expect(find.textContaining('BMI is under 18.5'), findsOneWidget);
+    expect(
+      find.textContaining('BMI is close to or under 18.5'),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('nutrition-disclaimer')), findsOneWidget);
 
     // Past days aren't judged against today's target.
@@ -186,6 +189,34 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('a small target drift keeps the menu, with the banner', (
+    tester,
+  ) async {
+    // 75 kg, 175 cm, 30 y, light, Build muscle: target ≈ 2,569 kcal.
+    final plan = MealPlan(
+      date: DateTime.now(),
+      targetKcal: 2560,
+      meals: [meal('Rice bowl', 2500)],
+    );
+    await pumpNutrition(tester, {
+      'body_profile_v1':
+          '{"heightCm":175,"age":30,"isMale":true,"activityLevel":1}',
+      'body_weights_v1': jsonEncode([
+        {'date': DateTime.now().toIso8601String(), 'weightKg': 75.0},
+      ]),
+      'meal_plan_v1': jsonEncode(MealPlanCache(plan: plan).toJson()),
+    });
+
+    final banner = find.byKey(const Key('nutrition-target-changed'));
+    await tester.scrollUntilVisible(
+      banner,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(banner, findsOneWidget);
+    expect(find.text('Rice bowl'), findsOneWidget);
   });
 
   testWidgets('groups the log into meal slots and logs into a chosen slot', (

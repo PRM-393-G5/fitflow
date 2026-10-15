@@ -195,11 +195,12 @@ void main() {
       // 70 y man, 60 kg, 175 cm, sedentary: TDEE ≈ 1,619; −15% would be
       // 1,376, so the deficit stops at 1,500 — 119 kcal under.
       final man = daily(goal: 'Cardio', kg: 60, cm: 175, age: 70, activity: 0);
-      // 55 kg at 170 cm: TDEE ≈ 1,521, 21 kcal above his floor — the
-      // deficit shrinks to those 21 kcal, protein barely above maintenance.
+      // 57 kg at 170 cm (BMI 19.7): TDEE 1,545, 45 kcal above his floor —
+      // the deficit shrinks to those 45 kcal, protein barely above
+      // maintenance.
       final close = daily(
         goal: 'Cardio',
-        kg: 55,
+        kg: 57,
         cm: 170,
         age: 70,
         activity: 0,
@@ -223,7 +224,7 @@ void main() {
       expect(close.kcal, 1500);
       expect(close.limit, TargetLimit.floor);
       expect(close.phase, TargetPhase.deficit);
-      expect(close.proteinG, 68); // ≈ 1.24 g/kg
+      expect(close.proteinG, 74); // 1.29 g/kg
       expect(woman.kcal, 1200);
       expect(woman.limit, TargetLimit.lowMaintenance);
       expect(woman.phase, TargetPhase.maintenance);
@@ -345,6 +346,115 @@ void main() {
       }
     });
 
+    test('the prompt reads the goal through the targets', () {
+      String prompt(String goal, DailyTargets targets) => AiMealPrompt.user(
+        targetKcal: targets.kcal,
+        proteinG: targets.proteinG,
+        meals: 3,
+        goal: goal,
+        targets: targets,
+      );
+      final underweight = daily(
+        goal: 'Cardio',
+        kg: 45,
+        cm: 165,
+        age: 25,
+        male: false,
+        activity: 1,
+      );
+      DailyTargets lowMaintenance(String goal) =>
+          daily(goal: goal, kg: 45, cm: 150, age: 60, male: false, activity: 0);
+      final floor = daily(
+        goal: 'Cardio',
+        kg: 60,
+        cm: 175,
+        age: 70,
+        activity: 0,
+      );
+
+      // Fat loss without a deficit is maintenance, never "Lose fat".
+      for (final targets in [underweight, lowMaintenance('Cardio')]) {
+        expect(
+          prompt('Cardio', targets),
+          allOf(contains('no calorie deficit'), isNot(contains('Lose fat'))),
+        );
+      }
+      // Other goals keep their label when held at the floor.
+      expect(
+        prompt('Strength', lowMaintenance('Strength')),
+        allOf(
+          contains('User goal: Build muscle'),
+          isNot(contains('no calorie deficit')),
+        ),
+      );
+      expect(prompt('Cardio', floor), contains('do not go below the target'));
+    });
+
+    test('the deficit tapers in across BMI 18.5–19.5', () {
+      // Woman, 165 cm, 25 y, light activity: BMI 18.5 is ≈ 50.37 kg.
+      DailyTargets at(double kg) => daily(
+        goal: 'Cardio',
+        kg: kg,
+        cm: 165,
+        age: 25,
+        male: false,
+        activity: 1,
+      );
+      final below = at(50.3);
+      final above = at(50.4);
+      final full = at(53.2); // BMI 19.5+
+
+      expect(below.limit, TargetLimit.underweight);
+      expect(below.phase, TargetPhase.maintenance);
+      // A 0.1 kg weigh-in no longer swings the target by ~250 kcal.
+      expect((above.kcal - below.kcal).abs(), lessThan(20));
+      expect((above.proteinG - below.proteinG).abs(), lessThanOrEqualTo(1));
+      expect(full.limit, isNull);
+      expect(full.phase, TargetPhase.deficit);
+    });
+
+    test('an underweight reason survives being lifted to the floor', () {
+      // 40 kg, 160 cm (BMI 15.6), 50 y, sedentary: TDEE ≈ 1,187 < 1,200.
+      final targets = daily(
+        goal: 'Cardio',
+        kg: 40,
+        cm: 160,
+        age: 50,
+        male: false,
+        activity: 0,
+      );
+
+      expect(targets.kcal, 1200);
+      expect(targets.limit, TargetLimit.underweight);
+    });
+
+    test('a saved menu is unsafe only when under the new minimum', () {
+      final lose = daily(goal: 'Cardio', kg: 80, cm: 180, age: 30);
+      MealPlan menu(int kcal) => MealPlan(
+        date: DateTime(2026, 10, 21),
+        targetKcal: lose.kcal,
+        meals: [
+          Meal(
+            label: 'Day',
+            items: [MealItem(name: 'Food', kcal: kcal)],
+          ),
+        ],
+      );
+      final underweight = daily(
+        goal: 'Cardio',
+        kg: 45,
+        cm: 165,
+        age: 25,
+        male: false,
+        activity: 1,
+      );
+
+      // A 1 kcal drift keeps the menu; a deficit menu under a no-deficit
+      // minimum does not.
+      expect(menu(2345).unsafeFor(lose), isFalse);
+      expect(menu(1400).unsafeFor(underweight), isTrue);
+    });
+
     test('a saved menu is outdated when kcal, protein or goal change', () {
       // At maintenance either way, so the kcal match; protein, goal and
       // limit don't.
@@ -390,7 +500,7 @@ void main() {
     });
   });
 
-  test('a menu outside the allowed range is scaled to the target', () {
+  test('a menu a little out of range is scaled; far off is rejected', () {
     final json = plan(
       meals: [
         meal(items: [item(kcal: 400)]),
@@ -398,24 +508,24 @@ void main() {
       ],
     );
 
-    // 1,000 kcal against 1,500–1,650: portions scale up to 1,500.
+    // 1,000 kcal against 1,100–1,210: portions scale up 10%.
     final up = AiMealParser.parse(
       json,
-      targetKcal: 1500,
-      minKcal: 1500,
-      maxKcal: 1650,
+      targetKcal: 1100,
+      minKcal: 1100,
+      maxKcal: 1210,
     );
-    expect(up.totalKcal, 1500);
-    expect(up.meals.first.kcal, 600); // ×1.5, proportions kept
+    expect(up.totalKcal, 1100);
+    expect(up.meals.first.kcal, 440); // proportions kept
     // Over the range scales down; inside it is left alone.
     expect(
       AiMealParser.parse(
         json,
-        targetKcal: 800,
-        minKcal: 720,
-        maxKcal: 880,
+        targetKcal: 900,
+        minKcal: 810,
+        maxKcal: 990,
       ).totalKcal,
-      800,
+      900,
     );
     expect(
       AiMealParser.parse(
@@ -425,6 +535,16 @@ void main() {
         maxKcal: 1155,
       ).totalKcal,
       1000,
+    );
+    // ×1.5 would make "2 eggs" a different dish: rejected for a retry.
+    expect(
+      () => AiMealParser.parse(
+        json,
+        targetKcal: 1500,
+        minKcal: 1500,
+        maxKcal: 1650,
+      ),
+      throwsFormatException,
     );
   });
 
@@ -479,29 +599,6 @@ void main() {
         goal: 'Cardio',
       ),
       allOf(contains('User goal: Lose fat'), isNot(contains('Cardio'))),
-    );
-    // A held-back target never tells the model to plan for fat loss.
-    for (final limit in [TargetLimit.underweight, TargetLimit.lowMaintenance]) {
-      expect(
-        AiMealPrompt.user(
-          targetKcal: 1643,
-          proteinG: 54,
-          meals: 3,
-          goal: 'Cardio',
-          limit: limit,
-        ),
-        allOf(contains('no calorie deficit'), isNot(contains('Lose fat'))),
-      );
-    }
-    expect(
-      AiMealPrompt.user(
-        targetKcal: 1500,
-        proteinG: 100,
-        meals: 3,
-        goal: 'Cardio',
-        limit: TargetLimit.floor,
-      ),
-      contains('do not go below the target'),
     );
   });
 

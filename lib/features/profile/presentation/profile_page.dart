@@ -8,7 +8,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../app/app_controller.dart';
-import '../../../domain/meal_plan.dart';
 import '../../../app/app_scope.dart';
 import '../../../core/formatting.dart';
 import '../../../core/layout/responsive_content.dart';
@@ -17,6 +16,7 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../data/api/api_client.dart';
 import '../../../data/backend_auth_service.dart';
+import '../../../domain/body_metrics.dart';
 import '../../../domain/models/app_user.dart';
 import '../../../domain/training_options.dart';
 import '../../auth/presentation/login_page.dart';
@@ -211,10 +211,10 @@ class ProfilePage extends StatelessWidget {
         animation: animation,
         goal: controller.goal,
         level: controller.level,
-        // No calorie targets under 18 (see NutritionTargets.appliesTo).
+        // No calorie targets under 18.
         calorieTargets:
             controller.age == null ||
-            NutritionTargets.appliesTo(controller.age!),
+            BodyMetrics.adultFormulasApply(controller.age!),
       ),
     );
     if (picked == null) return;
