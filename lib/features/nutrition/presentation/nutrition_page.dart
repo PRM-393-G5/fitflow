@@ -128,9 +128,9 @@ class _NutritionPageState extends State<NutritionPage>
     final weight = controller.weightEntries.isEmpty
         ? null
         : controller.weightEntries.last.weightKg;
-    if (age != null && !NutritionTargets.appliesTo(age)) {
-      return (tdee: null, targets: null, missing: _NoTargets.minor);
-    }
+    const minor = (tdee: null, targets: null, missing: _NoTargets.minor);
+    // A known under-18 age needs no profile check: there are no targets.
+    if (age != null && !NutritionTargets.appliesTo(age)) return minor;
     if (height == null || age == null || weight == null) {
       return (tdee: null, targets: null, missing: _NoTargets.profile);
     }
@@ -148,7 +148,9 @@ class _NutritionPageState extends State<NutritionPage>
       heightCm: height,
       age: age,
       isMale: controller.isMale,
-    )!;
+    );
+    // daily() declines only where targets don't apply.
+    if (targets == null) return minor;
     return (tdee: tdee, targets: targets, missing: null);
   }
 
@@ -161,7 +163,9 @@ class _NutritionPageState extends State<NutritionPage>
         final json = await _service.generateJson(
           system: AiMealPrompt.system,
           user: AiMealPrompt.user(
-            targetKcal: targetKcal,
+            // Aim mid-range: asking for the minimum itself makes any small
+            // undershoot fail.
+            targetKcal: targets.menuAimKcal,
             proteinG: targets.proteinG,
             meals: _cache.mealCount,
             goal: goal,
@@ -174,12 +178,13 @@ class _NutritionPageState extends State<NutritionPage>
           schema: AiMealPrompt.schema,
           schemaName: 'meal_plan',
         );
-        // A menu under the minimum (the floor, or no deficit when one
-        // was ruled out) is rejected and retried once, saying why.
+        // A menu outside the allowed range is rejected and retried once,
+        // saying why.
         return AiMealParser.parse(
           json,
           targetKcal: targetKcal,
           minKcal: targets.minMenuKcal,
+          maxKcal: targets.maxMenuKcal,
         ).forTargets(targets, goal);
       } on FormatException catch (e) {
         parseError = e;
@@ -191,7 +196,9 @@ class _NutritionPageState extends State<NutritionPage>
     throw parseError!;
   }
 
-  Future<void> _generate(DailyTargets targets) async {
+  /// [targets] and [goal] are taken together when the page builds, so a
+  /// goal synced in while the dialog is open can't pair with them.
+  Future<void> _generate(DailyTargets targets, String? goal) async {
     if (_generating) return;
     if (_cache.plan?.isOn(_today) ?? false) {
       final replace = await _confirm(
@@ -202,7 +209,6 @@ class _NutritionPageState extends State<NutritionPage>
       if (!replace || !mounted) return;
     }
     final controller = AppScope.of(context);
-    final goal = controller.goal;
     // Compare against the controller, not [_epoch]: the page only catches
     // up on its next rebuild, which may come after the response.
     final epoch = controller.dataEpoch;
@@ -415,7 +421,12 @@ class _NutritionPageState extends State<NutritionPage>
     final picked = await showAppDialog<String>(
       context: context,
       title: 'Your goal',
-      body: const Text('Your calorie and protein targets follow your goal.'),
+      body: Text(
+        _targets(controller).missing == _NoTargets.minor
+            ? 'Your goal picks your suggested workouts. Calorie targets are '
+                  'for adults.'
+            : 'Your calorie and protein targets follow your goal.',
+      ),
       actions: [
         for (final option in trainingGoals)
           FButton(
@@ -496,9 +507,11 @@ class _NutritionPageState extends State<NutritionPage>
     final (:tdee, :targets, :missing) = _targets(controller);
     final goal = controller.goal;
     final targetKcal = targets?.kcal;
-    // A menu only makes sense next to targets (none under 18).
+    // No menus under 18 — not even one cached before the age changed.
     final plan =
-        targets != null && _cache.plan != null && _cache.plan!.isOn(_today)
+        missing != _NoTargets.minor &&
+            _cache.plan != null &&
+            _cache.plan!.isOn(_today)
         ? _cache.plan
         : null;
     final targetChanged =
@@ -551,6 +564,7 @@ class _NutritionPageState extends State<NutritionPage>
             targets: isToday ? targets : null,
             // Minors can still set a goal (it drives workout picks).
             showGoal: missing != _NoTargets.profile,
+            minor: missing == _NoTargets.minor,
             goal: goal,
             onChangeGoal: () => _changeGoal(controller),
           ),
@@ -750,7 +764,9 @@ class _NutritionPageState extends State<NutritionPage>
                   ),
                 ],
               ),
-              onGenerate: targets == null ? null : () => _generate(targets),
+              onGenerate: targets == null
+                  ? null
+                  : () => _generate(targets, goal),
             ),
             if (plan != null) ...[
               if (targetChanged) ...[
@@ -1462,6 +1478,7 @@ class _SummaryCard extends StatelessWidget {
     required this.tdee,
     required this.targets,
     required this.showGoal,
+    required this.minor,
     required this.goal,
     required this.onChangeGoal,
   });
@@ -1475,6 +1492,9 @@ class _SummaryCard extends StatelessWidget {
   final double? tdee;
   final DailyTargets? targets;
   final bool showGoal;
+
+  /// Under 18: no targets, so no note about adult estimates either.
+  final bool minor;
   final String? goal;
   final VoidCallback onChangeGoal;
 
@@ -1485,13 +1505,13 @@ class _SummaryCard extends StatelessWidget {
           'at maintenance instead of a deficit. Talk to a doctor or '
           'dietitian before trying to lose weight.',
     TargetLimit.floor =>
-      'The deficit stops at ${thousands(target.kcal)} kcal — FitFlow sets '
-          'no lower intake without medical supervision.',
+      'The deficit stops at ${thousands(target.kcal)} kcal — FitFlow cuts '
+          'no lower without medical supervision.',
     TargetLimit.lowMaintenance =>
-      'Your maintenance is at or near the lowest intake FitFlow sets for a '
-          'diet without medical supervision, so there is no deficit — the '
-          'target is what your body uses. Talk to a doctor or dietitian '
-          'about losing weight.',
+      'Your maintenance is below the lowest intake FitFlow cuts to without '
+          'medical supervision, so there is no deficit — the target is what '
+          'your body uses. Talk to a doctor or dietitian about losing '
+          'weight.',
     null => null,
   };
 
@@ -1618,12 +1638,14 @@ class _SummaryCard extends StatelessWidget {
               ],
             ),
           ],
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'Estimates for healthy adults, not medical advice.',
-            key: const Key('nutrition-disclaimer'),
-            style: muted,
-          ),
+          if (!minor) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Estimates for healthy adults, not medical advice.',
+              key: const Key('nutrition-disclaimer'),
+              style: muted,
+            ),
+          ],
         ],
       ),
     );

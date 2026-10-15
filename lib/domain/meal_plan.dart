@@ -542,11 +542,13 @@ typedef DailyTargets = ({
   TargetPhase phase,
   TargetLimit? limit,
 
-  /// The range a suggested day menu must total: ±10% of [kcal], but never
-  /// under the floor in a deficit, nor under [kcal] when a safety rule
-  /// ruled out a deficit.
+  /// The range a suggested day menu must total: ±10% of [kcal], but
+  /// never under the lower of the floor and [kcal], nor under maintenance
+  /// for an underweight BMI whatever the goal. [menuAimKcal] is its
+  /// middle, what the model is asked for.
   int minMenuKcal,
   int maxMenuKcal,
+  int menuAimKcal,
 });
 
 /// Calorie and macro targets from TDEE, the goal and the body profile,
@@ -560,8 +562,9 @@ typedef DailyTargets = ({
 ///   adults, and growth needs vary.
 /// - No deficit with BMI under 18.5 (WHO underweight).
 /// - A deficit stops at 1,200 kcal for women or 1,500 kcal for men (the
-///   usual unsupervised minimum); with maintenance at or below that,
-///   there is no deficit. The deficit shrinks continuously as maintenance
+///   usual minimum for a diet without medical supervision); with
+///   maintenance at or below that, there is no deficit — the target is
+///   what the body uses, even when that is below the floor. The deficit shrinks continuously as maintenance
 ///   nears the floor, so nothing jumps at a threshold.
 /// - Protein per kg (ISSN; Morton et al. 2018; Helms et al. 2014): 1.2 g
 ///   at maintenance, 1.6 g in a surplus, and in a deficit rising from
@@ -571,7 +574,7 @@ typedef DailyTargets = ({
 /// - Nothing is clamped beyond these rules: a surplus stays a surplus and
 ///   maintenance stays TDEE. Fat is 25% of calories; carbs fill the rest.
 abstract final class NutritionTargets {
-  /// The lowest daily intake FitFlow sets without medical supervision.
+  /// The lowest intake a diet cuts to without medical supervision.
   static int floorKcal({required bool isMale}) => isMale ? 1500 : 1200;
 
   /// Deficit from which protein is at the full 1.8 g/kg.
@@ -627,9 +630,12 @@ abstract final class NutritionTargets {
         ? BodyMetrics.overweightBmi * pow(heightCm / 100, 2)
         : weightKg;
     final protein = (referenceKg * perKg).round();
-    final noDeficit =
-        limit == TargetLimit.underweight || limit == TargetLimit.lowMaintenance;
-    final tenPercentUnder = (target * 0.9).round();
+    // A menu may undershoot by 10%, but never below the floor (or below
+    // the target when that is already under the floor), and never below
+    // maintenance for an underweight BMI, whatever the goal.
+    var minMenu = max((target * 0.9).round(), min(floor, target));
+    if (bmi < BodyMetrics.underweightBmi) minMenu = max(minMenu, tdee.round());
+    final maxMenu = max((target * 1.1).round(), minMenu);
     return (
       kcal: target,
       proteinG: protein,
@@ -637,12 +643,9 @@ abstract final class NutritionTargets {
       carbsG: carbsG(targetKcal: target, proteinG: protein),
       phase: phase,
       limit: limit,
-      minMenuKcal: noDeficit
-          ? target
-          : phase == TargetPhase.deficit
-          ? max(floor, tenPercentUnder)
-          : tenPercentUnder,
-      maxMenuKcal: (target * 1.1).round(),
+      minMenuKcal: minMenu,
+      maxMenuKcal: maxMenu,
+      menuAimKcal: ((minMenu + maxMenu) / 2).round(),
     );
   }
 
@@ -821,12 +824,13 @@ abstract final class AiMealParser {
     );
   }
 
-  /// [minKcal]: a menu totalling less is rejected ([FormatException]),
-  /// e.g. when the target already sits at the minimum safe intake.
+  /// A menu totalling under [minKcal] or over [maxKcal] is rejected
+  /// ([FormatException]) — see [DailyTargets.minMenuKcal].
   static MealPlan parse(
     Map<String, dynamic> json, {
     required int targetKcal,
     int? minKcal,
+    int? maxKcal,
   }) {
     final meals = [
       for (final (index, item) in _list(json['meals']).indexed)
@@ -844,6 +848,11 @@ abstract final class AiMealParser {
     if (minKcal != null && plan.totalKcal < minKcal) {
       throw FormatException(
         'AI plan totals ${plan.totalKcal} kcal, under the $minKcal minimum',
+      );
+    }
+    if (maxKcal != null && plan.totalKcal > maxKcal) {
+      throw FormatException(
+        'AI plan totals ${plan.totalKcal} kcal, over the $maxKcal maximum',
       );
     }
     return plan;

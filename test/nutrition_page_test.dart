@@ -173,6 +173,16 @@ void main() {
     // The goal can still be changed; the menu card says why it's off.
     expect(find.byKey(const Key('nutrition-change-goal')), findsOneWidget);
     expect(find.text('Menu suggestions are for adults only.'), findsOneWidget);
+    expect(find.byKey(const Key('nutrition-disclaimer')), findsNothing);
+    await tester.tap(find.byKey(const Key('nutrition-change-goal')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Your goal picks your suggested workouts. Calorie targets are '
+        'for adults.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('groups the log into meal slots and logs into a chosen slot', (

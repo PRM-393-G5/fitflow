@@ -348,9 +348,11 @@ class _BodyProfileCard extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.sm),
             if (weight == null)
-              const Text(
-                'Log your weight to see BMI/BMR/TDEE.',
-                key: Key('metrics-weight-hint'),
+              Text(
+                age >= BodyMetrics.adultAge
+                    ? 'Log your weight to see BMI/BMR/TDEE.'
+                    : 'Log your weight to see BMI.',
+                key: const Key('metrics-weight-hint'),
               )
             else ...[
               Row(

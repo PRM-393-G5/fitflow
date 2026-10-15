@@ -238,7 +238,9 @@ void main() {
         isMale: true,
       )!;
 
-      for (final edge in [1500.0, 1600.0, 1764.0]) {
+      // The floor, where −15% meets the floor, and where −15% meets the
+      // 500 kcal cap.
+      for (final edge in [1500.0, 1500 / 0.85, 500 / 0.15]) {
         final below = at(edge - 0.1);
         final above = at(edge + 0.1);
         expect((above.kcal - below.kcal).abs(), lessThanOrEqualTo(1));
@@ -267,10 +269,44 @@ void main() {
 
       expect((lose.minMenuKcal, lose.maxMenuKcal), (2111, 2580));
       expect((keep.minMenuKcal, keep.maxMenuKcal), (2483, 3035));
-      // At the floor the target itself is the minimum.
+      // At the floor the target itself is the minimum, and the model is
+      // asked for the middle of the range, not its edge.
       expect((floor.minMenuKcal, floor.maxMenuKcal), (1500, 1650));
+      expect(floor.menuAimKcal, 1575);
       // A ruled-out deficit can't come back through the menu.
       expect(underweight.minMenuKcal, underweight.kcal);
+    });
+
+    test('an underweight BMI never gets a deficit menu, whatever the goal', () {
+      // 45 kg, 165 cm: BMI 16.5, TDEE ≈ 1,643.
+      for (final goal in ['Mobility', null, 'Strength']) {
+        final targets = daily(
+          goal: goal,
+          kg: 45,
+          cm: 165,
+          age: 25,
+          male: false,
+          activity: 1,
+        );
+        expect(targets.minMenuKcal, 1643, reason: '$goal');
+      }
+    });
+
+    test('a maintenance target under the floor is its own minimum', () {
+      // 60 y woman, 45 kg, 150 cm: maintenance 1,112 is below 1,200, so a
+      // menu 10% under it would be a diet under the floor.
+      for (final goal in ['Mobility', 'Cardio']) {
+        final targets = daily(
+          goal: goal,
+          kg: 45,
+          cm: 150,
+          age: 60,
+          male: false,
+          activity: 0,
+        );
+        expect(targets.kcal, 1112);
+        expect(targets.minMenuKcal, 1112, reason: goal);
+      }
     });
 
     test('protein follows the phase and is capped at BMI 25 weight', () {
@@ -353,7 +389,7 @@ void main() {
     });
   });
 
-  test('a menu under the minimum is rejected', () {
+  test('a menu outside the allowed range is rejected', () {
     final json = plan(
       meals: [
         meal(items: [item(kcal: 400)]),
@@ -364,7 +400,19 @@ void main() {
       () => AiMealParser.parse(json, targetKcal: 1500, minKcal: 1500),
       throwsFormatException,
     );
-    expect(AiMealParser.parse(json, targetKcal: 1500).totalKcal, 400);
+    expect(
+      () => AiMealParser.parse(json, targetKcal: 300, maxKcal: 330),
+      throwsFormatException,
+    );
+    expect(
+      AiMealParser.parse(
+        json,
+        targetKcal: 400,
+        minKcal: 360,
+        maxKcal: 440,
+      ).totalKcal,
+      400,
+    );
   });
 
   test('photo analysis parses dishes into a meal', () {

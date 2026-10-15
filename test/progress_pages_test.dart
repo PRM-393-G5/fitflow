@@ -372,6 +372,19 @@ void main() {
     expect(find.byKey(const Key('metrics-minor-note')), findsOneWidget);
   });
 
+  testWidgets('the weight hint only promises BMI under 18', (tester) async {
+    await pumpPage(
+      tester,
+      const BodyMetricsPage(),
+      prefs: {
+        'body_profile_v1':
+            '{"heightCm":160,"age":16,"isMale":false,"activityLevel":1}',
+      },
+    );
+
+    expect(find.text('Log your weight to see BMI.'), findsOneWidget);
+  });
+
   testWidgets('weight log accepts a comma and rejects out-of-range input', (
     tester,
   ) async {
