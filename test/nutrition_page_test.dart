@@ -109,8 +109,9 @@ void main() {
     await tester.tap(find.byKey(const Key('nutrition-plan-options')));
     await tester.pumpAndSettle();
     expect(find.text('vegan'), findsOneWidget);
-    expect(find.byKey(const Key('nutrition-target-changed')), findsOneWidget);
-    // A menu planned for another target isn't shown (or loggable).
+    // A 400 kcal menu is under today's safe minimum: hidden, and it says
+    // so.
+    expect(find.byKey(const Key('nutrition-menu-hidden')), findsOneWidget);
     expect(find.text('Oatmeal'), findsNothing);
     expect(find.textContaining('Build muscle'), findsOneWidget);
   });

@@ -28,6 +28,19 @@ Map<String, dynamic> item({
   'fatG': fatG,
 };
 
+/// Plain targets of [kcal], for prompt wording tests.
+DailyTargets fixed(int kcal, {TargetPhase phase = TargetPhase.maintenance}) => (
+  kcal: kcal,
+  proteinG: 120,
+  fatG: NutritionTargets.fatG(kcal),
+  carbsG: NutritionTargets.carbsG(targetKcal: kcal, proteinG: 120),
+  phase: phase,
+  limit: null,
+  safetyMinKcal: 1500,
+  minMenuKcal: (kcal * 0.9).round(),
+  maxMenuKcal: (kcal * 1.1).round(),
+);
+
 void main() {
   test('parses a valid plan', () {
     final parsed = AiMealParser.parse(plan(), targetKcal: 2000);
@@ -84,7 +97,7 @@ void main() {
 
   group('daily targets', () {
     // TDEE for the profile, so each case starts from the real number.
-    DailyTargets? targetsFor({
+    DailyTargets daily({
       required String? goal,
       required double kg,
       required double cm,
@@ -105,22 +118,6 @@ void main() {
       age: age,
       isMale: male,
     );
-
-    DailyTargets daily({
-      required String? goal,
-      required double kg,
-      required double cm,
-      required int age,
-      bool male = true,
-      int activity = 2,
-    }) => targetsFor(
-      goal: goal,
-      kg: kg,
-      cm: cm,
-      age: age,
-      male: male,
-      activity: activity,
-    )!;
 
     test('adjust by a share of TDEE, not a flat amount', () {
       // 80 kg, 180 cm, 30 y, moderate: TDEE ≈ 2,759 kcal.
@@ -144,7 +141,7 @@ void main() {
           heightCm: 190,
           age: 30,
           isMale: true,
-        )!.kcal,
+        ).kcal,
         3100,
       );
     });
@@ -179,15 +176,17 @@ void main() {
     });
 
     test('no targets under 18', () {
+      // Callers check BodyMetrics.adultFormulasApply first; asking anyway
+      // is a bug, not a silent null.
       for (final goal in ['Cardio', 'Strength', 'Mobility', null]) {
         expect(
-          targetsFor(goal: goal, kg: 50, cm: 160, age: 17, male: false),
-          isNull,
+          () => daily(goal: goal, kg: 50, cm: 160, age: 17, male: false),
+          throwsArgumentError,
         );
       }
       expect(
-        targetsFor(goal: 'Cardio', kg: 50, cm: 160, age: 18, male: false),
-        isNotNull,
+        daily(goal: 'Cardio', kg: 50, cm: 160, age: 18, male: false).kcal,
+        greaterThan(0),
       );
     });
 
@@ -239,7 +238,7 @@ void main() {
         heightCm: 175,
         age: 40,
         isMale: true,
-      )!;
+      );
 
       // The floor, where −15% meets the floor, and where −15% meets the
       // 500 kcal cap.
@@ -328,7 +327,7 @@ void main() {
         heightCm: 200,
         age: 22,
         isMale: true,
-      )!;
+      );
 
       expect(build.kcal, 5326);
       expect(build.limit, isNull);
@@ -347,13 +346,8 @@ void main() {
     });
 
     test('the prompt reads the goal through the targets', () {
-      String prompt(String goal, DailyTargets targets) => AiMealPrompt.user(
-        targetKcal: targets.kcal,
-        proteinG: targets.proteinG,
-        meals: 3,
-        goal: goal,
-        targets: targets,
-      );
+      String prompt(String goal, DailyTargets targets) =>
+          AiMealPrompt.user(targets: targets, meals: 3, goal: goal);
       final underweight = daily(
         goal: 'Cardio',
         kg: 45,
@@ -449,9 +443,11 @@ void main() {
         activity: 1,
       );
 
-      // A 1 kcal drift keeps the menu; a deficit menu under a no-deficit
-      // minimum does not.
+      // A drift keeps the menu, even one now under the new −10% leeway
+      // (the minimum that matters is the safety one); a deficit menu under
+      // a no-deficit minimum does not.
       expect(menu(2345).unsafeFor(lose), isFalse);
+      expect(menu(2096).unsafeFor(lose), isFalse);
       expect(menu(1400).unsafeFor(underweight), isTrue);
     });
 
@@ -485,7 +481,6 @@ void main() {
 
       expect(lose.kcal, keep.kcal);
       expect(restored.goal, 'Cardio');
-      expect(restored.limit, TargetLimit.lowMaintenance);
       expect(restored.outdatedFor(lose, 'Cardio'), isFalse);
       expect(restored.outdatedFor(keep, 'Mobility'), isTrue);
       // Older saved menus only knew their kcal.
@@ -535,6 +530,24 @@ void main() {
         maxKcal: 1155,
       ).totalKcal,
       1000,
+    );
+    // Per-meal rounding can't leave the total under a minimum equal to
+    // the target: the last meal takes the drift.
+    final threeMeals = plan(
+      meals: [
+        meal(items: [item(kcal: 400)]),
+        meal(items: [item(kcal: 400)]),
+        meal(items: [item(kcal: 399)]),
+      ],
+    );
+    expect(
+      AiMealParser.parse(
+        threeMeals,
+        targetKcal: 1200,
+        minKcal: 1200,
+        maxKcal: 1320,
+      ).totalKcal,
+      1200,
     );
     // ×1.5 would make "2 eggs" a different dish: rejected for a retry.
     expect(
@@ -586,15 +599,14 @@ void main() {
       expect(split.values.fold(0, (a, b) => a + b), 100);
     }
     expect(
-      AiMealPrompt.user(targetKcal: 2000, proteinG: 120, meals: 3),
+      AiMealPrompt.user(targets: fixed(2000), meals: 3),
       contains('Lunch 40% (~800 kcal)'),
     );
     // The model gets the goal's label, not the workout category it is
     // stored as.
     expect(
       AiMealPrompt.user(
-        targetKcal: 2000,
-        proteinG: 120,
+        targets: fixed(2000, phase: TargetPhase.deficit),
         meals: 3,
         goal: 'Cardio',
       ),

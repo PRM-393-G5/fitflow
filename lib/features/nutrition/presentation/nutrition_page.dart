@@ -149,30 +149,29 @@ class _NutritionPageState extends State<NutritionPage>
       age: age,
       isMale: controller.isMale,
     );
-    // daily() declines only where targets don't apply.
-    if (targets == null) return minor;
     return (tdee: tdee, targets: targets, missing: null);
   }
 
   Future<MealPlan> _generatePlan(DailyTargets targets, String? goal) async {
     final targetKcal = targets.kcal;
     FormatException? parseError;
+    String? retryNote;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
         final json = await _service.generateJson(
           system: AiMealPrompt.system,
           user: AiMealPrompt.user(
-            targetKcal: targetKcal,
-            proteinG: targets.proteinG,
+            targets: targets,
             meals: _cache.mealCount,
             goal: goal,
-            targets: targets,
             preferences: _prefsCtrl.text.trim(),
+            retryNote: retryNote,
           ),
           schema: AiMealPrompt.schema,
           schemaName: 'meal_plan',
         );
-        // A menu outside the allowed range is scaled into it.
+        // A menu a little out of range is scaled into it; further off is
+        // rejected and retried, telling the model why.
         return AiMealParser.parse(
           json,
           targetKcal: targetKcal,
@@ -181,14 +180,17 @@ class _NutritionPageState extends State<NutritionPage>
         ).forTargets(targets, goal);
       } on FormatException catch (e) {
         parseError = e;
+        retryNote =
+            'Your previous menu was rejected (${e.message}). The day must '
+            'total about $targetKcal kcal.';
       }
     }
     throw parseError!;
   }
 
-  Future<void> _generate() async {
+  Future<void> _generate({required bool replacing}) async {
     if (_generating) return;
-    if (_cache.plan?.isOn(_today) ?? false) {
+    if (replacing) {
       final replace = await _confirm(
         title: "Replace today's menu?",
         message: 'The current suggestions will be replaced by a new plan.',
@@ -201,7 +203,10 @@ class _NutritionPageState extends State<NutritionPage>
     // pair stale targets with a new goal (or save an outdated menu).
     final targets = _targets(controller).targets;
     final goal = controller.goal;
-    if (targets == null) return;
+    if (targets == null) {
+      _showSnack('Your profile changed — check it and try again.');
+      return;
+    }
     // Compare against the controller, not [_epoch]: the page only catches
     // up on its next rebuild, which may come after the response.
     final epoch = controller.dataEpoch;
@@ -510,8 +515,16 @@ class _NutritionPageState extends State<NutritionPage>
             _cache.plan!.isOn(_today)
         ? _cache.plan
         : null;
+    // A menu now under the safe minimum (e.g. a deficit a safety rule has
+    // since removed) isn't shown or loggable, and says so; other changes
+    // only show the banner.
+    final planHidden =
+        plan != null && targets != null && plan.unsafeFor(targets);
     final targetChanged =
-        plan != null && targets != null && plan.outdatedFor(targets, goal);
+        plan != null &&
+        targets != null &&
+        !planHidden &&
+        plan.outdatedFor(targets, goal);
 
     final isToday = _viewDay == _today;
     final oldest = FoodLog.oldestKeptDay(_today);
@@ -711,7 +724,7 @@ class _NutritionPageState extends State<NutritionPage>
               configured: OpenAiService.configured,
               targetKcal: targetKcal,
               missing: missing,
-              hasPlan: plan != null,
+              hasPlan: plan != null && !planHidden,
               generating: _generating,
               showOptions: _showPlanOptions,
               onToggleOptions: () =>
@@ -753,9 +766,29 @@ class _NutritionPageState extends State<NutritionPage>
                   ),
                 ],
               ),
-              onGenerate: targets == null ? null : _generate,
+              onGenerate: targets == null
+                  ? null
+                  : () => _generate(replacing: plan != null && !planHidden),
             ),
-            if (plan != null) ...[
+            if (planHidden) ...[
+              const SizedBox(height: AppSpacing.md),
+              const AppCard(
+                key: Key('nutrition-menu-hidden'),
+                child: Row(
+                  children: [
+                    Icon(FLucideIcons.shieldAlert),
+                    SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        "Today's menu is now below your safe minimum, so "
+                        "it is hidden — generate a new one.",
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (plan != null && !planHidden) ...[
               if (targetChanged) ...[
                 const SizedBox(height: AppSpacing.md),
                 AppCard(
@@ -778,19 +811,14 @@ class _NutritionPageState extends State<NutritionPage>
                   ),
                 ),
               ],
-              // A menu now under the safe minimum (e.g. a deficit a safety
-              // rule has since removed) isn't shown or loggable; other
-              // changes only show the banner above.
-              if (targets == null || !plan.unsafeFor(targets)) ...[
-                const SizedBox(height: AppSpacing.md),
-                _PlanView(
-                  plan: plan,
-                  onLog: (meal) {
-                    _logMeal(meal, day: _today).ignore();
-                    _showSnack('${meal.label} logged to today.');
-                  },
-                ),
-              ],
+              const SizedBox(height: AppSpacing.md),
+              _PlanView(
+                plan: plan,
+                onLog: (meal) {
+                  _logMeal(meal, day: _today).ignore();
+                  _showSnack('${meal.label} logged to today.');
+                },
+              ),
             ],
           ],
         ],
@@ -884,7 +912,8 @@ enum _NoTargets {
   /// Height, age or a logged weight is missing.
   profile,
 
-  /// Under 18: FitFlow sets no calorie targets ([NutritionTargets.appliesTo]).
+  /// Under 18: FitFlow sets no calorie targets
+  /// ([BodyMetrics.adultFormulasApply]).
   minor,
 }
 
@@ -1502,7 +1531,7 @@ class _SummaryCard extends StatelessWidget {
       'Your estimated maintenance is below ${thousands(target.kcal)} kcal, '
           'the lowest target FitFlow sets without medical supervision, so '
           'the target is held there.'
-          '${goal == 'Cardio' ? ' There is no deficit — talk to a doctor or dietitian about losing weight.' : ''}',
+          '${nutritionIntent(goal) == NutritionIntent.loseFat ? ' There is no deficit — talk to a doctor or dietitian about losing weight.' : ''}',
     null => null,
   };
 

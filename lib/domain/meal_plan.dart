@@ -135,7 +135,6 @@ class MealPlan {
     this.note = '',
     this.proteinG,
     this.goal,
-    this.limit,
   });
 
   final DateTime date;
@@ -143,12 +142,11 @@ class MealPlan {
   final List<Meal> meals;
   final String note;
 
-  /// What the plan was generated for besides kcal — the protein target,
-  /// the stored goal and the safety limit's name; null in plans saved
-  /// before they were recorded (those only know their kcal).
+  /// What the plan was generated for besides kcal — the protein target
+  /// and the stored goal; null in plans saved before they were recorded
+  /// (those only know their kcal).
   final int? proteinG;
   final String? goal;
-  final TargetLimit? limit;
 
   /// This plan, recording the [targets] and [goal] it was generated for.
   MealPlan forTargets(DailyTargets targets, String? goal) => MealPlan(
@@ -158,22 +156,20 @@ class MealPlan {
     note: note,
     proteinG: targets.proteinG,
     goal: goal,
-    limit: targets.limit,
   );
 
   /// Whether following this menu would now go under the safe minimum
-  /// for [targets] — e.g. a deficit menu once a safety rule removed the
-  /// deficit. Such a menu is not shown; other changes only flag it.
-  bool unsafeFor(DailyTargets targets) => totalKcal < targets.minMenuKcal;
+  /// for [targets] ([DailyTargets.safetyMinKcal]) — e.g. a deficit menu
+  /// once a safety rule removed the deficit. Such a menu is not shown;
+  /// other changes only flag it ([outdatedFor]).
+  bool unsafeFor(DailyTargets targets) => totalKcal < targets.safetyMinKcal;
 
   /// Whether today's [targets] or [goal] differ from what this plan was
   /// generated for.
   bool outdatedFor(DailyTargets targets, String? goal) {
     if (targetKcal != targets.kcal) return true;
     if (proteinG == null) return false;
-    return proteinG != targets.proteinG ||
-        this.goal != goal ||
-        limit != targets.limit;
+    return proteinG != targets.proteinG || this.goal != goal;
   }
 
   int get totalKcal => meals.fold(0, (sum, meal) => sum + meal.kcal);
@@ -190,7 +186,6 @@ class MealPlan {
     'note': note,
     'proteinG': ?proteinG,
     'goal': ?goal,
-    'limit': ?limit?.name,
   };
 
   /// Throws [FormatException] when the date is missing or malformed.
@@ -208,7 +203,6 @@ class MealPlan {
       note: note is String ? note : '',
       proteinG: _num(json['proteinG'])?.toInt(),
       goal: json['goal'] is String ? json['goal'] as String : null,
-      limit: TargetLimit.values.asNameMap()[json['limit']],
     );
   }
 }
@@ -549,9 +543,13 @@ typedef DailyTargets = ({
   TargetPhase phase,
   TargetLimit? limit,
 
-  /// The range a suggested day menu must total: ±10% of [kcal], but
-  /// never under the floor, nor under maintenance for an underweight BMI
-  /// whatever the goal. Menus outside it are scaled to [kcal].
+  /// The least a day may total and still be safe: the floor, or
+  /// maintenance for an underweight BMI whatever the goal. A saved menu
+  /// under it is not shown ([MealPlan.unsafeFor]).
+  int safetyMinKcal,
+
+  /// The range a newly suggested menu must total: ±10% of [kcal], never
+  /// under [safetyMinKcal]. See [AiMealParser.parse].
   int minMenuKcal,
   int maxMenuKcal,
 });
@@ -591,10 +589,10 @@ abstract final class NutritionTargets {
   /// in.
   static const underweightTaperBmi = 1.0;
 
-  /// Today's targets, or null under 18
-  /// ([BodyMetrics.adultFormulasApply]): Mifflin-St Jeor and these rules
-  /// are for adults, and growth needs vary.
-  static DailyTargets? daily({
+  /// Today's targets. Adults only ([BodyMetrics.adultFormulasApply]):
+  /// Mifflin-St Jeor and these rules are for adults, and growth needs
+  /// vary — calling this for a minor is a bug ([ArgumentError]).
+  static DailyTargets daily({
     required double tdee,
     required String? goal,
     required double weightKg,
@@ -602,12 +600,14 @@ abstract final class NutritionTargets {
     required int age,
     required bool isMale,
   }) {
-    if (!BodyMetrics.adultFormulasApply(age)) return null;
+    if (!BodyMetrics.adultFormulasApply(age)) {
+      throw ArgumentError.value(age, 'age', 'No calorie targets under 18');
+    }
     final bmi = BodyMetrics.bmi(weightKg: weightKg, heightCm: heightCm);
-    var adjustment = switch (goal) {
-      'Cardio' => -min(tdee * 0.15, 500.0),
-      'Strength' => min(tdee * 0.10, 300.0),
-      _ => 0.0,
+    var adjustment = switch (nutritionIntent(goal)) {
+      NutritionIntent.loseFat => -min(tdee * 0.15, 500.0),
+      NutritionIntent.buildMuscle => min(tdee * 0.10, 300.0),
+      NutritionIntent.maintain => 0.0,
     };
     TargetLimit? limit;
     final floor = floorKcal(isMale: isMale);
@@ -643,11 +643,11 @@ abstract final class NutritionTargets {
         ? BodyMetrics.overweightBmi * pow(heightCm / 100, 2)
         : weightKg;
     final protein = (referenceKg * perKg).round();
-    // A menu may miss by 10%, but never below the floor, and never below
-    // maintenance for an underweight BMI, whatever the goal. The target
-    // itself is always inside this range.
-    var minMenu = max((target * 0.9).round(), floor);
-    if (bmi < BodyMetrics.underweightBmi) minMenu = max(minMenu, tdee.round());
+    final safetyMin = bmi < BodyMetrics.underweightBmi
+        ? max(floor, tdee.round())
+        : floor;
+    // The target itself is always inside the menu range.
+    final minMenu = max((target * 0.9).round(), safetyMin);
     final maxMenu = (target * 1.1).round();
     return (
       kcal: target,
@@ -656,6 +656,7 @@ abstract final class NutritionTargets {
       carbsG: carbsG(targetKcal: target, proteinG: protein),
       phase: phase,
       limit: limit,
+      safetyMinKcal: safetyMin,
       minMenuKcal: minMenu,
       maxMenuKcal: maxMenu,
     );
@@ -729,25 +730,24 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
     if (goal == null) return null;
     // Fat loss without a deficit (a safety rule removed it) is maintenance;
     // every other goal keeps its label.
-    if (goal == 'Cardio' && targets.phase != TargetPhase.deficit) {
+    if (nutritionIntent(goal) == NutritionIntent.loseFat &&
+        targets.phase != TargetPhase.deficit) {
       return 'maintain weight and eat enough — no calorie deficit';
-    }
-    if (targets.limit == TargetLimit.floor) {
-      return '${goalLabel(goal)}, already at the minimum safe intake — do '
-          'not go below the target';
     }
     return goalLabel(goal);
   }
 
-  /// [targets] (if given) set how the goal reads; see [goalText].
+  /// The request for a day menu meeting [targets]. [retryNote] says why a
+  /// previous menu was rejected.
   static String user({
-    required int targetKcal,
-    required int proteinG,
+    required DailyTargets targets,
     required int meals,
     String? goal,
-    DailyTargets? targets,
     String? preferences,
+    String? retryNote,
   }) {
+    final targetKcal = targets.kcal;
+    final proteinG = targets.proteinG;
     final buffer = StringBuffer(
       'Create a day meal plan.\nTarget: $targetKcal kcal, ~$proteinG g '
       'protein, $meals meals',
@@ -760,10 +760,17 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
         )
         .join(', ');
     buffer.write('\nSplit: $shares');
-    final goalText = targets == null
-        ? (goal == null ? null : goalLabel(goal))
-        : AiMealPrompt.goalText(goal, targets);
+    final goalText = AiMealPrompt.goalText(goal, targets);
     if (goalText != null) buffer.write('\nUser goal: $goalText');
+    // When the target is already the safe minimum, the system prompt's
+    // −10% leeway does not apply.
+    if (targets.minMenuKcal >= targetKcal) {
+      buffer.write(
+        '\nMinimum: the day must total at least $targetKcal kcal — do not '
+        'go below the target.',
+      );
+    }
+    if (retryNote != null) buffer.write('\n$retryNote');
 
     if (preferences != null && preferences.isNotEmpty) {
       buffer.write('\nPreferences/restrictions: $preferences');
@@ -836,8 +843,9 @@ abstract final class AiMealParser {
 
   /// A menu totalling under [minKcal] or over [maxKcal] has its portions
   /// scaled (kcal and macros, via [Meal.withKcal]) to total [targetKcal]
-  /// — models miss sums. Scaling is capped at ±[maxScale] so portions
-  /// still match their dish names; a menu further off is rejected
+  /// — models miss sums — with rounding drift put on the last meal, so the
+  /// total is exact. Scaling is capped at ±[maxScale] so portions still
+  /// match their dish names; a menu further off is rejected
   /// ([FormatException]) for a retry. See [DailyTargets.minMenuKcal].
   static MealPlan parse(
     Map<String, dynamic> json, {
@@ -862,15 +870,21 @@ abstract final class AiMealParser {
         'AI plan totals $total kcal, too far from $targetKcal to rescale',
       );
     }
+    final scaled = [
+      for (final meal in meals) meal.withKcal((meal.kcal * factor).round()),
+    ];
+    if (outOfRange) {
+      // Per-meal rounding can leave the total a few kcal off — under a
+      // minimum equal to the target. The last meal takes the difference.
+      final drift =
+          targetKcal - scaled.fold<int>(0, (sum, meal) => sum + meal.kcal);
+      final last = scaled.last;
+      scaled[scaled.length - 1] = last.withKcal(max(0, last.kcal + drift));
+    }
     return MealPlan(
       date: DateTime.now(),
       targetKcal: targetKcal,
-      meals: outOfRange
-          ? [
-              for (final meal in meals)
-                meal.withKcal((meal.kcal * factor).round()),
-            ]
-          : meals,
+      meals: outOfRange ? scaled : meals,
       note: _text(json['note'], ''),
     );
   }
