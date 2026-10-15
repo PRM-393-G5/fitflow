@@ -193,10 +193,10 @@ void main() {
 
     test('a deficit stops at the floor, or never starts', () {
       // 70 y man, 60 kg, 175 cm, sedentary: TDEE ≈ 1,619; −15% would be
-      // 1,376, so the deficit stops at 1,500 — still 119 kcal under.
+      // 1,376, so the deficit stops at 1,500 — 119 kcal under.
       final man = daily(goal: 'Cardio', kg: 60, cm: 175, age: 70, activity: 0);
-      // 55 kg at 170 cm: TDEE ≈ 1,521, only 21 kcal above his floor —
-      // too little room for a deficit worth having.
+      // 55 kg at 170 cm: TDEE ≈ 1,521, 21 kcal above his floor — the
+      // deficit shrinks to those 21 kcal, protein barely above maintenance.
       final close = daily(
         goal: 'Cardio',
         kg: 55,
@@ -217,14 +217,60 @@ void main() {
       expect(man.kcal, 1500);
       expect(man.limit, TargetLimit.floor);
       expect(man.phase, TargetPhase.deficit);
-      expect(man.proteinG, 108); // 1.8 × 60
-      expect(close.kcal, 1521);
-      expect(close.limit, TargetLimit.lowMaintenance);
-      expect(close.phase, TargetPhase.maintenance);
-      expect(close.proteinG, 66); // maintenance: 1.2 × 55
+      // 1.2 g/kg + 0.6 × 119/300 ≈ 1.44 g/kg.
+      expect(man.proteinG, 86);
+      expect(close.kcal, 1500);
+      expect(close.limit, TargetLimit.floor);
+      expect(close.phase, TargetPhase.deficit);
+      expect(close.proteinG, 68); // ≈ 1.24 g/kg
       expect(woman.kcal, 1112);
       expect(woman.limit, TargetLimit.lowMaintenance);
       expect(woman.proteinG, 54); // 1.2 × 45
+    });
+
+    test('nothing jumps as maintenance crosses the floor', () {
+      DailyTargets at(double tdee) => NutritionTargets.daily(
+        tdee: tdee,
+        goal: 'Cardio',
+        weightKg: 60,
+        heightCm: 175,
+        age: 40,
+        isMale: true,
+      )!;
+
+      for (final edge in [1500.0, 1600.0, 1764.0]) {
+        final below = at(edge - 0.1);
+        final above = at(edge + 0.1);
+        expect((above.kcal - below.kcal).abs(), lessThanOrEqualTo(1));
+        expect((above.proteinG - below.proteinG).abs(), lessThanOrEqualTo(1));
+      }
+    });
+
+    test('menus must total within ±10%, never under a safe minimum', () {
+      final lose = daily(goal: 'Cardio', kg: 80, cm: 180, age: 30);
+      final keep = daily(goal: 'Mobility', kg: 80, cm: 180, age: 30);
+      final floor = daily(
+        goal: 'Cardio',
+        kg: 60,
+        cm: 175,
+        age: 70,
+        activity: 0,
+      );
+      final underweight = daily(
+        goal: 'Cardio',
+        kg: 45,
+        cm: 165,
+        age: 25,
+        male: false,
+        activity: 1,
+      );
+
+      expect((lose.minMenuKcal, lose.maxMenuKcal), (2111, 2580));
+      expect((keep.minMenuKcal, keep.maxMenuKcal), (2483, 3035));
+      // At the floor the target itself is the minimum.
+      expect((floor.minMenuKcal, floor.maxMenuKcal), (1500, 1650));
+      // A ruled-out deficit can't come back through the menu.
+      expect(underweight.minMenuKcal, underweight.kcal);
     });
 
     test('protein follows the phase and is capped at BMI 25 weight', () {
@@ -292,7 +338,7 @@ void main() {
 
       expect(lose.kcal, keep.kcal);
       expect(restored.goal, 'Cardio');
-      expect(restored.limit, 'lowMaintenance');
+      expect(restored.limit, TargetLimit.lowMaintenance);
       expect(restored.outdatedFor(lose, 'Cardio'), isFalse);
       expect(restored.outdatedFor(keep, 'Mobility'), isTrue);
       // Older saved menus only knew their kcal.
@@ -394,9 +440,25 @@ void main() {
         goal: 'Cardio',
         limit: TargetLimit.floor,
       ),
+      contains('do not go below the target'),
+    );
+    // The total range is stated, by default ±10%.
+    expect(
+      AiMealPrompt.user(targetKcal: 2000, proteinG: 120, meals: 3),
+      contains('Total: between 1800 and 2200 kcal'),
+    );
+    expect(
+      AiMealPrompt.user(
+        targetKcal: 1500,
+        proteinG: 100,
+        meals: 3,
+        minKcal: 1500,
+        maxKcal: 1650,
+        correction: 'The previous menu was rejected.',
+      ),
       allOf(
-        contains('do not go below the target'),
-        contains('at least 1500 kcal'),
+        contains('Total: between 1500 and 1650 kcal'),
+        contains('The previous menu was rejected.'),
       ),
     );
   });

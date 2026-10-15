@@ -352,7 +352,7 @@ class _BodyProfileCard extends StatelessWidget {
                 'Log your weight to see BMI/BMR/TDEE.',
                 key: Key('metrics-weight-hint'),
               )
-            else
+            else ...[
               Row(
                 children: [
                   _value(
@@ -361,10 +361,23 @@ class _BodyProfileCard extends StatelessWidget {
                     bmi!.toStringAsFixed(1),
                     BodyMetrics.bmiCategory(bmi, age: age),
                   ),
-                  _value(context, 'BMR', '${bmr!.round()} kcal'),
-                  _value(context, 'TDEE', '${tdee!.round()} kcal'),
+                  // Mifflin-St Jeor is an adult formula, as on Nutrition.
+                  if (age >= BodyMetrics.adultAge) ...[
+                    _value(context, 'BMR', '${bmr!.round()} kcal'),
+                    _value(context, 'TDEE', '${tdee!.round()} kcal'),
+                  ],
                 ],
               ),
+              if (age < BodyMetrics.adultAge) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'BMR and TDEE use adult formulas, so they are not shown '
+                  'under ${BodyMetrics.adultAge}.',
+                  key: const Key('metrics-minor-note'),
+                  style: mutedStyle,
+                ),
+              ],
+            ],
           ],
         ],
       ),

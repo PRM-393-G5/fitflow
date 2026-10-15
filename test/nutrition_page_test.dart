@@ -167,9 +167,12 @@ void main() {
     });
 
     expect(find.byKey(const Key('nutrition-minor')), findsOneWidget);
+    expect(find.text('Turned 18? Update your age'), findsOneWidget);
     expect(find.text('kcal eaten today'), findsOneWidget); // no "/ target"
     expect(find.textContaining('TDEE'), findsNothing);
-    expect(find.byKey(const Key('nutrition-open-metrics')), findsNothing);
+    // The goal can still be changed; the menu card says why it's off.
+    expect(find.byKey(const Key('nutrition-change-goal')), findsOneWidget);
+    expect(find.text('Menu suggestions are for adults only.'), findsOneWidget);
   });
 
   testWidgets('groups the log into meal slots and logs into a chosen slot', (
