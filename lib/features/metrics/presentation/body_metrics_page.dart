@@ -294,7 +294,7 @@ class _BodyProfileCard extends StatelessWidget {
     final hasProfile = height != null && age != null;
     final weight = latestKg;
     // BMR and TDEE are adult formulas, as on Nutrition.
-    final adult = age == null || BodyMetrics.adultFormulasApply(age);
+    final adult = BodyMetrics.adultFormulasApply(age);
 
     double? bmi;
     double? bmr;

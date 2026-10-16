@@ -120,9 +120,7 @@ class _NutritionPageState extends State<NutritionPage>
   /// TDEE and today's targets from the body profile and latest weight —
   /// or, when there are none, why ([_NoTargets]). The one place that
   /// decides it; everything on the page reads [missing].
-  ({double? tdee, DailyTargets? targets, _NoTargets? missing}) _targets(
-    AppController controller,
-  ) {
+  _Targets _targets(AppController controller) {
     final height = controller.heightCm;
     final age = controller.age;
     final weight = controller.weightEntries.isEmpty
@@ -130,7 +128,7 @@ class _NutritionPageState extends State<NutritionPage>
         : controller.weightEntries.last.weightKg;
     const minor = (tdee: null, targets: null, missing: _NoTargets.minor);
     // A known under-18 age needs no profile check: there are no targets.
-    if (age != null && !BodyMetrics.adultFormulasApply(age)) return minor;
+    if (!BodyMetrics.adultFormulasApply(age)) return minor;
     if (height == null || age == null || weight == null) {
       return (tdee: null, targets: null, missing: _NoTargets.profile);
     }
@@ -722,8 +720,7 @@ class _NutritionPageState extends State<NutritionPage>
             const SizedBox(height: AppSpacing.lg),
             _AiPlanCard(
               configured: OpenAiService.configured,
-              targetKcal: targetKcal,
-              missing: missing,
+              day: (tdee: tdee, targets: targets, missing: missing),
               hasPlan: plan != null && !planHidden,
               generating: _generating,
               showOptions: _showPlanOptions,
@@ -772,16 +769,17 @@ class _NutritionPageState extends State<NutritionPage>
             ),
             if (planHidden) ...[
               const SizedBox(height: AppSpacing.md),
-              const AppCard(
-                key: Key('nutrition-menu-hidden'),
+              AppCard(
+                key: const Key('nutrition-menu-hidden'),
                 child: Row(
                   children: [
-                    Icon(FLucideIcons.shieldAlert),
-                    SizedBox(width: AppSpacing.sm),
+                    const Icon(FLucideIcons.shieldAlert),
+                    const SizedBox(width: AppSpacing.sm),
                     Expanded(
                       child: Text(
-                        "Today's menu is now below your safe minimum, so "
-                        "it is hidden — generate a new one.",
+                        "Today's menu is now below your safe minimum, so it "
+                        'is hidden'
+                        '${OpenAiService.configured ? ' — generate a new one.' : '.'}',
                       ),
                     ),
                   ],
@@ -906,6 +904,9 @@ class _NutritionPageState extends State<NutritionPage>
     }
   }
 }
+
+/// Today's TDEE and targets — or, when there are none, why.
+typedef _Targets = ({double? tdee, DailyTargets? targets, _NoTargets? missing});
 
 /// Why the page shows no calorie targets.
 enum _NoTargets {
@@ -1912,8 +1913,7 @@ class _EmptyDay extends StatelessWidget {
 class _AiPlanCard extends StatelessWidget {
   const _AiPlanCard({
     required this.configured,
-    required this.targetKcal,
-    required this.missing,
+    required this.day,
     required this.hasPlan,
     required this.generating,
     required this.showOptions,
@@ -1924,11 +1924,10 @@ class _AiPlanCard extends StatelessWidget {
   });
 
   final bool configured;
-  final int? targetKcal;
 
-  /// Why there is no target to plan for, if there isn't; minors get no
-  /// menu settings either.
-  final _NoTargets? missing;
+  /// Today's targets, or why there are none; minors get no menu
+  /// settings either.
+  final _Targets day;
   final bool hasPlan;
   final bool generating;
   final bool showOptions;
@@ -1942,13 +1941,12 @@ class _AiPlanCard extends StatelessWidget {
     final colors = context.theme.colors;
     final textTheme = Theme.of(context).textTheme;
     final muted = textTheme.bodySmall?.copyWith(color: colors.mutedForeground);
-    final target = targetKcal;
-    final subtitle = switch (missing) {
-      _NoTargets.minor => 'Menu suggestions are for adults only.',
-      _NoTargets.profile =>
-        'Set up your body profile to get a menu for your target.',
-      null => 'A full day menu for your ${thousands(target ?? 0)} kcal target.',
-    };
+    final targets = day.targets;
+    final subtitle = targets != null
+        ? 'A full day menu for your ${thousands(targets.kcal)} kcal target.'
+        : day.missing == _NoTargets.minor
+        ? 'Menu suggestions are for adults only.'
+        : 'Set up your body profile to get a menu for your target.';
     return AppCard(
       style: .delta(
         decoration: .boxDelta(
@@ -1975,7 +1973,7 @@ class _AiPlanCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(subtitle, style: muted),
-          if (missing != _NoTargets.minor) ...[
+          if (day.missing != _NoTargets.minor) ...[
             const SizedBox(height: AppSpacing.sm),
             FButton(
               key: const Key('nutrition-plan-options'),

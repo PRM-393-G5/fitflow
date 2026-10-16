@@ -212,9 +212,7 @@ class ProfilePage extends StatelessWidget {
         goal: controller.goal,
         level: controller.level,
         // No calorie targets under 18.
-        calorieTargets:
-            controller.age == null ||
-            BodyMetrics.adultFormulasApply(controller.age!),
+        calorieTargets: BodyMetrics.adultFormulasApply(controller.age),
       ),
     );
     if (picked == null) return;

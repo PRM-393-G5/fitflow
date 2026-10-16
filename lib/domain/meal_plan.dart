@@ -158,11 +158,16 @@ class MealPlan {
     goal: goal,
   );
 
-  /// Whether following this menu would now go under the safe minimum
-  /// for [targets] ([DailyTargets.safetyMinKcal]) — e.g. a deficit menu
-  /// once a safety rule removed the deficit. Such a menu is not shown;
-  /// other changes only flag it ([outdatedFor]).
-  bool unsafeFor(DailyTargets targets) => totalKcal < targets.safetyMinKcal;
+  /// Whether following this menu would now go well under the safe
+  /// minimum for [targets] ([DailyTargets.safetyMinKcal]) — e.g. a deficit
+  /// menu once a safety rule removed the deficit. Such a menu is not
+  /// shown; smaller drifts (a weigh-in moves the minimum a few kcal) only
+  /// flag it ([outdatedFor]).
+  bool unsafeFor(DailyTargets targets) =>
+      totalKcal < targets.safetyMinKcal * (1 - unsafeTolerance);
+
+  /// Share under the safety minimum still treated as the same menu.
+  static const unsafeTolerance = 0.05;
 
   /// Whether today's [targets] or [goal] differ from what this plan was
   /// generated for.
@@ -543,8 +548,9 @@ typedef DailyTargets = ({
   TargetPhase phase,
   TargetLimit? limit,
 
-  /// The least a day may total and still be safe: the floor, or
-  /// maintenance for an underweight BMI whatever the goal. A saved menu
+  /// The least a day may total and still be safe, whatever the goal:
+  /// maintenance below BMI 18.5, easing linearly to the floor at 19.5 (the
+  /// same taper as the deficit), and the floor above. A saved menu well
   /// under it is not shown ([MealPlan.unsafeFor]).
   int safetyMinKcal,
 
@@ -643,9 +649,9 @@ abstract final class NutritionTargets {
         ? BodyMetrics.overweightBmi * pow(heightCm / 100, 2)
         : weightKg;
     final protein = (referenceKg * perKg).round();
-    final safetyMin = bmi < BodyMetrics.underweightBmi
-        ? max(floor, tdee.round())
-        : floor;
+    // Below BMI 18.5 nothing under maintenance is safe; by 19.5 only the
+    // floor applies. Linear in between, so it is continuous at both ends.
+    final safetyMin = (floor + (1 - taper) * max(0.0, tdee - floor)).round();
     // The target itself is always inside the menu range.
     final minMenu = max((target * 0.9).round(), safetyMin);
     final maxMenu = (target * 1.1).round();
@@ -853,9 +859,13 @@ abstract final class AiMealParser {
     int? minKcal,
     int? maxKcal,
   }) {
+    // A dish may be as big as the day (big targets have big meals), but
+    // no bigger; at least the 1,500 kcal photo cap.
+    final itemCap = max(_itemKcalCap, targetKcal);
     final meals = [
       for (final (index, item) in _list(json['meals']).indexed)
-        if (item is Map<String, dynamic>) _meal(item, 'Meal ${index + 1}'),
+        if (item is Map<String, dynamic>)
+          _meal(item, 'Meal ${index + 1}', itemCap),
     ].where((meal) => meal.items.isNotEmpty).toList();
     if (meals.isEmpty) {
       throw const FormatException('AI plan has no meals');
@@ -870,40 +880,54 @@ abstract final class AiMealParser {
         'AI plan totals $total kcal, too far from $targetKcal to rescale',
       );
     }
-    final scaled = [
-      for (final meal in meals) meal.withKcal((meal.kcal * factor).round()),
-    ];
     if (outOfRange) {
+      for (final (index, meal) in meals.indexed) {
+        meals[index] = meal.withKcal((meal.kcal * factor).round());
+      }
       // Per-meal rounding can leave the total a few kcal off — under a
       // minimum equal to the target. The last meal takes the difference.
       final drift =
-          targetKcal - scaled.fold<int>(0, (sum, meal) => sum + meal.kcal);
-      final last = scaled.last;
-      scaled[scaled.length - 1] = last.withKcal(max(0, last.kcal + drift));
+          targetKcal - meals.fold<int>(0, (sum, meal) => sum + meal.kcal);
+      meals.last = meals.last.withKcal(max(0, meals.last.kcal + drift));
     }
     return MealPlan(
       date: DateTime.now(),
       targetKcal: targetKcal,
-      meals: outOfRange ? scaled : meals,
+      meals: meals,
       note: _text(json['note'], ''),
     );
   }
 
-  static Meal _meal(Map<String, dynamic> json, String fallbackLabel) => Meal(
+  /// Sanity cap on one AI-estimated dish, before any rescaling.
+  static const _itemKcalCap = 1500;
+
+  static Meal _meal(
+    Map<String, dynamic> json,
+    String fallbackLabel, [
+    int itemCap = _itemKcalCap,
+  ]) => Meal(
     label: _text(json['label'], fallbackLabel),
     items: [
       for (final item in _list(json['items']))
-        if (item is Map<String, dynamic>) _item(item),
+        if (item is Map<String, dynamic>) _item(item, itemCap),
     ],
   );
 
-  static MealItem _item(Map<String, dynamic> json) => MealItem(
-    name: _text(json['name'], 'Item'),
-    kcal: _clampInt(json['kcal'], 0, 1500, 0),
-    proteinG: _clampDouble(json['proteinG'], 0, 300, 0),
-    carbsG: _clampDouble(json['carbsG'], 0, 300, 0),
-    fatG: _clampDouble(json['fatG'], 0, 300, 0),
-  );
+  /// One AI item with nonsense clamped away: kcal up to [kcalCap], each
+  /// macro up to what that many kcal could hold (4 kcal/g).
+  static MealItem _item(
+    Map<String, dynamic> json, [
+    int kcalCap = _itemKcalCap,
+  ]) {
+    final gramsCap = max(300.0, kcalCap / 4);
+    return MealItem(
+      name: _text(json['name'], 'Item'),
+      kcal: _clampInt(json['kcal'], 0, kcalCap, 0),
+      proteinG: _clampDouble(json['proteinG'], 0, gramsCap, 0),
+      carbsG: _clampDouble(json['carbsG'], 0, gramsCap, 0),
+      fatG: _clampDouble(json['fatG'], 0, gramsCap, 0),
+    );
+  }
 
   static String _text(Object? value, String fallback) {
     if (value is! String) return fallback;

@@ -28,13 +28,14 @@ abstract final class BodyMetrics {
   static const adultAge = 18;
 
   /// Whether the adult formulas here (BMR, TDEE, BMI categories) apply
-  /// at [age] — the one place that rule lives.
-  static bool adultFormulasApply(int age) => age >= adultAge;
+  /// at [age] — the one place that rule lives. An unknown age is treated
+  /// as adult (nothing is computed without a profile anyway).
+  static bool adultFormulasApply(int? age) => age == null || age >= adultAge;
 
   /// WHO adult BMI category; for [age] under [adultAge] a pointer to
   /// BMI-for-age instead.
   static String bmiCategory(double bmi, {int? age}) {
-    if (age != null && !adultFormulasApply(age)) return 'Use BMI-for-age';
+    if (!adultFormulasApply(age)) return 'Use BMI-for-age';
     return switch (bmi) {
       < underweightBmi => 'Underweight',
       < overweightBmi => 'Normal',

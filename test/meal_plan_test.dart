@@ -29,11 +29,15 @@ Map<String, dynamic> item({
 };
 
 /// Plain targets of [kcal], for prompt wording tests.
-DailyTargets fixed(int kcal, {TargetPhase phase = TargetPhase.maintenance}) => (
+DailyTargets fixed(
+  int kcal, {
+  TargetPhase phase = TargetPhase.maintenance,
+  int protein = 120,
+}) => (
   kcal: kcal,
-  proteinG: 120,
+  proteinG: protein,
   fatG: NutritionTargets.fatG(kcal),
-  carbsG: NutritionTargets.carbsG(targetKcal: kcal, proteinG: 120),
+  carbsG: NutritionTargets.carbsG(targetKcal: kcal, proteinG: protein),
   phase: phase,
   limit: null,
   safetyMinKcal: 1500,
@@ -82,8 +86,10 @@ void main() {
     );
     final parsedItem = parsed.meals.single.items.single;
 
-    expect(parsedItem.kcal, 1500);
-    expect(parsedItem.proteinG, 300);
+    // No dish bigger than the day (2,000 kcal), nor more grams of a macro
+    // than that many kcal could hold (2,000 / 4 = 500 g).
+    expect(parsedItem.kcal, 2000);
+    expect(parsedItem.proteinG, 500);
     expect(parsedItem.fatG, 0);
   });
 
@@ -422,6 +428,38 @@ void main() {
       expect(targets.limit, TargetLimit.underweight);
     });
 
+    test('the safety minimum eases in with the taper, not at 18.5', () {
+      // Woman, 165 cm, 25 y, light activity, Lose fat.
+      DailyTargets at(double kg) => daily(
+        goal: 'Cardio',
+        kg: kg,
+        cm: 165,
+        age: 25,
+        male: false,
+        activity: 1,
+      );
+      for (final (low, high) in [(50.3, 50.4), (53.0, 53.2)]) {
+        expect(
+          (at(high).safetyMinKcal - at(low).safetyMinKcal).abs(),
+          lessThan(25),
+          reason: '$low → $high kg',
+        );
+      }
+      // A menu generated at the minimum survives a 0.1 kg weigh-in.
+      final before = at(45.0);
+      final menu = MealPlan(
+        date: DateTime(2026, 10, 21),
+        targetKcal: before.kcal,
+        meals: [
+          Meal(
+            label: 'Day',
+            items: [MealItem(name: 'Food', kcal: before.minMenuKcal)],
+          ),
+        ],
+      );
+      expect(menu.unsafeFor(at(45.1)), isFalse);
+    });
+
     test('a saved menu is unsafe only when under the new minimum', () {
       final lose = daily(goal: 'Cardio', kg: 80, cm: 180, age: 30);
       MealPlan menu(int kcal) => MealPlan(
@@ -483,6 +521,14 @@ void main() {
       expect(restored.goal, 'Cardio');
       expect(restored.outdatedFor(lose, 'Cardio'), isFalse);
       expect(restored.outdatedFor(keep, 'Mobility'), isTrue);
+      // A protein change alone also outdates it.
+      final plain = MealPlan(
+        date: DateTime(2026, 10, 21),
+        targetKcal: 2000,
+        meals: const [],
+      ).forTargets(fixed(2000), 'Mobility');
+      expect(plain.outdatedFor(fixed(2000, protein: 100), 'Mobility'), isTrue);
+      expect(plain.outdatedFor(fixed(2000), 'Mobility'), isFalse);
       // Older saved menus only knew their kcal.
       expect(
         MealPlan(
@@ -530,6 +576,24 @@ void main() {
         maxKcal: 1155,
       ).totalKcal,
       1000,
+    );
+    // Big targets have big dishes: a 2,494 kcal lunch isn't clamped to
+    // 1,500 and then rejected.
+    final athlete = plan(
+      meals: [
+        meal(items: [item(kcal: 1870)]),
+        meal(items: [item(kcal: 2494)]),
+        meal(items: [item(kcal: 1871)]),
+      ],
+    );
+    expect(
+      AiMealParser.parse(
+        athlete,
+        targetKcal: 6235,
+        minKcal: 5612,
+        maxKcal: 6859,
+      ).totalKcal,
+      6235,
     );
     // Per-meal rounding can't leave the total under a minimum equal to
     // the target: the last meal takes the drift.
