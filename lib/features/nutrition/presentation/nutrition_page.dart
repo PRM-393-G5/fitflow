@@ -180,7 +180,8 @@ class _NutritionPageState extends State<NutritionPage>
         parseError = e;
         retryNote =
             'Your previous menu was rejected (${e.message}). The day must '
-            'total about $targetKcal kcal.';
+            'total between ${targets.minMenuKcal} and ${targets.maxMenuKcal} '
+            'kcal.';
       }
     }
     throw parseError!;
@@ -503,7 +504,8 @@ class _NutritionPageState extends State<NutritionPage>
   Widget build(BuildContext context) {
     _rollOver();
     final controller = AppScope.of(context);
-    final (:tdee, :targets, :missing) = _targets(controller);
+    final day = _targets(controller);
+    final (:tdee, :targets, :missing) = day;
     final goal = controller.goal;
     final targetKcal = targets?.kcal;
     // No menus under 18 — not even one cached before the age changed.
@@ -516,8 +518,10 @@ class _NutritionPageState extends State<NutritionPage>
     // A menu now under the safe minimum (e.g. a deficit a safety rule has
     // since removed) isn't shown or loggable, and says so; other changes
     // only show the banner.
+    // A menu that can't be checked (no targets while the profile is
+    // incomplete) is hidden too, rather than shown unchecked.
     final planHidden =
-        plan != null && targets != null && plan.unsafeFor(targets);
+        plan != null && (targets == null || plan.unsafeFor(targets));
     final targetChanged =
         plan != null &&
         targets != null &&
@@ -720,7 +724,7 @@ class _NutritionPageState extends State<NutritionPage>
             const SizedBox(height: AppSpacing.lg),
             _AiPlanCard(
               configured: OpenAiService.configured,
-              day: (tdee: tdee, targets: targets, missing: missing),
+              day: day,
               hasPlan: plan != null && !planHidden,
               generating: _generating,
               showOptions: _showPlanOptions,
@@ -777,9 +781,12 @@ class _NutritionPageState extends State<NutritionPage>
                     const SizedBox(width: AppSpacing.sm),
                     Expanded(
                       child: Text(
-                        "Today's menu is now below your safe minimum, so it "
-                        'is hidden'
-                        '${OpenAiService.configured ? ' — generate a new one.' : '.'}',
+                        targets == null
+                            ? "Today's menu is hidden until your body "
+                                  'profile is complete.'
+                            : "Today's menu is now below your safe minimum, "
+                                  'so it is hidden'
+                                  '${OpenAiService.configured ? ' — generate a new one.' : '.'}',
                       ),
                     ),
                   ],

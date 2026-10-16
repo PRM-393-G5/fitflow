@@ -86,10 +86,10 @@ void main() {
     );
     final parsedItem = parsed.meals.single.items.single;
 
-    // No dish bigger than the day (2,000 kcal), nor more grams of a macro
-    // than that many kcal could hold (2,000 / 4 = 500 g).
+    // No dish bigger than the day (2,000 kcal); macro caps scale with it
+    // (300 g × 2,000 / 1,500 = 400 g).
     expect(parsedItem.kcal, 2000);
-    expect(parsedItem.proteinG, 500);
+    expect(parsedItem.proteinG, 400);
     expect(parsedItem.fatG, 0);
   });
 
@@ -376,7 +376,10 @@ void main() {
       for (final targets in [underweight, lowMaintenance('Cardio')]) {
         expect(
           prompt('Cardio', targets),
-          allOf(contains('no calorie deficit'), isNot(contains('Lose fat'))),
+          allOf(
+            contains('no meaningful calorie deficit'),
+            isNot(contains('Lose fat')),
+          ),
         );
       }
       // Other goals keep their label when held at the floor.
@@ -384,10 +387,10 @@ void main() {
         prompt('Strength', lowMaintenance('Strength')),
         allOf(
           contains('User goal: Build muscle'),
-          isNot(contains('no calorie deficit')),
+          isNot(contains('calorie deficit')),
         ),
       );
-      expect(prompt('Cardio', floor), contains('do not go below the target'));
+      expect(prompt('Cardio', floor), contains('at least 1500 kcal'));
     });
 
     test('the deficit tapers in across BMI 18.5–19.5', () {
@@ -413,19 +416,46 @@ void main() {
       expect(full.phase, TargetPhase.deficit);
     });
 
-    test('an underweight reason survives being lifted to the floor', () {
-      // 40 kg, 160 cm (BMI 15.6), 50 y, sedentary: TDEE ≈ 1,187 < 1,200.
+    test(
+      'a target raised above maintenance says so, even when underweight',
+      () {
+        // 40 kg, 160 cm (BMI 15.6), 50 y, sedentary: TDEE ≈ 1,187 < 1,200, so
+        // the target is held at the floor — above her maintenance.
+        final targets = daily(
+          goal: 'Cardio',
+          kg: 40,
+          cm: 160,
+          age: 50,
+          male: false,
+          activity: 0,
+        );
+
+        expect(targets.kcal, 1200);
+        expect(targets.limit, TargetLimit.lowMaintenance);
+      },
+    );
+
+    test('the target never sits under the safety minimum', () {
+      // Woman, 155 cm, 46 kg (BMI 19.15), 30 y, sedentary, Lose fat: the
+      // goal's −15% would be 1,140; the eased minimum is ≈ 1,250.
       final targets = daily(
         goal: 'Cardio',
-        kg: 40,
-        cm: 160,
-        age: 50,
+        kg: 46,
+        cm: 155,
+        age: 30,
         male: false,
         activity: 0,
       );
 
-      expect(targets.kcal, 1200);
+      expect(targets.kcal, greaterThanOrEqualTo(targets.safetyMinKcal));
+      expect(targets.kcal, greaterThanOrEqualTo(targets.minMenuKcal));
+      expect(targets.kcal, lessThanOrEqualTo(targets.maxMenuKcal));
       expect(targets.limit, TargetLimit.underweight);
+      // The prompt states the minimum the parser enforces.
+      expect(
+        AiMealPrompt.user(targets: targets, meals: 3, goal: 'Cardio'),
+        contains('at least ${targets.minMenuKcal} kcal'),
+      );
     });
 
     test('the safety minimum eases in with the taper, not at 18.5', () {
