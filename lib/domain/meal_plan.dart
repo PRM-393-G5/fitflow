@@ -169,13 +169,13 @@ class MealPlan {
   /// Share under the safety minimum still treated as the same menu.
   static const unsafeTolerance = 0.05;
 
-  /// Whether today's [targets] or [goal] differ from what this plan was
-  /// generated for.
-  bool outdatedFor(DailyTargets targets, String? goal) {
-    if (targetKcal != targets.kcal) return true;
-    if (proteinG == null) return false;
-    return proteinG != targets.proteinG || this.goal != goal;
-  }
+  /// Whether this plan no longer fits today: the goal changed, or its
+  /// total is outside the range a new menu for [targets] would need — a
+  /// weigh-in that moves the target a few kcal doesn't count.
+  bool outdatedFor(DailyTargets targets, String? goal) =>
+      (proteinG != null && this.goal != goal) ||
+      totalKcal < targets.minMenuKcal ||
+      totalKcal > targets.maxMenuKcal;
 
   int get totalKcal => meals.fold(0, (sum, meal) => sum + meal.kcal);
 
@@ -739,14 +739,10 @@ You are a nutritionist generating a day meal plan as JSON. Rules:
   /// maintenance — never the fat-loss goal that was picked.
   static String? goalText(String? goal, DailyTargets targets) {
     if (goal == null) return null;
-    // Fat loss that a low BMI or a low maintenance held back reads as
-    // maintenance — the same reasons the card explains — and so does fat
-    // loss with no deficit left. Every other goal keeps its label.
-    final heldBack =
-        targets.limit == TargetLimit.underweight ||
-        targets.limit == TargetLimit.lowMaintenance ||
-        targets.phase != TargetPhase.deficit;
-    if (nutritionIntent(goal) == NutritionIntent.loseFat && heldBack) {
+    // Fat loss with no deficit left (a safety rule removed it) reads as
+    // maintenance, matching the target; every other goal keeps its label.
+    if (nutritionIntent(goal) == NutritionIntent.loseFat &&
+        targets.phase != TargetPhase.deficit) {
       return 'eat enough to maintain weight — no meaningful calorie deficit';
     }
     return goalLabel(goal);
@@ -878,6 +874,10 @@ abstract final class AiMealParser {
     ].where((meal) => meal.items.isNotEmpty).toList();
     if (meals.isEmpty) {
       throw const FormatException('AI plan has no meals');
+    }
+    if ((minKcal != null && targetKcal < minKcal) ||
+        (maxKcal != null && targetKcal > maxKcal)) {
+      throw ArgumentError.value(targetKcal, 'targetKcal', 'outside the range');
     }
     final total = _total(meals);
     final outOfRange =

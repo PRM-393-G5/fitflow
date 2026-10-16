@@ -192,10 +192,11 @@ void main() {
     );
   });
 
-  testWidgets('a small target drift keeps the menu, with the banner', (
+  testWidgets('a small target drift keeps the menu, without a banner', (
     tester,
   ) async {
-    // 75 kg, 175 cm, 30 y, light, Build muscle: target ≈ 2,569 kcal.
+    // 75 kg, 175 cm, 30 y, light, Build muscle: target ≈ 2,569 kcal; a
+    // 2,500 kcal menu planned for 2,560 is still well in range.
     final plan = MealPlan(
       date: DateTime.now(),
       targetKcal: 2560,
@@ -210,14 +211,14 @@ void main() {
       'meal_plan_v1': jsonEncode(MealPlanCache(plan: plan).toJson()),
     });
 
-    final banner = find.byKey(const Key('nutrition-target-changed'));
+    final menuItem = find.text('Rice bowl');
     await tester.scrollUntilVisible(
-      banner,
+      menuItem,
       300,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(banner, findsOneWidget);
-    expect(find.text('Rice bowl'), findsOneWidget);
+    expect(menuItem, findsOneWidget);
+    expect(find.byKey(const Key('nutrition-target-changed')), findsNothing);
   });
 
   testWidgets('groups the log into meal slots and logs into a chosen slot', (

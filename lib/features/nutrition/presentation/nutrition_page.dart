@@ -569,9 +569,9 @@ class _NutritionPageState extends State<NutritionPage>
           _SummaryCard(
             eaten: eaten,
             dayText: dayText,
-            tdee: tdee,
-            // Targets come from today's weight and goal; past days are
-            // shown without them rather than judged against today's.
+            // Targets (and TDEE) come from today's weight and goal; past
+            // days are shown without them rather than judged against them.
+            tdee: isToday ? tdee : null,
             targets: isToday ? targets : null,
             missing: missing,
             goal: goal,
@@ -806,10 +806,12 @@ class _NutritionPageState extends State<NutritionPage>
                         child: Text(
                           plan.targetKcal != targetKcal
                               ? 'Target changed — regenerate. Today\'s menu '
-                                    'was planned for ${plan.targetKcal} kcal; '
-                                    'your target is now $targetKcal kcal.'
-                              : 'Your goal or protein target changed since '
-                                    'today\'s menu was planned — regenerate.',
+                                    'was planned for '
+                                    '${thousands(plan.targetKcal)} kcal; your '
+                                    'target is now ${thousands(targetKcal ?? 0)} '
+                                    'kcal.'
+                              : 'Your goal changed since today\'s menu was '
+                                    'planned — regenerate.',
                         ),
                       ),
                     ],

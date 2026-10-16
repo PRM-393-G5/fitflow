@@ -341,7 +341,11 @@ class _BodyProfileCard extends StatelessWidget {
             ],
           ),
           if (!hasProfile)
-            const Text('Add height, age, and sex to compute BMI and TDEE.')
+            Text(
+              adult
+                  ? 'Add height, age, and sex to compute BMI and TDEE.'
+                  : 'Add your height to compute BMI.',
+            )
           else ...[
             Text(
               '${height.round()} cm'

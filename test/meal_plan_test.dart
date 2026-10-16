@@ -519,53 +519,46 @@ void main() {
       expect(menu(1400).unsafeFor(underweight), isTrue);
     });
 
-    test('a saved menu is outdated when kcal, protein or goal change', () {
-      // At maintenance either way, so the kcal match; protein, goal and
-      // limit don't.
-      final lose = daily(
-        goal: 'Cardio',
-        kg: 45,
-        cm: 150,
-        age: 60,
-        male: false,
-        activity: 0,
-      );
-      final keep = daily(
-        goal: 'Mobility',
-        kg: 45,
-        cm: 150,
-        age: 60,
-        male: false,
-        activity: 0,
-      );
-      final saved = MealPlan(
+    test('a saved menu is outdated on a goal change or out of range', () {
+      final lose = daily(goal: 'Cardio', kg: 80, cm: 180, age: 30);
+      MealPlan menu(int kcal) => MealPlan(
         date: DateTime(2026, 10, 21),
         targetKcal: lose.kcal,
-        meals: const [],
+        meals: [
+          Meal(
+            label: 'Day',
+            items: [MealItem(name: 'Food', kcal: kcal)],
+          ),
+        ],
       ).forTargets(lose, 'Cardio');
       final restored = MealPlan.fromJson(
-        jsonDecode(jsonEncode(saved.toJson())) as Map<String, dynamic>,
+        jsonDecode(jsonEncode(menu(lose.kcal).toJson()))
+            as Map<String, dynamic>,
       );
 
-      expect(lose.kcal, keep.kcal);
       expect(restored.goal, 'Cardio');
+      expect(restored.proteinG, lose.proteinG);
       expect(restored.outdatedFor(lose, 'Cardio'), isFalse);
-      expect(restored.outdatedFor(keep, 'Mobility'), isTrue);
-      // A protein change alone also outdates it.
-      final plain = MealPlan(
-        date: DateTime(2026, 10, 21),
-        targetKcal: 2000,
-        meals: const [],
-      ).forTargets(fixed(2000), 'Mobility');
-      expect(plain.outdatedFor(fixed(2000, protein: 100), 'Mobility'), isTrue);
-      expect(plain.outdatedFor(fixed(2000), 'Mobility'), isFalse);
-      // Older saved menus only knew their kcal.
+      // A weigh-in that moves the target a few kcal keeps it current.
+      final heavier = daily(goal: 'Cardio', kg: 80.2, cm: 180, age: 30);
+      expect(heavier.kcal, isNot(lose.kcal));
+      expect(restored.outdatedFor(heavier, 'Cardio'), isFalse);
+      // A goal change, or a total outside the new range, does not.
+      expect(restored.outdatedFor(lose, 'Mobility'), isTrue);
+      final build = daily(goal: 'Strength', kg: 80, cm: 180, age: 30);
+      expect(menu(lose.kcal).outdatedFor(build, 'Cardio'), isTrue);
+      // Older saved menus (no recorded goal) are judged by range only.
       expect(
         MealPlan(
           date: DateTime(2026, 10, 21),
-          targetKcal: keep.kcal,
-          meals: const [],
-        ).outdatedFor(keep, 'Mobility'),
+          targetKcal: lose.kcal,
+          meals: [
+            Meal(
+              label: 'Day',
+              items: [MealItem(name: 'Food', kcal: lose.kcal)],
+            ),
+          ],
+        ).outdatedFor(lose, 'Mobility'),
         isFalse,
       );
     });
