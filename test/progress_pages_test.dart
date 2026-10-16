@@ -354,6 +354,37 @@ void main() {
     expect(find.text('Ten tonne club'), findsOneWidget);
   });
 
+  testWidgets('body metrics hide adult BMR and TDEE under 18', (tester) async {
+    await pumpPage(
+      tester,
+      const BodyMetricsPage(),
+      prefs: {
+        'body_profile_v1':
+            '{"heightCm":160,"age":16,"isMale":false,"activityLevel":1}',
+        'body_weights_v1': jsonEncode([
+          {'date': DateTime.now().toIso8601String(), 'weightKg': 50.0},
+        ]),
+      },
+    );
+
+    expect(find.text('Use BMI-for-age'), findsOneWidget);
+    expect(find.text('TDEE'), findsNothing);
+    expect(find.byKey(const Key('metrics-minor-note')), findsOneWidget);
+  });
+
+  testWidgets('the weight hint only promises BMI under 18', (tester) async {
+    await pumpPage(
+      tester,
+      const BodyMetricsPage(),
+      prefs: {
+        'body_profile_v1':
+            '{"heightCm":160,"age":16,"isMale":false,"activityLevel":1}',
+      },
+    );
+
+    expect(find.text('Log your weight to see BMI.'), findsOneWidget);
+  });
+
   testWidgets('weight log accepts a comma and rejects out-of-range input', (
     tester,
   ) async {

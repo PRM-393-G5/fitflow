@@ -13,6 +13,16 @@ const trainingLevels = ['Beginner', 'Intermediate', 'Advanced'];
 /// Activity levels, indexed by `AppController.activityLevel`.
 const activityLevels = ['Sedentary', 'Light', 'Moderate', 'Active', 'Athlete'];
 
+/// What a stored goal asks of nutrition — the one mapping from the
+/// workout-category value to calorie intent.
+enum NutritionIntent { loseFat, buildMuscle, maintain }
+
+NutritionIntent nutritionIntent(String? goal) => switch (goal) {
+  'Cardio' => NutritionIntent.loseFat,
+  'Strength' => NutritionIntent.buildMuscle,
+  _ => NutritionIntent.maintain,
+};
+
 /// The label for a stored goal value (or the value itself if unknown).
 String goalLabel(String goal) => trainingGoals
     .firstWhere(

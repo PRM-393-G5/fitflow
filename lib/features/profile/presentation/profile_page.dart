@@ -16,6 +16,7 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../data/api/api_client.dart';
 import '../../../data/backend_auth_service.dart';
+import '../../../domain/body_metrics.dart';
 import '../../../domain/models/app_user.dart';
 import '../../../domain/training_options.dart';
 import '../../auth/presentation/login_page.dart';
@@ -210,6 +211,8 @@ class ProfilePage extends StatelessWidget {
         animation: animation,
         goal: controller.goal,
         level: controller.level,
+        // No calorie targets under 18.
+        calorieTargets: BodyMetrics.adultFormulasApply(controller.age),
       ),
     );
     if (picked == null) return;
@@ -691,12 +694,14 @@ class _GoalDialog extends StatefulWidget {
     required this.animation,
     required this.goal,
     required this.level,
+    required this.calorieTargets,
   });
 
   final FDialogStyle style;
   final Animation<double> animation;
   final String? goal;
   final String? level;
+  final bool calorieTargets;
 
   @override
   State<_GoalDialog> createState() => _GoalDialogState();
@@ -725,7 +730,11 @@ class _GoalDialogState extends State<_GoalDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Plans, suggestions and calorie targets follow these.'),
+          Text(
+            widget.calorieTargets
+                ? 'Plans, suggestions and calorie targets follow these.'
+                : 'Plans and suggestions follow these.',
+          ),
           const SizedBox(height: AppSpacing.md),
           FTileGroup(
             label: const Text('Goal'),

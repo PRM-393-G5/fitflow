@@ -293,12 +293,16 @@ class _BodyProfileCard extends StatelessWidget {
     final age = controller.age;
     final hasProfile = height != null && age != null;
     final weight = latestKg;
+    // BMR and TDEE are adult formulas, as on Nutrition.
+    final adult = BodyMetrics.adultFormulasApply(age);
 
     double? bmi;
     double? bmr;
     double? tdee;
     if (hasProfile && weight != null) {
       bmi = BodyMetrics.bmi(weightKg: weight, heightCm: height);
+    }
+    if (hasProfile && weight != null && adult) {
       bmr = BodyMetrics.bmr(
         weightKg: weight,
         heightCm: height,
@@ -337,7 +341,11 @@ class _BodyProfileCard extends StatelessWidget {
             ],
           ),
           if (!hasProfile)
-            const Text('Add height, age, and sex to compute BMI and TDEE.')
+            Text(
+              adult
+                  ? 'Add height, age, and sex to compute BMI and TDEE.'
+                  : 'Add your height to compute BMI.',
+            )
           else ...[
             Text(
               '${height.round()} cm'
@@ -348,23 +356,37 @@ class _BodyProfileCard extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.sm),
             if (weight == null)
-              const Text(
-                'Log your weight to see BMI/BMR/TDEE.',
-                key: Key('metrics-weight-hint'),
+              Text(
+                adult
+                    ? 'Log your weight to see BMI/BMR/TDEE.'
+                    : 'Log your weight to see BMI.',
+                key: const Key('metrics-weight-hint'),
               )
-            else
+            else ...[
               Row(
                 children: [
                   _value(
                     context,
                     'BMI',
                     bmi!.toStringAsFixed(1),
-                    BodyMetrics.bmiCategory(bmi),
+                    BodyMetrics.bmiCategory(bmi, age: age),
                   ),
-                  _value(context, 'BMR', '${bmr!.round()} kcal'),
-                  _value(context, 'TDEE', '${tdee!.round()} kcal'),
+                  if (adult) ...[
+                    _value(context, 'BMR', '${bmr!.round()} kcal'),
+                    _value(context, 'TDEE', '${tdee!.round()} kcal'),
+                  ],
                 ],
               ),
+              if (!adult) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'BMR and TDEE use adult formulas, so they are not shown '
+                  'under ${BodyMetrics.adultAge}.',
+                  key: const Key('metrics-minor-note'),
+                  style: mutedStyle,
+                ),
+              ],
+            ],
           ],
         ],
       ),
