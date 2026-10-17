@@ -87,6 +87,11 @@ const squatCountDepthDegrees = 105.0;
 /// the review's `shallowDepth` fault all use this, so they always agree.
 const squatGoodDepthDegrees = 100.0;
 
+/// Shortest controlled descent. Measured from leaving standing (158°) to
+/// reaching the count depth (105°) — the fast middle third of the lowering —
+/// so 300 ms is a whole descent of roughly 0.8 s.
+const squatFastDescentMs = 300;
+
 enum FormExercise {
   squat('Squat'),
   pushup('Push-up'),
@@ -182,9 +187,12 @@ class SquatAnalyzer implements RepAnalyzer {
   double? _standingSpan;
   final _repRecords = <RepRecord>[];
   int? _repStartUs;
+  int? _repBottomUs;
   int? _repAscentUs;
+  double? _otherKnee;
   double _repMinKnee = 180;
-  SquatJoint? _repHeelJoint;
+  SquatJoint? _heelJoint;
+  double? _heelY;
   double? _repHeelBaseY;
   int _repHeelRiseFrames = 0;
   bool _repHeelsLifted = false;
@@ -192,6 +200,7 @@ class SquatAnalyzer implements RepAnalyzer {
   int _repValgusFrames = 0;
   int _repLeanFrames = 0;
   int _repAsymmetryFrames = 0;
+  int _repAsymmetryJudged = 0;
 
   @override
   int get repetitions => _repetitions;
@@ -208,7 +217,8 @@ class SquatAnalyzer implements RepAnalyzer {
     _candidateFrames = 0;
     _repetitions = 0;
     _reachedDepth = false;
-    _knee = _hip = _trunk = null;
+    _knee = _hip = _trunk = _otherKnee = _heelY = null;
+    _heelJoint = null;
     _lastTimestampUs = null;
     _missingFrames = 0;
     _standingSpan = null;
@@ -255,8 +265,7 @@ class SquatAnalyzer implements RepAnalyzer {
     final alpha = timestampUs == null || previousUs == null
         ? smoothingFactor
         : 1 - math.exp(-(timestampUs - previousUs) / 180000);
-    final rawKnee = angleDegrees(hip, knee, ankle);
-    _knee = _smooth(_knee, rawKnee, alpha);
+    _knee = _smooth(_knee, angleDegrees(hip, knee, ankle), alpha);
     _hip = _smooth(_hip, angleDegrees(shoulder, hip, knee), alpha);
     _trunk = _smooth(
       _trunk,
@@ -277,8 +286,17 @@ class SquatAnalyzer implements RepAnalyzer {
       // Standing height calibrates how small the body may get at depth.
       _standingSpan = _smooth(_standingSpan, (ankle.y - shoulder.y).abs(), .2);
     }
-    final kneeTrackingOk = _kneeTracking(points);
-    _trackRep(points, side, timestampUs, rawKnee, kneeTrackingOk);
+    final otherRaw = _otherKneeAngle(points, side);
+    _otherKnee = otherRaw == null ? null : _smooth(_otherKnee, otherRaw, alpha);
+    _trackHeel(points, side, alpha);
+    // Judged only while bending: standing in a wide stance the knees sit
+    // inside the ankles without caving.
+    final bending =
+        _phase == SquatPhase.descending ||
+        _phase == SquatPhase.bottom ||
+        _phase == SquatPhase.ascending;
+    final kneeTrackingOk = !bending || _kneeTracking(points);
+    _trackRep(points, side, timestampUs, kneeTrackingOk);
     if (_phase == SquatPhase.bottom) _reachedDepth = true;
     if (_phase == SquatPhase.standing && _reachedDepth) {
       _repetitions++;
@@ -287,14 +305,15 @@ class SquatAnalyzer implements RepAnalyzer {
     }
     if (_phase == SquatPhase.standing) _clearRepTracking();
     final stableTrunk = _trunk! < 45;
-    final deepEnough = _knee! <= squatGoodDepthDegrees;
+    // Depth is judged by the deepest point of the rep so far: leaving the
+    // bottom, the knee is past the depth line by definition.
+    final repDeep = _repMinKnee <= squatGoodDepthDegrees;
     var score = 100;
     if (!kneeTrackingOk) score -= 25;
     if (!stableTrunk) score -= 20;
-    if ((_phase == SquatPhase.bottom || _phase == SquatPhase.ascending) &&
-        !deepEnough) {
-      score -= 20;
-    }
+    // Only once the user stands back up is a shallow rep final; at the
+    // bottom they may still sink deeper.
+    if (_phase == SquatPhase.ascending && !repDeep) score -= 20;
 
     final cue = !kneeTrackingOk
         ? 'Giữ gối theo hướng mũi chân'
@@ -302,8 +321,8 @@ class SquatAnalyzer implements RepAnalyzer {
         ? 'Đứng thẳng để bắt đầu'
         : !stableTrunk
         ? 'Giữ thân ổn định'
-        : ((_phase == SquatPhase.descending || _phase == SquatPhase.bottom) &&
-              !deepEnough)
+        : _phase == SquatPhase.descending ||
+              (_phase == SquatPhase.bottom && !repDeep)
         ? 'Xuống thêm một chút'
         : _phase == SquatPhase.bottom
         ? 'Độ sâu tốt, đứng lên'
@@ -318,7 +337,7 @@ class SquatAnalyzer implements RepAnalyzer {
       kneeAngle: _knee,
       hipAngle: _hip,
       trunkAngle: _trunk,
-      label: _phase == SquatPhase.bottom && !deepEnough ? 'Chưa đủ sâu' : null,
+      label: _phase == SquatPhase.bottom && !repDeep ? 'Chưa đủ sâu' : null,
     );
   }
 
@@ -412,7 +431,6 @@ class SquatAnalyzer implements RepAnalyzer {
     Map<SquatJoint, SquatPoint> points,
     (SquatJoint, SquatJoint, SquatJoint, SquatJoint, SquatJoint) side,
     int? timestampUs,
-    double rawKnee,
     bool kneeTrackingOk,
   ) {
     final inRep =
@@ -424,23 +442,30 @@ class SquatAnalyzer implements RepAnalyzer {
     if (inRep && _repStartUs == null) {
       _repStartUs = timestampUs;
       _repMinKnee = _knee!;
-      _repHeelJoint = _repHeelBaseY = null;
+      _repHeelBaseY = _heelY;
       _repHeelRiseFrames = 0;
       _repHeelsLifted = false;
-      _repFrames = _repValgusFrames = _repLeanFrames = _repAsymmetryFrames = 0;
+      _repFrames = _repValgusFrames = _repLeanFrames = 0;
+      _repAsymmetryFrames = _repAsymmetryJudged = 0;
     }
     if (_repStartUs == null || !inRep) return;
     _repFrames++;
     _repMinKnee = math.min(_repMinKnee, _knee!);
     if (!kneeTrackingOk) _repValgusFrames++;
     if (_trunk! > 45) _repLeanFrames++;
-    // Raw vs raw: comparing the lagging smoothed angle with the other leg's
-    // raw angle reads as asymmetry on every fast descent.
-    final otherKnee = _otherKneeAngle(points, side);
-    if (otherKnee != null && (rawKnee - otherKnee).abs() > 15) {
-      _repAsymmetryFrames++;
+    // Both legs smoothed alike, so neither lags the other on a fast
+    // descent. Only judged side-on (hips overlapping): from an angle the
+    // two legs are foreshortened differently and always read as uneven.
+    final otherKnee = _otherKnee;
+    final hipWidth = _hipWidth(points);
+    if (otherKnee != null && (hipWidth == null || hipWidth < _sideOnHipWidth)) {
+      _repAsymmetryJudged++;
+      if ((_knee! - otherKnee).abs() > 15) _repAsymmetryFrames++;
     }
-    _trackHeel(points, side);
+    _trackHeelRise();
+    if (_phase == SquatPhase.bottom && _repBottomUs == null) {
+      _repBottomUs = timestampUs;
+    }
     if (_phase == SquatPhase.ascending && _repAscentUs == null) {
       _repAscentUs = timestampUs;
     }
@@ -451,8 +476,12 @@ class SquatAnalyzer implements RepAnalyzer {
   void _closeRep(int? timestampUs) {
     if (_repStartUs == null || _repFrames == 0) return;
     final ascentUs = _repAscentUs;
-    final hasTiming = timestampUs != null && ascentUs != null;
-    final descentMs = hasTiming ? (ascentUs - _repStartUs!) ~/ 1000 : 0;
+    final bottomUs = _repBottomUs ?? ascentUs;
+    final hasTiming =
+        timestampUs != null && ascentUs != null && bottomUs != null;
+    // Descent ends on reaching the bottom, so a pause there isn't
+    // mistaken for a slow, controlled lowering.
+    final descentMs = hasTiming ? (bottomUs - _repStartUs!) ~/ 1000 : 0;
     final ascentMs = hasTiming ? (timestampUs - ascentUs) ~/ 1000 : 0;
     _repRecords.add(
       RepRecord(
@@ -465,20 +494,25 @@ class SquatAnalyzer implements RepAnalyzer {
           if (_repValgusFrames / _repFrames > 0.3) 'kneeValgus',
           if (_repLeanFrames / _repFrames > 0.3) 'forwardLean',
           if (_repHeelsLifted) 'heelsUp',
-          if (_repAsymmetryFrames / _repFrames > 0.3) 'asymmetry',
-          if (hasTiming && descentMs < 800) 'fastEccentric',
+          // Needs most of the rep seen side-on: a few stray side-on frames
+          // in an angled view are not enough to judge.
+          if (_repAsymmetryJudged * 2 >= _repFrames &&
+              _repAsymmetryFrames / _repAsymmetryJudged > 0.3)
+            'asymmetry',
+          if (hasTiming && descentMs < squatFastDescentMs) 'fastEccentric',
         ],
       ),
     );
   }
 
-  /// Heel-rise signal: prefers the heel landmark, falls back to the ankle.
-  /// The baseline is re-taken whenever the tracked joint changes (side
-  /// switch or heel confidence dropping), and a lift must hold for
-  /// [heelRiseFrames] frames so one jittery frame can't flag it.
+  /// Smoothed heel height, tracked every frame so a rep starts from a
+  /// steady baseline: prefers the heel landmark, falls back to the ankle,
+  /// and restarts whenever the tracked joint changes (side switch or heel
+  /// confidence dropping).
   void _trackHeel(
     Map<SquatJoint, SquatPoint> points,
     (SquatJoint, SquatJoint, SquatJoint, SquatJoint, SquatJoint) side,
+    double alpha,
   ) {
     final heelJoint = side.$4 == SquatJoint.leftAnkle
         ? SquatJoint.leftHeel
@@ -487,13 +521,26 @@ class SquatAnalyzer implements RepAnalyzer {
     final (joint, point) = heel != null && heel.confidence >= minimumConfidence
         ? (heelJoint, heel)
         : (side.$4, points[side.$4]!);
-    if (joint != _repHeelJoint) {
-      _repHeelJoint = joint;
-      _repHeelBaseY = point.y;
+    if (joint != _heelJoint) {
+      _heelJoint = joint;
+      _heelY = point.y;
+      // A baseline from another joint is meaningless.
+      _repHeelBaseY = _repStartUs == null ? null : point.y;
       _repHeelRiseFrames = 0;
       return;
     }
-    if (_repHeelBaseY! - point.y > 0.015) {
+    _heelY = _smooth(_heelY, point.y, alpha);
+  }
+
+  /// A lift must hold for [heelRiseFrames] frames so one jittery frame
+  /// can't flag it.
+  void _trackHeelRise() {
+    final base = _repHeelBaseY;
+    if (base == null) {
+      _repHeelBaseY = _heelY;
+      return;
+    }
+    if (base - _heelY! > 0.015) {
       if (++_repHeelRiseFrames >= heelRiseFrames) _repHeelsLifted = true;
     } else {
       _repHeelRiseFrames = 0;
@@ -501,12 +548,13 @@ class SquatAnalyzer implements RepAnalyzer {
   }
 
   void _clearRepTracking() {
-    _repStartUs = _repAscentUs = null;
-    _repHeelJoint = _repHeelBaseY = null;
+    _repStartUs = _repBottomUs = _repAscentUs = null;
+    _repHeelBaseY = null;
     _repHeelRiseFrames = 0;
     _repHeelsLifted = false;
     _repMinKnee = 180;
-    _repFrames = _repValgusFrames = _repLeanFrames = _repAsymmetryFrames = 0;
+    _repFrames = _repValgusFrames = _repLeanFrames = 0;
+    _repAsymmetryFrames = _repAsymmetryJudged = 0;
   }
 
   /// Knee angle of the *other* leg, when its landmarks are confident —
@@ -536,27 +584,50 @@ class SquatAnalyzer implements RepAnalyzer {
         : null;
   }
 
-  /// False on knee valgus: a knee caving *medially* (toward the body
-  /// midline) past its ankle. Knees pushed out are fine. Needs both hips to
-  /// find the midline, so a side-on view (hips overlapping) is never
-  /// flagged, and only legs with confident knee and ankle are judged.
-  bool _kneeTracking(Map<SquatJoint, SquatPoint> points) {
+  /// Hips at least this far apart on screen tell left from right well
+  /// enough to judge knee valgus.
+  static const _minHipWidth = 0.04;
+
+  /// Hips closer than this mean the camera is side-on: both legs are seen
+  /// from the same angle, so their knee angles can be compared.
+  static const _sideOnHipWidth = 0.025;
+
+  /// On-screen distance between confident hips, or null.
+  double? _hipWidth(Map<SquatJoint, SquatPoint> points) {
     final leftHip = _reliable(points, SquatJoint.leftHip);
     final rightHip = _reliable(points, SquatJoint.rightHip);
-    if (leftHip == null || rightHip == null) return true;
-    final hipWidth = (leftHip.x - rightHip.x).abs();
-    if (hipWidth < 0.04) return true;
-    final midline = (leftHip.x + rightHip.x) / 2;
-    bool leg(SquatJoint kneeJoint, SquatJoint ankleJoint) {
-      final knee = _reliable(points, kneeJoint);
-      final ankle = _reliable(points, ankleJoint);
-      if (knee == null || ankle == null) return true;
-      final medial = midline >= ankle.x ? 1 : -1;
-      return (knee.x - ankle.x) * medial <= hipWidth * 0.3;
-    }
+    if (leftHip == null || rightHip == null) return null;
+    return (leftHip.x - rightHip.x).abs();
+  }
 
-    return leg(SquatJoint.leftKnee, SquatJoint.leftAnkle) &&
-        leg(SquatJoint.rightKnee, SquatJoint.rightAnkle);
+  /// False on knee valgus: knees caving *medially* (toward the body
+  /// midline) past their ankles. Knees pushed out are fine. Both legs are
+  /// judged together: from an angled camera, knees travelling forward over
+  /// the toes shift both legs the same way on screen, which cancels out of
+  /// the sum, while a real cave-in moves them toward each other. Side-on
+  /// views (hips overlapping) and unconfident legs are never flagged.
+  bool _kneeTracking(Map<SquatJoint, SquatPoint> points) {
+    final hipWidth = _hipWidth(points);
+    if (hipWidth == null || hipWidth < _minHipWidth) return true;
+    final leftHip = points[SquatJoint.leftHip]!;
+    final rightHip = points[SquatJoint.rightHip]!;
+    final leftKnee = _reliable(points, SquatJoint.leftKnee);
+    final rightKnee = _reliable(points, SquatJoint.rightKnee);
+    final leftAnkle = _reliable(points, SquatJoint.leftAnkle);
+    final rightAnkle = _reliable(points, SquatJoint.rightAnkle);
+    if (leftKnee == null ||
+        rightKnee == null ||
+        leftAnkle == null ||
+        rightAnkle == null) {
+      return true;
+    }
+    // +1 when the left leg's medial side (toward the right hip) is +x.
+    final medial = rightHip.x >= leftHip.x ? 1 : -1;
+    final caveIn =
+        ((leftKnee.x - leftAnkle.x) * medial +
+            (rightKnee.x - rightAnkle.x) * -medial) /
+        2;
+    return caveIn <= hipWidth * 0.3;
   }
 }
 

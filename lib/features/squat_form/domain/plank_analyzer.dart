@@ -9,6 +9,10 @@ class PlankAnalyzer implements RepAnalyzer {
 
   final double minimumConfidence;
 
+  /// Smoothing time constant for the hip offset, so one jittery landmark
+  /// can't flash a bad score or cost hold time.
+  static const _smoothingUs = 180000;
+
   /// Longest frame-to-frame gap credited as hold time. Larger gaps (pause,
   /// camera switch, app background) are skipped instead of counted.
   final int maxFrameGapUs;
@@ -19,6 +23,7 @@ class PlankAnalyzer implements RepAnalyzer {
 
   int _goodHoldUs = 0;
   int? _lastTimestampUs;
+  double? _offset;
 
   @override
   int get repetitions => _goodHoldUs ~/ 1000000;
@@ -32,6 +37,7 @@ class PlankAnalyzer implements RepAnalyzer {
   void reset() {
     _goodHoldUs = 0;
     _lastTimestampUs = null;
+    _offset = null;
   }
 
   @override
@@ -43,8 +49,8 @@ class PlankAnalyzer implements RepAnalyzer {
     int? timestampUs,
   }) {
     final side = _bestSide(points);
-    final offset = side == null ? null : _hipOffset(points, side);
-    if (side == null || offset == null) {
+    final rawOffset = side == null ? null : _hipOffset(points, side);
+    if (side == null || rawOffset == null) {
       _lastTimestampUs = timestampUs;
       // Keep the accumulated hold: a dropped frame must not flash 0.
       return SquatAnalysis(
@@ -66,10 +72,18 @@ class PlankAnalyzer implements RepAnalyzer {
       );
     }
 
-    final score = (100 - offset.abs() * 200).round().clamp(0, 100);
-    final good = score >= 70;
     final previousUs = _lastTimestampUs;
     _lastTimestampUs = timestampUs;
+    final previous = _offset;
+    final offset = _offset = previous == null
+        ? rawOffset
+        : previousUs == null || timestampUs == null
+        ? (previous + rawOffset) / 2
+        : previous +
+              (1 - math.exp(-(timestampUs - previousUs) / _smoothingUs)) *
+                  (rawOffset - previous);
+    final score = (100 - offset.abs() * 200).round().clamp(0, 100);
+    final good = score >= 70;
     if (good && previousUs != null && timestampUs != null) {
       final gapUs = timestampUs - previousUs;
       if (gapUs > 0 && gapUs <= maxFrameGapUs) _goodHoldUs += gapUs;

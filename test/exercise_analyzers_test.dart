@@ -47,12 +47,56 @@ void main() {
 
     frames(pose(.5, .4), 3); // top
     frames(pose(.4, .55), 3); // bottom: depth armed
-    expect(analyzer.analyze(const {}).bodyVisible, isFalse); // arms gone
+    // Arms gone for longer than a detector dropout.
+    for (var i = 0; i <= analyzer.dropoutFrames; i++) {
+      expect(analyzer.analyze(const {}).bodyVisible, isFalse);
+    }
     frames(pose(.5, .4), 3); // straight arms back in view
     expect(analyzer.repetitions, 0);
     frames(pose(.4, .55), 3);
     frames(pose(.5, .4), 3);
     expect(analyzer.repetitions, 1);
+  });
+
+  test('push-up analyzer keeps the rep through a brief dropout at the '
+      'bottom', () {
+    final analyzer = PushupAnalyzer(smoothingFactor: 1, transitionFrames: 2);
+    Map<SquatJoint, SquatPoint> pose(double wristX, double wristY) => {
+      SquatJoint.leftShoulder: const SquatPoint(.3, .4),
+      SquatJoint.leftElbow: const SquatPoint(.4, .4),
+      SquatJoint.leftWrist: SquatPoint(wristX, wristY),
+      SquatJoint.leftHip: const SquatPoint(.55, .4),
+      SquatJoint.leftAnkle: const SquatPoint(.75, .4),
+    };
+    void frames(Map<SquatJoint, SquatPoint> value, int count) {
+      for (var i = 0; i < count; i++) {
+        analyzer.analyze(value);
+      }
+    }
+
+    frames(pose(.5, .4), 3); // top
+    frames(pose(.4, .55), 3); // bottom
+    frames(const {}, 2); // chest near the floor: landmarks lost
+    frames(pose(.5, .4), 3); // pushed back up
+    expect(analyzer.repetitions, 1);
+  });
+
+  test('push-up analyzer does not count a rep started at the bottom', () {
+    final analyzer = PushupAnalyzer(smoothingFactor: 1, transitionFrames: 2);
+    Map<SquatJoint, SquatPoint> pose(double wristX, double wristY) => {
+      SquatJoint.leftShoulder: const SquatPoint(.3, .4),
+      SquatJoint.leftElbow: const SquatPoint(.4, .4),
+      SquatJoint.leftWrist: SquatPoint(wristX, wristY),
+      SquatJoint.leftHip: const SquatPoint(.55, .4),
+      SquatJoint.leftAnkle: const SquatPoint(.75, .4),
+    };
+    for (var i = 0; i < 3; i++) {
+      analyzer.analyze(pose(.4, .55)); // first seen bent
+    }
+    for (var i = 0; i < 3; i++) {
+      analyzer.analyze(pose(.5, .4));
+    }
+    expect(analyzer.repetitions, 0);
   });
 
   test('push-up analyzer flags sagging hips in torso lengths', () {

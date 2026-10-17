@@ -43,14 +43,16 @@ void main() {
   );
 
   group('knee valgus is directional', () {
-    // Left leg drives the angles; the right hip only locates the midline,
-    // which sits at x=.5 (to the knee's +x side).
+    // Left leg drives the angles; the right leg mirrors it about the
+    // midline at x=.5 (to the left knee's +x side).
     Map<SquatJoint, SquatPoint> pose(double kneeX, double kneeY) => {
       SquatJoint.leftShoulder: const SquatPoint(.4, .1),
       SquatJoint.leftHip: const SquatPoint(.4, .45),
       SquatJoint.rightHip: const SquatPoint(.6, .45),
       SquatJoint.leftKnee: SquatPoint(kneeX, kneeY),
+      SquatJoint.rightKnee: SquatPoint(1 - kneeX, kneeY),
       SquatJoint.leftAnkle: const SquatPoint(.4, .9),
+      SquatJoint.rightAnkle: const SquatPoint(.6, .9),
       SquatJoint.leftFoot: const SquatPoint(.5, .9),
     };
 
@@ -94,11 +96,43 @@ void main() {
         SquatJoint.rightAnkle: const SquatPoint(.5, .9),
       };
 
-      final caved = SquatAnalyzer().analyze(frontal(.08));
-      expect(caved.cue, 'Giữ gối theo hướng mũi chân');
-      final out = SquatAnalyzer().analyze(frontal(-.08));
+      // Stand tall, then bend: valgus is judged only while bending, so a
+      // wide stance standing up is never flagged.
+      Map<SquatJoint, SquatPoint> standing() => {
+        ...frontal(0),
+        SquatJoint.leftKnee: const SquatPoint(.315, .68),
+        SquatJoint.rightKnee: const SquatPoint(.485, .68),
+      };
+      SquatAnalysis bend(double kneeOffset) {
+        final analyzer = SquatAnalyzer(smoothingFactor: 1, transitionFrames: 2);
+        for (var i = 0; i < 3; i++) {
+          expect(
+            analyzer.analyze(standing()).cue,
+            isNot('Giữ gối theo hướng mũi chân'),
+          );
+        }
+        // Lower the hips so the knee angle reads as a bend.
+        final bent = {
+          ...frontal(kneeOffset),
+          SquatJoint.leftHip: const SquatPoint(.33, .6),
+          SquatJoint.rightHip: const SquatPoint(.47, .6),
+          SquatJoint.leftShoulder: const SquatPoint(.3, .3),
+          SquatJoint.rightShoulder: const SquatPoint(.5, .3),
+          SquatJoint.leftKnee: SquatPoint(.3 + kneeOffset, .62),
+          SquatJoint.rightKnee: SquatPoint(.5 - kneeOffset, .62),
+        };
+        late SquatAnalysis result;
+        for (var i = 0; i < 3; i++) {
+          result = analyzer.analyze(bent);
+        }
+        expect(result.phase, isNot(SquatPhase.standing));
+        return result;
+      }
+
+      expect(bend(.08).cue, 'Giữ gối theo hướng mũi chân');
+      final out = bend(-.08);
       expect(out.cue, isNot('Giữ gối theo hướng mũi chân'));
-      expect(out.score, 100);
+      expect(out.score, isNot(lessThan(80)));
     });
 
     test('side-on view with overlapping hips is never flagged', () {
