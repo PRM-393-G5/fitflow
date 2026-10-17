@@ -137,6 +137,27 @@ void main() {
       );
     });
 
+    test('a next-rep tip is not repeated while resting at the top', () {
+      final coach = FormVoiceCoach();
+      expect(
+        say(coach, count: 1, tip: 'giữ gót chạm sàn', atMs: 0),
+        '1. giữ gót chạm sàn',
+      );
+      for (final atMs in [7000, 14000, 21000]) {
+        expect(
+          say(
+            coach,
+            count: 1,
+            cue: 'Rep sau: giữ gót chạm sàn',
+            tone: CueTone.warn,
+            tip: 'giữ gót chạm sàn',
+            atMs: atMs,
+          ),
+          isNull,
+        );
+      }
+    });
+
     test('says a warning once, then waits before repeating it', () {
       final coach = FormVoiceCoach();
       const warn = 'Giữ gót chân chạm sàn';

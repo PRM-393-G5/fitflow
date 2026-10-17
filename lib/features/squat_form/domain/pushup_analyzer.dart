@@ -53,7 +53,6 @@ class PushupAnalyzer implements RepAnalyzer {
   int? _repStartUs;
   int? _repBottomUs;
   int? _repAscentUs;
-  double _repMinElbow = 180;
   int _repFrames = 0;
   int _repSagFrames = 0;
   int _repPikeFrames = 0;
@@ -149,11 +148,16 @@ class PushupAnalyzer implements RepAnalyzer {
       _transition(next);
     }
     // Straight-arm height calibrates depth, as in the squat's span. Frames
-    // already well below it are the start of a descent (flared elbows still
-    // read as straight there), not the top.
-    if (_phase == SquatPhase.standing &&
-        (_topHeight == null || _height! > _topHeight! * .95)) {
-      _topHeight = _smooth(_topHeight, _height!, .2);
+    // well below it are mostly the start of a descent (flared elbows still
+    // read as straight there), so they only pull it down slowly — enough
+    // to follow a user who settles lower, not enough to drift each rep.
+    if (_phase == SquatPhase.standing) {
+      final top = _topHeight;
+      _topHeight = _smooth(
+        top,
+        _height!,
+        top == null || _height! > top * .95 ? .2 : .02,
+      );
     }
     // Smoothed like the angles, so one jittery hip can't flash a warning.
     final rawHipOffset = _hipOffset(points, side);
@@ -226,7 +230,6 @@ class PushupAnalyzer implements RepAnalyzer {
     if (!inRep) return;
     _repStartUs ??= timestampUs ?? 0;
     _repFrames++;
-    _repMinElbow = math.min(_repMinElbow, _elbow!);
     if (sagging) _repSagFrames++;
     if (piking) _repPikeFrames++;
     if (_phase == SquatPhase.bottom) _repBottomUs ??= timestampUs;
@@ -244,9 +247,6 @@ class PushupAnalyzer implements RepAnalyzer {
     _repRecords.add(
       RepRecord(
         number: _repetitions,
-        // The elbow angle of the push-up; depth itself also uses the
-        // shoulder drop, so this can read high with flared elbows.
-        minKneeAngle: _repMinElbow,
         descentMs: hasTiming ? (bottom - start) ~/ 1000 : 0,
         ascentMs: hasTiming ? (timestampUs - ascent) ~/ 1000 : 0,
         faults: [
@@ -259,7 +259,6 @@ class PushupAnalyzer implements RepAnalyzer {
 
   void _clearRep() {
     _repStartUs = _repBottomUs = _repAscentUs = null;
-    _repMinElbow = 180;
     _repFrames = _repSagFrames = _repPikeFrames = 0;
   }
 

@@ -1185,7 +1185,6 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
   ];
 
   Widget _rep(BuildContext context, RepRecord rep) {
-    final squat = widget.exercise == FormExercise.squat;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Column(
@@ -1194,9 +1193,7 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
           Text(
             [
               'Rep ${rep.number}',
-              // Push-up depth also uses the shoulder drop, so the elbow
-              // angle alone would mislead with flared elbows.
-              if (squat) '${rep.minKneeAngle.round()}° depth',
+              if (rep.minKneeAngle case final angle?) '${angle.round()}° depth',
               if (rep.descentMs > 0) '↓${rep.descentMs}ms ↑${rep.ascentMs}ms',
             ].join(' · '),
             style: Theme.of(context).textTheme.titleSmall,

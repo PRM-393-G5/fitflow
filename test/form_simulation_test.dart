@@ -425,6 +425,13 @@ void main() {
       expect(good.records, hasLength(5));
       expect(good.faults, isEmpty);
       expect(good.records.every((rep) => rep.descentMs > 0), isTrue);
+      // The elbow angle misleads with flared elbows: never sent as depth.
+      expect(
+        good.records.every(
+          (rep) => !rep.toJson().containsKey('minKneeAngleDeg'),
+        ),
+        isTrue,
+      );
       final sag = _runs(
         PushupMovement(sagM: .12),
         PushupAnalyzer.new,

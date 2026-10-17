@@ -156,21 +156,23 @@ enum FormExercise {
 class RepRecord {
   const RepRecord({
     required this.number,
-    required this.minKneeAngle,
+    this.minKneeAngle,
     required this.descentMs,
     required this.ascentMs,
     required this.faults,
   });
 
   final int number;
-  final double minKneeAngle;
+
+  /// Deepest knee angle of a squat; null for exercises judged otherwise.
+  final double? minKneeAngle;
   final int descentMs;
   final int ascentMs;
   final List<String> faults;
 
   Map<String, Object> toJson() => {
     'rep': number,
-    'minKneeAngleDeg': minKneeAngle.round(),
+    if (minKneeAngle case final angle?) 'minKneeAngleDeg': angle.round(),
     'descentMs': descentMs,
     'ascentMs': ascentMs,
     'faults': faults,
@@ -249,6 +251,11 @@ class SquatAnalyzer implements RepAnalyzer {
   int? _repBottomUs;
   int? _repAscentUs;
   double? _otherKnee;
+
+  /// Whether [_otherKnee] was measured this frame. A one-frame flicker of
+  /// the far leg keeps its smoothing, so it never restarts from a raw
+  /// angle against this leg's lagging smoothed one.
+  bool _otherKneeSeen = false;
   double _repMinKnee = 180;
   SquatJoint? _heelJoint;
   double? _heelY;
@@ -360,7 +367,8 @@ class SquatAnalyzer implements RepAnalyzer {
       _standingSpan = _smooth(_standingSpan, (ankle.y - shoulder.y).abs(), .2);
     }
     final otherRaw = _otherKneeAngle(points, side);
-    _otherKnee = otherRaw == null ? null : _smooth(_otherKnee, otherRaw, alpha);
+    _otherKneeSeen = otherRaw != null;
+    if (otherRaw != null) _otherKnee = _smooth(_otherKnee, otherRaw, alpha);
     _trackHeel(points, side, alpha);
     // Judged only while bending: standing in a wide stance the knees sit
     // inside the ankles without caving.
@@ -597,7 +605,7 @@ class SquatAnalyzer implements RepAnalyzer {
     // Both legs smoothed alike, so neither lags the other on a fast
     // descent. Only judged side-on (hips overlapping): from an angle the
     // two legs are foreshortened differently and always read as uneven.
-    final otherKnee = _otherKnee;
+    final otherKnee = _otherKneeSeen ? _otherKnee : null;
     if (otherKnee != null && (hipWidth == null || hipWidth < _sideOnHipWidth)) {
       _repAsymmetryJudged++;
       if ((_knee! - otherKnee).abs() > 15) {

@@ -69,7 +69,9 @@ class FormVoiceCoach {
         return _say('${count ~/ 10 * 10} giây', cue, nowUs);
       }
     }
-    if (tone != CueTone.warn) return null;
+    // A next-rep tip is said once, with the count — not again while the
+    // user rests at the top.
+    if (tone != CueTone.warn || tip != null) return null;
     final lastUs = _lastUs;
     if (lastUs != null && nowUs - lastUs < minGapUs) return null;
     final saidUs = _lastByText[cue];
