@@ -50,6 +50,12 @@ class PlankAnalyzer implements RepAnalyzer {
   int _pikeUs = 0;
   int? _lastTimestampUs;
   double? _offset;
+  int? _plankUs;
+
+  /// Out of the plank this long, the next hold starts fresh instead of
+  /// blending in the hips from before; shorter gaps are detector glitches
+  /// and keep the smoothing.
+  static const _restartUs = 600000;
 
   HoldSummary get summary => HoldSummary(
     trackedMs: _trackedUs ~/ 1000,
@@ -69,12 +75,15 @@ class PlankAnalyzer implements RepAnalyzer {
   @override
   void reset() {
     _goodHoldUs = _trackedUs = _sagUs = _pikeUs = 0;
-    _lastTimestampUs = null;
+    _lastTimestampUs = _plankUs = null;
     _offset = null;
   }
 
   @override
-  void pauseTiming() => _lastTimestampUs = null;
+  void pauseTiming() {
+    _lastTimestampUs = null;
+    _offset = null;
+  }
 
   @override
   SquatAnalysis analyze(
@@ -85,9 +94,6 @@ class PlankAnalyzer implements RepAnalyzer {
     final rawOffset = side == null ? null : _hipOffset(points, side);
     if (side == null || rawOffset == null) {
       _lastTimestampUs = timestampUs;
-      // Out of the plank: the next hold starts fresh, not blended with
-      // the hips from before.
-      _offset = null;
       final headOn =
           side != null &&
           _inFrame(points, side) &&
@@ -109,9 +115,6 @@ class PlankAnalyzer implements RepAnalyzer {
     }
     if (!_supported(points, side)) {
       _lastTimestampUs = timestampUs;
-      // Out of the plank: the next hold starts fresh, not blended with
-      // the hips from before.
-      _offset = null;
       return SquatAnalysis(
         phase: SquatPhase.findingBody,
         repetitions: repetitions,
@@ -123,6 +126,13 @@ class PlankAnalyzer implements RepAnalyzer {
 
     final previousUs = _lastTimestampUs;
     _lastTimestampUs = timestampUs;
+    final plankUs = _plankUs;
+    _plankUs = timestampUs;
+    if (timestampUs != null &&
+        plankUs != null &&
+        timestampUs - plankUs > _restartUs) {
+      _offset = null;
+    }
     final previous = _offset;
     final offset = _offset = previous == null
         ? rawOffset

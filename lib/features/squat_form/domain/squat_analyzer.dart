@@ -96,9 +96,11 @@ double angleDegrees(SquatPoint a, SquatPoint vertex, SquatPoint c) {
 double pointDistance(SquatPoint a, SquatPoint b) =>
     math.sqrt(math.pow(a.x - b.x, 2) + math.pow(a.y - b.y, 2));
 
-/// A prone body (push-up, plank) pointing at the camera: the shoulders look
-/// wider than the torso is long, so the hip line and elbow bend can't be
-/// read. False when the shoulders or a hip aren't confident.
+/// A prone body (push-up, plank) pointing at the camera: the torso is so
+/// foreshortened that the shoulders look far wider than it is long, so the
+/// hip line and elbow bend can't be read. Standing upright facing the
+/// camera the shoulders are ~0.8 torso lengths wide, well under the 1.2
+/// needed here. False when the shoulders or a hip aren't confident.
 bool proneHeadOn(
   Map<SquatJoint, SquatPoint> points, {
   required double minimumConfidence,
@@ -111,7 +113,7 @@ bool proneHeadOn(
     return false;
   }
   final mid = SquatPoint((left.x + right.x) / 2, (left.y + right.y) / 2);
-  return pointDistance(left, right) > pointDistance(mid, hip) * .8;
+  return pointDistance(left, right) > pointDistance(mid, hip) * 1.2;
 }
 
 /// Knee angle (degrees) at or below which a squat enters `bottom`, so the
@@ -751,9 +753,10 @@ class SquatAnalyzer implements RepAnalyzer {
   /// camera, knees travelling forward over the toes shift both legs the
   /// same way on screen — one leg reads as caving, the other as pushed out
   /// by the same amount. So a cave-in must show on the worse leg *and*
-  /// survive averaging both legs, where that shared shift cancels: one leg
-  /// caving alone still counts, a forward shift alone never does. Side-on
-  /// views (hips overlapping) and unconfident legs are never flagged.
+  /// stay positive on average across both legs, where that shared shift
+  /// cancels: one leg caving still counts even with the other pushed out,
+  /// a forward shift alone never does. Side-on views (hips overlapping)
+  /// and unconfident legs are never flagged.
   bool _kneeTracking(Map<SquatJoint, SquatPoint> points, double? hipWidth) {
     if (hipWidth == null || hipWidth < _minHipWidth) return true;
     final leftHip = points[SquatJoint.leftHip]!;
@@ -773,7 +776,7 @@ class SquatAnalyzer implements RepAnalyzer {
     final left = (leftKnee.x - leftAnkle.x) * medial;
     final right = (rightKnee.x - rightAnkle.x) * -medial;
     final limit = hipWidth * 0.3;
-    return math.max(left, right) <= limit || (left + right) / 2 <= limit / 2;
+    return math.max(left, right) <= limit || (left + right) / 2 <= limit / 4;
   }
 }
 

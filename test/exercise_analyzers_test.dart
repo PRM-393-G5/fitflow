@@ -122,6 +122,19 @@ void main() {
     expect(feed(plank(.545), 1).cue, 'Tốt lắm, giữ nguyên');
   });
 
+  test('standing facing the camera is not read as lying head-on', () {
+    // Upright, shoulders .8 torso lengths wide.
+    final result = PlankAnalyzer().analyze({
+      SquatJoint.leftShoulder: const SquatPoint(.3, .3),
+      SquatJoint.rightShoulder: const SquatPoint(.5, .3),
+      SquatJoint.leftHip: const SquatPoint(.33, .55),
+      SquatJoint.rightHip: const SquatPoint(.47, .55),
+      SquatJoint.leftElbow: const SquatPoint(.28, .45),
+      SquatJoint.leftAnkle: const SquatPoint(.32, .95),
+    });
+    expect(result.cue, isNot('Xoay người nằm ngang so với camera'));
+  });
+
   test('push-up analyzer flags sagging hips in torso lengths', () {
     final result = PushupAnalyzer().analyze({
       SquatJoint.leftShoulder: const SquatPoint(.3, .4),

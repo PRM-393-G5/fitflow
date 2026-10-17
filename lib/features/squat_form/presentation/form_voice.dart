@@ -20,6 +20,10 @@ class TtsFormVoice implements FormVoice {
   Future<bool>? _ready;
   DateTime? _failedAt;
 
+  /// Bumped by every speak and stop: a speak still awaiting setup when a
+  /// newer speak or a stop arrives is dropped instead of talking late.
+  int _generation = 0;
+
   Future<bool> _init() async {
     try {
       final tts = _tts ??= FlutterTts();
@@ -46,11 +50,13 @@ class TtsFormVoice implements FormVoice {
 
   @override
   Future<void> speak(String text) async {
-    if (!await _ensureReady()) return;
+    final generation = ++_generation;
+    if (!await _ensureReady() || generation != _generation) return;
     try {
       // The newest cue matters most: cut off anything still being said
       // instead of queueing behind it (iOS queues by default).
       await _tts!.stop();
+      if (generation != _generation) return;
       await _tts!.speak(text);
     } catch (_) {
       // A transient engine error drops this cue.
@@ -59,6 +65,7 @@ class TtsFormVoice implements FormVoice {
 
   @override
   Future<void> stop() async {
+    _generation++;
     try {
       await _tts?.stop();
     } catch (_) {}

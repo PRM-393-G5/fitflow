@@ -79,6 +79,8 @@ class FormVoiceCoach {
 
   String _say(String text, String cue, int nowUs) {
     _lastUs = nowUs;
+    // Only entries within the repeat gap are ever read.
+    _lastByText.removeWhere((_, saidUs) => nowUs - saidUs >= repeatGapUs);
     // What was on screen counts as said: a count that already carried the
     // tip must not be followed by the same tip again.
     _lastByText[cue] = nowUs;
@@ -98,7 +100,8 @@ class LiveFeedback {
 
   /// A body lost for less than this is a detector glitch, not the user
   /// leaving: the last analysis stays on screen instead of flashing
-  /// "step back".
+  /// "step back". Longer losses the analyzer itself still rides out (it
+  /// keeps the phase, see `dropoutFrames`) are held too, at any frame rate.
   static const glitchUs = 600000;
 
   final cue = CueStabilizer();
@@ -117,9 +120,9 @@ class LiveFeedback {
       _visibleUs = nowUs;
     } else if (shown != null &&
         shown.bodyVisible &&
-        _visibleUs != null &&
-        nowUs - _visibleUs! < glitchUs &&
-        analysis.repetitions == shown.repetitions) {
+        analysis.repetitions == shown.repetitions &&
+        (analysis.phase != SquatPhase.findingBody ||
+            (_visibleUs != null && nowUs - _visibleUs! < glitchUs))) {
       return (changed: false, say: null);
     }
     final cueChanged = cue.update(analysis.cue, analysis.tone, nowUs);

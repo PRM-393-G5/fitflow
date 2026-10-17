@@ -184,6 +184,11 @@ void main() {
       expect(bentCue(.07, 0), 'Giữ gối theo hướng mũi chân');
     });
 
+    test('one knee caving is caught even with the other pushed out', () {
+      // Limit is .3 of the .14 hip width: left caves 1.2x, right is out .3x.
+      expect(bentCue(.05, -.0126), 'Giữ gối theo hướng mũi chân');
+    });
+
     test('both knees shifting the same way on screen is not valgus', () {
       // A forward knee travel seen at an angle: one leg reads in, the other
       // out by the same amount.

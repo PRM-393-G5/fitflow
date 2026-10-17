@@ -28,6 +28,43 @@ void main() {
     });
   });
 
+  group('LiveFeedback', () {
+    SquatAnalysis analysis({
+      required bool visible,
+      SquatPhase phase = SquatPhase.descending,
+      String cue = 'Hạ ngực thấp hơn',
+    }) => SquatAnalysis(
+      phase: phase,
+      repetitions: 2,
+      score: visible ? 100 : 0,
+      cue: cue,
+      bodyVisible: visible,
+    );
+
+    test('holds the screen through a dropout the analyzer rides out', () {
+      final feedback = LiveFeedback(timed: false);
+      feedback.update(analysis(visible: true), 0);
+      // 8 lost frames at 8 fps: a full second, still mid-rep.
+      for (var frame = 1; frame <= 8; frame++) {
+        final lost = analysis(visible: false, cue: 'Lùi ra để thấy cánh tay');
+        expect(feedback.update(lost, frame * 125000).changed, isFalse);
+      }
+      expect(feedback.cue.cue, 'Hạ ngực thấp hơn');
+    });
+
+    test('shows the loss once the analyzer gives up the rep', () {
+      final feedback = LiveFeedback(timed: false);
+      feedback.update(analysis(visible: true), 0);
+      final gone = analysis(
+        visible: false,
+        phase: SquatPhase.findingBody,
+        cue: 'Lùi ra để thấy cánh tay',
+      );
+      expect(feedback.update(gone, 1200000).changed, isTrue);
+      expect(feedback.cue.cue, 'Lùi ra để thấy cánh tay');
+    });
+  });
+
   group('FormVoiceCoach', () {
     String? say(
       FormVoiceCoach coach, {
