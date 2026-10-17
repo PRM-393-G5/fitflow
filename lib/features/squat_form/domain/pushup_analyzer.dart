@@ -46,8 +46,17 @@ class PushupAnalyzer implements RepAnalyzer {
   double? _elbow;
   double? _height;
   double? _topHeight;
+  double? _hipOffsetSmoothed;
   int? _lastTimestampUs;
   int _missingFrames = 0;
+  final _repRecords = <RepRecord>[];
+  int? _repStartUs;
+  int? _repBottomUs;
+  int? _repAscentUs;
+  double _repMinElbow = 180;
+  int _repFrames = 0;
+  int _repSagFrames = 0;
+  int _repPikeFrames = 0;
 
   @override
   int get repetitions => _repetitions;
@@ -55,7 +64,7 @@ class PushupAnalyzer implements RepAnalyzer {
   String get countLabel => 'SỐ REP';
 
   @override
-  List<RepRecord> get repRecords => const [];
+  List<RepRecord> get repRecords => _repRecords;
 
   @override
   void reset() {
@@ -64,9 +73,11 @@ class PushupAnalyzer implements RepAnalyzer {
     _candidateFrames = 0;
     _repetitions = 0;
     _reachedDepth = false;
-    _elbow = _height = _topHeight = null;
+    _elbow = _height = _topHeight = _hipOffsetSmoothed = null;
     _lastTimestampUs = null;
     _missingFrames = 0;
+    _repRecords.clear();
+    _clearRep();
   }
 
   @override
@@ -91,15 +102,21 @@ class PushupAnalyzer implements RepAnalyzer {
         _candidateFrames = 0;
         _reachedDepth = false;
         // The user may come back at another distance: recalibrate.
-        _elbow = _height = _topHeight = null;
+        _elbow = _height = _topHeight = _hipOffsetSmoothed = null;
+        _clearRep();
       }
+      final headOn = armVisible && _headOn(points);
       return SquatAnalysis(
         phase: _phase,
         repetitions: _repetitions,
         score: 0,
-        cue: armVisible
-            ? 'Giữ thân nằm ngang để bắt đầu'
-            : 'Lùi ra để thấy cánh tay',
+        cue: !armVisible
+            ? 'Lùi ra để thấy cánh tay'
+            : headOn
+            ? 'Xoay người nằm ngang so với camera'
+            : 'Giữ thân nằm ngang để bắt đầu',
+        // Lying on the floor the user can't read the screen: say it.
+        tone: headOn ? CueTone.warn : CueTone.info,
         bodyVisible: false,
       );
     }
@@ -136,37 +153,126 @@ class PushupAnalyzer implements RepAnalyzer {
         (_topHeight == null || _height! > _topHeight! * .95)) {
       _topHeight = _smooth(_topHeight, _height!, .2);
     }
+    // Smoothed like the angles, so one jittery hip can't flash a warning.
+    final rawHipOffset = _hipOffset(points, side);
+    final hipOffset = _hipOffsetSmoothed = rawHipOffset == null
+        ? null
+        : _smooth(_hipOffsetSmoothed, rawHipOffset, alpha);
+    final sagging = hipOffset != null && hipOffset > _hipTolerance;
+    final piking = hipOffset != null && hipOffset < -_hipTolerance;
+    _trackRep(timestampUs, sagging: sagging, piking: piking);
     if (_phase == SquatPhase.bottom) _reachedDepth = true;
     if (_phase == SquatPhase.standing && _reachedDepth) {
       _repetitions++;
       _reachedDepth = false;
+      _closeRep(timestampUs);
     }
+    if (_phase == SquatPhase.standing) _clearRep();
 
-    final hipOffset = _hipOffset(points, side);
-    final hipsOk = hipOffset == null || hipOffset.abs() < _hipTolerance;
+    final hipsOk = !sagging && !piking;
     // No depth penalty: a shallow rep never reaches bottom, so it simply
     // doesn't count, and on the way up the arms straighten by definition.
     final score = hipsOk ? 100 : 70;
 
-    final cue = hipOffset != null && hipOffset > _hipTolerance
-        ? 'Đừng để hông xệ'
-        : hipOffset != null && hipOffset < -_hipTolerance
-        ? 'Hạ hông thấp hơn'
+    final last = _repRecords.lastOrNull;
+    final between = _phase == SquatPhase.standing && last != null
+        ? betweenRepsCue(last)
+        : null;
+    final (cue, tone) = sagging
+        ? ('Đừng để hông xệ', CueTone.warn)
+        : piking
+        ? ('Hạ hông thấp hơn', CueTone.warn)
+        : _phase == SquatPhase.findingBody
+        ? ('Duỗi thẳng tay để bắt đầu', CueTone.info)
         : _phase == SquatPhase.descending
-        ? 'Hạ ngực thấp hơn'
+        ? ('Hạ ngực thấp hơn', CueTone.info)
         : _phase == SquatPhase.bottom
-        ? 'Đẩy lên'
-        : 'Giữ nhịp đều';
+        ? ('Đẩy lên', CueTone.good)
+        : between != null
+        ? (between.cue, between.tone)
+        : _phase == SquatPhase.standing
+        ? ('Sẵn sàng, bắt đầu hít đất', CueTone.info)
+        : ('Giữ nhịp đều', CueTone.info);
 
     return SquatAnalysis(
       phase: _phase,
       repetitions: _repetitions,
       score: score,
       cue: cue,
+      tone: tone,
+      faultJoints: hipsOk
+          ? const {}
+          : const {SquatJoint.leftHip, SquatJoint.rightHip},
+      nextRepTip: between?.tip,
       bodyVisible: true,
       kneeAngle: _elbow,
       label: _phase == SquatPhase.standing ? 'Ở đỉnh' : null,
     );
+  }
+
+  /// Samples hip faults while a rep is in progress (left straight arms,
+  /// not yet back).
+  void _trackRep(
+    int? timestampUs, {
+    required bool sagging,
+    required bool piking,
+  }) {
+    final inRep =
+        _phase == SquatPhase.descending ||
+        _phase == SquatPhase.bottom ||
+        _phase == SquatPhase.ascending;
+    if (!inRep) return;
+    _repStartUs ??= timestampUs ?? 0;
+    _repFrames++;
+    _repMinElbow = math.min(_repMinElbow, _elbow!);
+    if (sagging) _repSagFrames++;
+    if (piking) _repPikeFrames++;
+    if (_phase == SquatPhase.bottom) _repBottomUs ??= timestampUs;
+    if (_phase == SquatPhase.ascending) _repAscentUs ??= timestampUs;
+  }
+
+  void _closeRep(int? timestampUs) {
+    if (_repFrames == 0) return;
+    final start = _repStartUs, bottom = _repBottomUs, ascent = _repAscentUs;
+    final hasTiming =
+        timestampUs != null &&
+        start != null &&
+        bottom != null &&
+        ascent != null;
+    _repRecords.add(
+      RepRecord(
+        number: _repetitions,
+        // The elbow angle of the push-up; depth itself also uses the
+        // shoulder drop, so this can read high with flared elbows.
+        minKneeAngle: _repMinElbow,
+        descentMs: hasTiming ? (bottom - start) ~/ 1000 : 0,
+        ascentMs: hasTiming ? (timestampUs - ascent) ~/ 1000 : 0,
+        faults: [
+          if (_repSagFrames / _repFrames > 0.3) 'hipSag',
+          if (_repPikeFrames / _repFrames > 0.3) 'hipPike',
+        ],
+      ),
+    );
+  }
+
+  void _clearRep() {
+    _repStartUs = _repBottomUs = _repAscentUs = null;
+    _repMinElbow = 180;
+    _repFrames = _repSagFrames = _repPikeFrames = 0;
+  }
+
+  /// Body pointing at the camera: the shoulders look wider than the torso
+  /// is long, so the hip line and elbow bend can't be read.
+  bool _headOn(Map<SquatJoint, SquatPoint> points) {
+    final left = points[SquatJoint.leftShoulder];
+    final right = points[SquatJoint.rightShoulder];
+    final hip = points[SquatJoint.leftHip] ?? points[SquatJoint.rightHip];
+    if (left == null || right == null || hip == null) return false;
+    if ([left, right, hip].any((p) => p.confidence < minimumConfidence)) {
+      return false;
+    }
+    final mid = SquatPoint((left.x + right.x) / 2, (left.y + right.y) / 2);
+    return _distance(left, right) > _distance(mid, hip) * .8;
   }
 
   double _smooth(double? previous, double value, double alpha) =>

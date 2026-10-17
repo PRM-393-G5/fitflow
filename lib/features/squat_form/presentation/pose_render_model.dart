@@ -29,6 +29,15 @@ class PoseRenderModel extends ChangeNotifier {
 
   final Map<SquatJoint, SquatPoint> points = {};
   int _lastUs = 0;
+  Set<SquatJoint> _highlight = const {};
+
+  /// Joints behind the current form fault, painted in the warning color.
+  Set<SquatJoint> get highlight => _highlight;
+  set highlight(Set<SquatJoint> joints) {
+    if (setEquals(joints, _highlight)) return;
+    _highlight = joints;
+    notifyListeners();
+  }
 
   /// Width / height of the upright detector image the points came from.
   double imageAspect = 3 / 4;
@@ -58,8 +67,9 @@ class PoseRenderModel extends ChangeNotifier {
   }
 
   void clear() {
-    if (points.isEmpty) return;
+    if (points.isEmpty && _highlight.isEmpty) return;
     points.clear();
+    _highlight = const {};
     notifyListeners();
   }
 

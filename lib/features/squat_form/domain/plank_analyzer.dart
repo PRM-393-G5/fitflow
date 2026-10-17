@@ -2,6 +2,29 @@ import 'dart:math' as math;
 
 import 'squat_analyzer.dart';
 
+/// Where a plank's time went, for the post-set review.
+class HoldSummary {
+  const HoldSummary({
+    required this.trackedMs,
+    required this.goodMs,
+    required this.sagMs,
+    required this.pikeMs,
+  });
+
+  /// Time spent in a supported plank position, good form or not.
+  final int trackedMs;
+  final int goodMs;
+  final int sagMs;
+  final int pikeMs;
+
+  Map<String, Object> toJson() => {
+    'trackedMs': trackedMs,
+    'goodFormMs': goodMs,
+    'hipSagMs': sagMs,
+    'hipPikeMs': pikeMs,
+  };
+}
+
 /// Plank hold timer: scores how straight the shoulder-hip-ankle line is and
 /// accumulates the seconds the body holds good form.
 class PlankAnalyzer implements RepAnalyzer {
@@ -22,8 +45,18 @@ class PlankAnalyzer implements RepAnalyzer {
   static const _hipTolerance = 0.15;
 
   int _goodHoldUs = 0;
+  int _trackedUs = 0;
+  int _sagUs = 0;
+  int _pikeUs = 0;
   int? _lastTimestampUs;
   double? _offset;
+
+  HoldSummary get summary => HoldSummary(
+    trackedMs: _trackedUs ~/ 1000,
+    goodMs: _goodHoldUs ~/ 1000,
+    sagMs: _sagUs ~/ 1000,
+    pikeMs: _pikeUs ~/ 1000,
+  );
 
   @override
   int get repetitions => _goodHoldUs ~/ 1000000;
@@ -35,7 +68,7 @@ class PlankAnalyzer implements RepAnalyzer {
 
   @override
   void reset() {
-    _goodHoldUs = 0;
+    _goodHoldUs = _trackedUs = _sagUs = _pikeUs = 0;
     _lastTimestampUs = null;
     _offset = null;
   }
@@ -52,12 +85,19 @@ class PlankAnalyzer implements RepAnalyzer {
     final rawOffset = side == null ? null : _hipOffset(points, side);
     if (side == null || rawOffset == null) {
       _lastTimestampUs = timestampUs;
+      final headOn = side != null && _inFrame(points, side) && _headOn(points);
       // Keep the accumulated hold: a dropped frame must not flash 0.
       return SquatAnalysis(
         phase: SquatPhase.findingBody,
         repetitions: repetitions,
         score: 0,
-        cue: 'Lùi ra để thấy toàn thân',
+        cue: headOn
+            ? 'Xoay người nằm ngang so với camera'
+            : side == null || !_inFrame(points, side)
+            ? 'Lùi ra để thấy toàn thân'
+            : 'Vào tư thế plank để bắt đầu',
+        // Lying on the floor the user can't read the screen: say it.
+        tone: headOn ? CueTone.warn : CueTone.info,
         bodyVisible: false,
       );
     }
@@ -84,20 +124,31 @@ class PlankAnalyzer implements RepAnalyzer {
                   (rawOffset - previous);
     final score = (100 - offset.abs() * 200).round().clamp(0, 100);
     final good = score >= 70;
-    if (good && previousUs != null && timestampUs != null) {
+    final sagging = offset > _hipTolerance;
+    final piking = offset < -_hipTolerance;
+    if (previousUs != null && timestampUs != null) {
       final gapUs = timestampUs - previousUs;
-      if (gapUs > 0 && gapUs <= maxFrameGapUs) _goodHoldUs += gapUs;
+      if (gapUs > 0 && gapUs <= maxFrameGapUs) {
+        _trackedUs += gapUs;
+        if (good) _goodHoldUs += gapUs;
+        if (sagging) _sagUs += gapUs;
+        if (piking) _pikeUs += gapUs;
+      }
     }
 
     return SquatAnalysis(
       phase: SquatPhase.standing,
       repetitions: repetitions,
       score: score,
-      cue: offset > _hipTolerance
+      cue: sagging
           ? 'Đừng để hông xệ'
-          : offset < -_hipTolerance
+          : piking
           ? 'Hạ hông thấp hơn'
           : 'Tốt lắm, giữ nguyên',
+      tone: sagging || piking ? CueTone.warn : CueTone.good,
+      faultJoints: sagging || piking
+          ? const {SquatJoint.leftHip, SquatJoint.rightHip}
+          : const {},
       bodyVisible: true,
       hipAngle: offset * 100,
       label: 'Đang giữ plank',
@@ -113,9 +164,7 @@ class PlankAnalyzer implements RepAnalyzer {
     final shoulder = points[side.$1]!;
     final hip = points[side.$2]!;
     final ankle = points[side.$3]!;
-    if ([shoulder, hip, ankle].any((joint) => joint.y < 0 || joint.y > 1)) {
-      return null;
-    }
+    if (!_inFrame(points, side)) return null;
     final spanX = ankle.x - shoulder.x;
     if (spanX.abs() < 0.15) return null;
     final torso = _distance(shoulder, hip);
@@ -145,6 +194,29 @@ class PlankAnalyzer implements RepAnalyzer {
               point.confidence >= minimumConfidence &&
               point.y - shoulder.y > margin,
         );
+  }
+
+  bool _inFrame(
+    Map<SquatJoint, SquatPoint> points,
+    (SquatJoint, SquatJoint, SquatJoint) side,
+  ) => [
+    side.$1,
+    side.$2,
+    side.$3,
+  ].every((joint) => points[joint]!.y >= 0 && points[joint]!.y <= 1);
+
+  /// Body pointing at the camera: the shoulders look wider than the torso
+  /// is long, so the hip line can't be read.
+  bool _headOn(Map<SquatJoint, SquatPoint> points) {
+    final left = points[SquatJoint.leftShoulder];
+    final right = points[SquatJoint.rightShoulder];
+    final hip = points[SquatJoint.leftHip] ?? points[SquatJoint.rightHip];
+    if (left == null || right == null || hip == null) return false;
+    if ([left, right, hip].any((p) => p.confidence < minimumConfidence)) {
+      return false;
+    }
+    final mid = SquatPoint((left.x + right.x) / 2, (left.y + right.y) / 2);
+    return _distance(left, right) > _distance(mid, hip) * .8;
   }
 
   static double _distance(SquatPoint a, SquatPoint b) =>

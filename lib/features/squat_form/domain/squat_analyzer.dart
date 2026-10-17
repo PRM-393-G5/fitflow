@@ -34,6 +34,10 @@ class SquatPoint {
 
 enum SquatPhase { findingBody, standing, descending, bottom, ascending }
 
+/// How the live cue reads: [warn] is a form correction, [good] praise,
+/// [info] neutral guidance.
+enum CueTone { info, good, warn }
+
 class SquatAnalysis {
   const SquatAnalysis({
     required this.phase,
@@ -41,6 +45,9 @@ class SquatAnalysis {
     required this.score,
     required this.cue,
     required this.bodyVisible,
+    this.tone = CueTone.info,
+    this.faultJoints = const {},
+    this.nextRepTip,
     this.kneeAngle,
     this.hipAngle,
     this.trunkAngle,
@@ -52,6 +59,13 @@ class SquatAnalysis {
   final int score;
   final String cue;
   final bool bodyVisible;
+  final CueTone tone;
+
+  /// Joints behind the current fault, highlighted on the skeleton.
+  final Set<SquatJoint> faultJoints;
+
+  /// What to fix on the next rep, set between reps after a faulty one.
+  final String? nextRepTip;
   final double? kneeAngle;
   final double? hipAngle;
   final double? trunkAngle;
@@ -87,10 +101,10 @@ const squatCountDepthDegrees = 105.0;
 /// the review's `shallowDepth` fault all use this, so they always agree.
 const squatGoodDepthDegrees = 100.0;
 
-/// Shortest controlled descent. Measured from leaving standing (158°) to
-/// reaching the count depth (105°) — the fast middle third of the lowering —
-/// so 300 ms is a whole descent of roughly 0.8 s.
-const squatFastDescentMs = 300;
+/// Shortest controlled descent. Measured from the last frame seen standing
+/// (158°) to reaching the count depth (105°) — the fast middle of the
+/// lowering — so 360 ms is a whole descent of roughly 0.7 s.
+const squatFastDescentMs = 360;
 
 enum FormExercise {
   squat('Squat'),
@@ -140,6 +154,27 @@ class RepRecord {
   };
 }
 
+/// Short coaching fix for each fault code, phrased to follow "Rep sau:".
+const faultTips = {
+  'shallowDepth': 'xuống sâu hơn',
+  'kneeValgus': 'đẩy gối ra theo mũi chân',
+  'forwardLean': 'giữ ngực thẳng',
+  'heelsUp': 'giữ gót chạm sàn',
+  'asymmetry': 'dồn đều lực hai chân',
+  'fastEccentric': 'hạ người chậm hơn',
+  'hipSag': 'siết bụng, giữ hông thẳng',
+  'hipPike': 'hạ hông xuống thẳng hàng',
+};
+
+/// The between-reps cue after [last]: praise for a clean rep, otherwise
+/// the fix for its first fault.
+({String cue, CueTone tone, String? tip}) betweenRepsCue(RepRecord last) {
+  final fault = last.faults.firstOrNull;
+  if (fault == null) return (cue: 'Rep chuẩn!', tone: CueTone.good, tip: null);
+  final tip = faultTips[fault] ?? fault;
+  return (cue: 'Rep sau: $tip', tone: CueTone.warn, tip: tip);
+}
+
 abstract interface class RepAnalyzer {
   SquatAnalysis analyze(Map<SquatJoint, SquatPoint> points, {int? timestampUs});
   int get repetitions;
@@ -187,6 +222,7 @@ class SquatAnalyzer implements RepAnalyzer {
   double? _standingSpan;
   final _repRecords = <RepRecord>[];
   int? _repStartUs;
+  int? _lastStandingUs;
   int? _repBottomUs;
   int? _repAscentUs;
   double? _otherKnee;
@@ -201,6 +237,19 @@ class SquatAnalyzer implements RepAnalyzer {
   int _repLeanFrames = 0;
   int _repAsymmetryFrames = 0;
   int _repAsymmetryJudged = 0;
+  int _asymmetryStreak = 0;
+  int _valgusStreak = 0;
+  double? _viewRatio;
+
+  /// Consecutive faulty frames before a live cue shows: one jittery frame
+  /// must never put a correction on screen, let alone say it aloud.
+  static const _asymmetryCueFrames = 3;
+  static const _valgusCueFrames = 3;
+
+  /// On-screen hip width over torso length above which the user faces the
+  /// camera instead of standing side-on: ~0.4 facing, ~0 side-on, 0.25 is
+  /// about 50° off side-on, where reps stop counting reliably.
+  static const _frontalViewRatio = 0.25;
 
   @override
   int get repetitions => _repetitions;
@@ -217,9 +266,9 @@ class SquatAnalyzer implements RepAnalyzer {
     _candidateFrames = 0;
     _repetitions = 0;
     _reachedDepth = false;
-    _knee = _hip = _trunk = _otherKnee = _heelY = null;
+    _knee = _hip = _trunk = _otherKnee = _heelY = _viewRatio = null;
     _heelJoint = null;
-    _lastTimestampUs = null;
+    _lastTimestampUs = _lastStandingUs = null;
     _missingFrames = 0;
     _standingSpan = null;
     _repRecords.clear();
@@ -283,6 +332,7 @@ class SquatAnalyzer implements RepAnalyzer {
       _transition(next);
     }
     if (_phase == SquatPhase.standing) {
+      _lastStandingUs = timestampUs;
       // Standing height calibrates how small the body may get at depth.
       _standingSpan = _smooth(_standingSpan, (ankle.y - shoulder.y).abs(), .2);
     }
@@ -296,6 +346,10 @@ class SquatAnalyzer implements RepAnalyzer {
         _phase == SquatPhase.bottom ||
         _phase == SquatPhase.ascending;
     final kneeTrackingOk = !bending || _kneeTracking(points);
+    _valgusStreak = kneeTrackingOk ? 0 : _valgusStreak + 1;
+    // The rep's fault share counts every frame; the live cue waits for a
+    // sustained cave-in.
+    final caving = _valgusStreak >= _valgusCueFrames;
     _trackRep(points, side, timestampUs, kneeTrackingOk);
     if (_phase == SquatPhase.bottom) _reachedDepth = true;
     if (_phase == SquatPhase.standing && _reachedDepth) {
@@ -308,31 +362,92 @@ class SquatAnalyzer implements RepAnalyzer {
     // Depth is judged by the deepest point of the rep so far: leaving the
     // bottom, the knee is past the depth line by definition.
     final repDeep = _repMinKnee <= squatGoodDepthDegrees;
+    final heelsUp = _repHeelRiseFrames >= heelRiseFrames;
+    final uneven = _asymmetryStreak >= _asymmetryCueFrames;
+    final bottomUs = _repBottomUs;
+    final fastRep =
+        (_phase == SquatPhase.bottom || _phase == SquatPhase.ascending) &&
+        bottomUs != null &&
+        _repStartUs != null &&
+        (bottomUs - _repStartUs!) ~/ 1000 < squatFastDescentMs;
+    final shallowRep = _phase == SquatPhase.ascending && !repDeep;
+    _viewRatio = _smooth(
+      _viewRatio,
+      (_hipWidth(points) ?? 0) / math.max(_distance(shoulder, hip), 1e-6),
+      alpha,
+    );
+    // Facing the camera the knee bend is invisible, so reps never count.
+    final facingCamera =
+        _viewRatio! > _frontalViewRatio &&
+        (_phase == SquatPhase.standing || _phase == SquatPhase.descending);
+
     var score = 100;
-    if (!kneeTrackingOk) score -= 25;
+    if (caving) score -= 25;
     if (!stableTrunk) score -= 20;
+    if (heelsUp) score -= 15;
+    if (uneven) score -= 10;
     // Only once the user stands back up is a shallow rep final; at the
     // bottom they may still sink deeper.
-    if (_phase == SquatPhase.ascending && !repDeep) score -= 20;
+    if (shallowRep) score -= 20;
+    if (fastRep) score -= 10;
 
-    final cue = !kneeTrackingOk
-        ? 'Giữ gối theo hướng mũi chân'
+    final last = _repRecords.lastOrNull;
+    final between = _phase == SquatPhase.standing && last != null
+        ? betweenRepsCue(last)
+        : null;
+    // One cue at a time, most important first: injury risk, then camera
+    // setup, then technique, then encouragement.
+    final (cue, tone) = caving
+        ? ('Giữ gối theo hướng mũi chân', CueTone.warn)
         : _phase == SquatPhase.findingBody
-        ? 'Đứng thẳng để bắt đầu'
+        ? ('Đứng thẳng để bắt đầu', CueTone.info)
         : !stableTrunk
-        ? 'Giữ thân ổn định'
+        ? ('Giữ thân ổn định', CueTone.warn)
+        : heelsUp
+        ? ('Giữ gót chân chạm sàn', CueTone.warn)
+        : uneven
+        ? ('Dồn đều lực hai chân', CueTone.warn)
+        : facingCamera
+        ? ('Xoay nghiêng người về phía camera', CueTone.warn)
+        : fastRep
+        ? ('Hạ người chậm hơn', CueTone.warn)
         : _phase == SquatPhase.descending ||
               (_phase == SquatPhase.bottom && !repDeep)
-        ? 'Xuống thêm một chút'
+        ? ('Xuống thêm một chút', CueTone.info)
         : _phase == SquatPhase.bottom
-        ? 'Độ sâu tốt, đứng lên'
-        : 'Giữ nhịp đều';
+        ? ('Độ sâu tốt, đứng lên', CueTone.good)
+        : between != null
+        ? (between.cue, between.tone)
+        : _phase == SquatPhase.standing
+        ? ('Sẵn sàng, bắt đầu squat', CueTone.info)
+        : ('Giữ nhịp đều', CueTone.info);
 
     return SquatAnalysis(
       phase: _phase,
       repetitions: _repetitions,
       score: score.clamp(0, 100),
       cue: cue,
+      tone: tone,
+      faultJoints: {
+        if (caving || uneven) ...const {
+          SquatJoint.leftKnee,
+          SquatJoint.rightKnee,
+        },
+        if (!stableTrunk) ...const {
+          SquatJoint.leftShoulder,
+          SquatJoint.rightShoulder,
+          SquatJoint.leftHip,
+          SquatJoint.rightHip,
+        },
+        if (heelsUp) ...const {
+          SquatJoint.leftHeel,
+          SquatJoint.rightHeel,
+          SquatJoint.leftAnkle,
+          SquatJoint.rightAnkle,
+        },
+        if (shallowRep) ...const {SquatJoint.leftHip, SquatJoint.rightHip},
+      },
+      nextRepTip: between?.tip,
       bodyVisible: true,
       kneeAngle: _knee,
       hipAngle: _hip,
@@ -340,6 +455,9 @@ class SquatAnalyzer implements RepAnalyzer {
       label: _phase == SquatPhase.bottom && !repDeep ? 'Chưa đủ sâu' : null,
     );
   }
+
+  static double _distance(SquatPoint a, SquatPoint b) =>
+      math.sqrt(math.pow(a.x - b.x, 2) + math.pow(a.y - b.y, 2));
 
   double _smooth(double? previous, double value, [double? alpha]) =>
       previous == null
@@ -440,7 +558,9 @@ class SquatAnalyzer implements RepAnalyzer {
     // Start on any non-standing phase — frames can jump straight to
     // bottom when pose frames are sparse.
     if (inRep && _repStartUs == null) {
-      _repStartUs = timestampUs;
+      // From the last frame seen standing: with sparse frames the rep can
+      // appear straight at the bottom, which must read as slow, not 0 ms.
+      _repStartUs = _lastStandingUs ?? timestampUs;
       _repMinKnee = _knee!;
       _repHeelBaseY = _heelY;
       _repHeelRiseFrames = 0;
@@ -460,7 +580,12 @@ class SquatAnalyzer implements RepAnalyzer {
     final hipWidth = _hipWidth(points);
     if (otherKnee != null && (hipWidth == null || hipWidth < _sideOnHipWidth)) {
       _repAsymmetryJudged++;
-      if ((_knee! - otherKnee).abs() > 15) _repAsymmetryFrames++;
+      if ((_knee! - otherKnee).abs() > 15) {
+        _repAsymmetryFrames++;
+        _asymmetryStreak++;
+      } else {
+        _asymmetryStreak = 0;
+      }
     }
     _trackHeelRise();
     if (_phase == SquatPhase.bottom && _repBottomUs == null) {
@@ -554,7 +679,7 @@ class SquatAnalyzer implements RepAnalyzer {
     _repHeelsLifted = false;
     _repMinKnee = 180;
     _repFrames = _repValgusFrames = _repLeanFrames = 0;
-    _repAsymmetryFrames = _repAsymmetryJudged = 0;
+    _repAsymmetryFrames = _repAsymmetryJudged = _asymmetryStreak = 0;
   }
 
   /// Knee angle of the *other* leg, when its landmarks are confident —
@@ -632,16 +757,18 @@ class SquatAnalyzer implements RepAnalyzer {
 }
 
 /// Prompt contract for the AI post-set form review — sends per-rep
-/// telemetry, asks for coach-style feedback.
+/// telemetry (or a plank's hold breakdown), asks for coach-style feedback.
 abstract final class AiFormReviewPrompt {
   static const system = '''
-You are a lifting coach reviewing rep-by-rep telemetry from a phone
-pose detector. Rules:
+You are a strength coach reviewing telemetry from a phone pose detector.
+Rules:
 - summary: 2-3 sentences on overall form quality this set.
 - tips: 1-3 concrete coaching cues addressing the detected faults.
 - Reference rep numbers when calling out specific reps.
 - Fault codes: shallowDepth, kneeValgus (knees caved in), forwardLean,
-  heelsUp, asymmetry (one leg dominant), fastEccentric (dropped too fast).
+  heelsUp, asymmetry (one leg dominant), fastEccentric (dropped too fast),
+  hipSag (hips sagging below the body line), hipPike (hips too high).
+- For a plank, judge how much of the hold was in good form.
 - Be direct and encouraging; plain text only.''';
 
   static const schema = <String, dynamic>{
@@ -660,6 +787,8 @@ pose detector. Rules:
   static String user({
     required String exercise,
     required List<RepRecord> reps,
-  }) =>
-      'Exercise: $exercise\nRep telemetry: ${jsonEncode([for (final rep in reps) rep.toJson()])}';
+    Map<String, Object>? hold,
+  }) => hold != null
+      ? 'Exercise: $exercise\nHold telemetry: ${jsonEncode(hold)}'
+      : 'Exercise: $exercise\nRep telemetry: ${jsonEncode([for (final rep in reps) rep.toJson()])}';
 }

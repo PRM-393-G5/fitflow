@@ -258,4 +258,192 @@ void main() {
       }
     });
   });
+
+  group('live feedback: what the user sees and hears', () {
+    List<List<SimFrame>> sets(
+      Movement movement, {
+      SimCamera camera = const SimCamera(),
+    }) => [
+      for (var seed = 1; seed <= _seeds; seed++)
+        simulate(movement, camera: camera, seed: seed),
+    ];
+
+    Set<String> warnings(List<(String, CueTone)> shown) => {
+      for (final (cue, tone) in shown)
+        if (tone == CueTone.warn) cue,
+    };
+
+    test('good squats: only the count is spoken, no warning ever shows', () {
+      for (final azimuth in [75.0, 90.0]) {
+        for (final frames in sets(
+          SquatMovement(),
+          camera: SimCamera(azimuthDeg: azimuth),
+        )) {
+          expect(spoken(SquatAnalyzer(), frames), ['1', '2', '3', '4', '5']);
+          final shown = shownCues(SquatAnalyzer(), frames);
+          expect(warnings(shown), isEmpty);
+          expect(shown.map((c) => c.$1), contains('Rep chuẩn!'));
+          // Dropped detector frames mid-set never flash "step back".
+          final tracking = shown
+              .map((c) => c.$1)
+              .skipWhile((cue) => cue != 'Sẵn sàng, bắt đầu squat');
+          expect(tracking, isNot(contains('Lùi ra để thấy toàn thân')));
+        }
+      }
+    });
+
+    test('good push-ups and planks raise no warning', () {
+      for (final frames in sets(PushupMovement(), camera: _prone)) {
+        expect(spoken(PushupAnalyzer(), frames), ['1', '2', '3', '4', '5']);
+        expect(warnings(shownCues(PushupAnalyzer(), frames)), isEmpty);
+      }
+      for (final frames in sets(PlankMovement(holdS: 25), camera: _prone)) {
+        expect(spoken(PlankAnalyzer(), frames, timed: true), [
+          'Bắt đầu tính giờ',
+          '10 giây',
+          '20 giây',
+        ]);
+        expect(
+          warnings(shownCues(PlankAnalyzer(), frames, timed: true)),
+          isEmpty,
+        );
+      }
+    });
+
+    for (final (name, movement, warning, tip) in [
+      (
+        'heels lifting',
+        SquatMovement(heelLiftM: .05),
+        'Giữ gót chân chạm sàn',
+        'giữ gót chạm sàn',
+      ),
+      (
+        'uneven legs',
+        SquatMovement(asymmetryDeg: 25),
+        'Dồn đều lực hai chân',
+        'dồn đều lực hai chân',
+      ),
+      (
+        'dropping fast',
+        SquatMovement(descentS: .5),
+        'Hạ người chậm hơn',
+        'hạ người chậm hơn',
+      ),
+      (
+        'leaning forward',
+        SquatMovement(leanBottomDeg: 60),
+        'Giữ thân ổn định',
+        'giữ ngực thẳng',
+      ),
+    ]) {
+      test('$name: warned live and told how to fix the next rep', () {
+        for (final frames in sets(movement)) {
+          expect(
+            warnings(shownCues(SquatAnalyzer(), frames)),
+            contains(warning),
+          );
+          final said = spoken(SquatAnalyzer(), frames);
+          expect(said, contains(warning));
+          expect(said.where((s) => s.endsWith('. $tip')), isNotEmpty);
+        }
+      });
+    }
+
+    test('a shallow squat is told to go deeper on the next rep', () {
+      for (final frames in sets(SquatMovement(kneeMinDeg: 103))) {
+        final cues = shownCues(SquatAnalyzer(), frames).map((c) => c.$1);
+        expect(cues, contains('Rep sau: xuống sâu hơn'));
+      }
+    });
+
+    test('facing the camera for squats is told to turn side-on', () {
+      for (final azimuth in [0.0, 45.0]) {
+        for (final frames in sets(
+          SquatMovement(),
+          camera: SimCamera(azimuthDeg: azimuth),
+        )) {
+          expect(
+            spoken(SquatAnalyzer(), frames),
+            contains('Xoay nghiêng người về phía camera'),
+          );
+        }
+      }
+    });
+
+    test('lying head-on to the camera is told to turn sideways', () {
+      const headOn = SimCamera(azimuthDeg: 0, scale: .33, floorY: .72);
+      for (final frames in sets(PushupMovement(), camera: headOn)) {
+        expect(
+          spoken(PushupAnalyzer(), frames),
+          contains('Xoay người nằm ngang so với camera'),
+        );
+      }
+      for (final frames in sets(PlankMovement(), camera: headOn)) {
+        expect(
+          spoken(PlankAnalyzer(), frames, timed: true),
+          contains('Xoay người nằm ngang so với camera'),
+        );
+      }
+    });
+
+    test('sagging hips are said aloud and become the next-rep fix', () {
+      for (final frames in sets(PushupMovement(sagM: .12), camera: _prone)) {
+        final said = spoken(PushupAnalyzer(), frames);
+        expect(said, contains('Đừng để hông xệ'));
+        expect(said, contains('2. siết bụng, giữ hông thẳng'));
+      }
+    });
+
+    test('faulty joints are highlighted, good form highlights nothing', () {
+      final heels = replay(
+        SquatAnalyzer(),
+        simulate(SquatMovement(heelLiftM: .05)),
+      );
+      expect(
+        heels.outputs.any((o) => o.faultJoints.contains(SquatJoint.leftHeel)),
+        isTrue,
+      );
+      final sag = replay(
+        PlankAnalyzer(),
+        simulate(PlankMovement(sagM: .12), camera: _prone),
+      );
+      expect(
+        sag.outputs.any((o) => o.faultJoints.contains(SquatJoint.leftHip)),
+        isTrue,
+      );
+      final good = replay(SquatAnalyzer(), simulate(SquatMovement()));
+      expect(good.outputs.every((o) => o.faultJoints.isEmpty), isTrue);
+    });
+  });
+
+  group('post-set review data', () {
+    test('push-up reps are recorded, sagging ones flagged', () {
+      final good = replay(
+        PushupAnalyzer(),
+        simulate(PushupMovement(), camera: _prone),
+      );
+      expect(good.records, hasLength(5));
+      expect(good.faults, isEmpty);
+      expect(good.records.every((rep) => rep.descentMs > 0), isTrue);
+      final sag = _runs(
+        PushupMovement(sagM: .12),
+        PushupAnalyzer.new,
+        camera: _prone,
+      );
+      expect(_faultRate(sag, 'hipSag'), greaterThan(.8));
+    });
+
+    test('a plank hold is broken down into good form and sagging', () {
+      final good = PlankAnalyzer();
+      replay(good, simulate(PlankMovement(), camera: _prone));
+      final summary = good.summary;
+      expect(summary.goodMs, greaterThan(summary.trackedMs * .95));
+      expect(summary.sagMs, 0);
+
+      final sagging = PlankAnalyzer();
+      replay(sagging, simulate(PlankMovement(sagM: .12), camera: _prone));
+      expect(sagging.summary.goodMs, 0);
+      expect(sagging.summary.sagMs, greaterThan(15000));
+    });
+  });
 }

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:prm/features/squat_form/domain/form_feedback.dart';
 import 'package:prm/features/squat_form/domain/squat_analyzer.dart';
 
 /// Synthetic pose generator for the form-check analyzers: a 3D skeleton
@@ -523,6 +524,12 @@ class SimResult {
       : visible.where((o) => o.score == 100).length / visible.length;
 
   Set<String> get cues => {for (final o in outputs) o.cue};
+
+  /// Cues shown as form warnings (amber on screen, spoken aloud).
+  Set<String> get warnings => {
+    for (final o in outputs)
+      if (o.tone == CueTone.warn) o.cue,
+  };
   Set<String> get faults => {for (final r in records) ...r.faults};
 }
 
@@ -531,3 +538,42 @@ SimResult replay(RepAnalyzer analyzer, List<SimFrame> frames) =>
       for (final frame in frames)
         analyzer.analyze(frame.points, timestampUs: frame.timestampUs),
     ]);
+
+/// What the page would say aloud over [frames], through the same live
+/// feedback loop it uses.
+List<String> spoken(
+  RepAnalyzer analyzer,
+  List<SimFrame> frames, {
+  bool timed = false,
+}) {
+  final feedback = LiveFeedback(timed: timed);
+  return [
+    for (final frame in frames)
+      ?feedback
+          .update(
+            analyzer.analyze(frame.points, timestampUs: frame.timestampUs),
+            frame.timestampUs,
+          )
+          .say,
+  ];
+}
+
+/// The cues the page would actually put on screen over [frames], in order,
+/// after glitch filtering and stabilizing.
+List<(String, CueTone)> shownCues(
+  RepAnalyzer analyzer,
+  List<SimFrame> frames, {
+  bool timed = false,
+}) {
+  final feedback = LiveFeedback(timed: timed);
+  final shown = <(String, CueTone)>[];
+  for (final frame in frames) {
+    feedback.update(
+      analyzer.analyze(frame.points, timestampUs: frame.timestampUs),
+      frame.timestampUs,
+    );
+    final cue = (feedback.cue.cue!, feedback.cue.tone);
+    if (shown.isEmpty || shown.last != cue) shown.add(cue);
+  }
+  return shown;
+}

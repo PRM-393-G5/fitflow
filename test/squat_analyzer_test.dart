@@ -121,8 +121,9 @@ void main() {
           SquatJoint.leftKnee: SquatPoint(.3 + kneeOffset, .62),
           SquatJoint.rightKnee: SquatPoint(.5 - kneeOffset, .62),
         };
+        // Held a few frames: the live cue waits for a sustained cave-in.
         late SquatAnalysis result;
-        for (var i = 0; i < 3; i++) {
+        for (var i = 0; i < 5; i++) {
           result = analyzer.analyze(bent);
         }
         expect(result.phase, isNot(SquatPhase.standing));
