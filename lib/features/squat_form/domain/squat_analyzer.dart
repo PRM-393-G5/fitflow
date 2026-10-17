@@ -93,6 +93,27 @@ double angleDegrees(SquatPoint a, SquatPoint vertex, SquatPoint c) {
   return math.acos(cosine) * 180 / math.pi;
 }
 
+double pointDistance(SquatPoint a, SquatPoint b) =>
+    math.sqrt(math.pow(a.x - b.x, 2) + math.pow(a.y - b.y, 2));
+
+/// A prone body (push-up, plank) pointing at the camera: the shoulders look
+/// wider than the torso is long, so the hip line and elbow bend can't be
+/// read. False when the shoulders or a hip aren't confident.
+bool proneHeadOn(
+  Map<SquatJoint, SquatPoint> points, {
+  required double minimumConfidence,
+}) {
+  final left = points[SquatJoint.leftShoulder];
+  final right = points[SquatJoint.rightShoulder];
+  final hip = points[SquatJoint.leftHip] ?? points[SquatJoint.rightHip];
+  if (left == null || right == null || hip == null) return false;
+  if ([left, right, hip].any((p) => p.confidence < minimumConfidence)) {
+    return false;
+  }
+  final mid = SquatPoint((left.x + right.x) / 2, (left.y + right.y) / 2);
+  return pointDistance(left, right) > pointDistance(mid, hip) * .8;
+}
+
 /// Knee angle (degrees) at or below which a squat enters `bottom`, so the
 /// rep counts when the user stands back up.
 const squatCountDepthDegrees = 105.0;
@@ -345,12 +366,13 @@ class SquatAnalyzer implements RepAnalyzer {
         _phase == SquatPhase.descending ||
         _phase == SquatPhase.bottom ||
         _phase == SquatPhase.ascending;
-    final kneeTrackingOk = !bending || _kneeTracking(points);
+    final hipWidth = _hipWidth(points);
+    final kneeTrackingOk = !bending || _kneeTracking(points, hipWidth);
     _valgusStreak = kneeTrackingOk ? 0 : _valgusStreak + 1;
     // The rep's fault share counts every frame; the live cue waits for a
     // sustained cave-in.
     final caving = _valgusStreak >= _valgusCueFrames;
-    _trackRep(points, side, timestampUs, kneeTrackingOk);
+    _trackRep(side, timestampUs, kneeTrackingOk, hipWidth);
     if (_phase == SquatPhase.bottom) _reachedDepth = true;
     if (_phase == SquatPhase.standing && _reachedDepth) {
       _repetitions++;
@@ -373,7 +395,7 @@ class SquatAnalyzer implements RepAnalyzer {
     final shallowRep = _phase == SquatPhase.ascending && !repDeep;
     _viewRatio = _smooth(
       _viewRatio,
-      (_hipWidth(points) ?? 0) / math.max(_distance(shoulder, hip), 1e-6),
+      (hipWidth ?? 0) / math.max(pointDistance(shoulder, hip), 1e-6),
       alpha,
     );
     // Facing the camera the knee bend is invisible, so reps never count.
@@ -455,9 +477,6 @@ class SquatAnalyzer implements RepAnalyzer {
       label: _phase == SquatPhase.bottom && !repDeep ? 'Chưa đủ sâu' : null,
     );
   }
-
-  static double _distance(SquatPoint a, SquatPoint b) =>
-      math.sqrt(math.pow(a.x - b.x, 2) + math.pow(a.y - b.y, 2));
 
   double _smooth(double? previous, double value, [double? alpha]) =>
       previous == null
@@ -546,10 +565,10 @@ class SquatAnalyzer implements RepAnalyzer {
   /// Samples fault signals while a rep is in progress (started when the
   /// user leaves `standing`, closed by [_closeRep] on rep completion).
   void _trackRep(
-    Map<SquatJoint, SquatPoint> points,
     (SquatJoint, SquatJoint, SquatJoint, SquatJoint, SquatJoint) side,
     int? timestampUs,
     bool kneeTrackingOk,
+    double? hipWidth,
   ) {
     final inRep =
         _phase == SquatPhase.descending ||
@@ -577,7 +596,6 @@ class SquatAnalyzer implements RepAnalyzer {
     // descent. Only judged side-on (hips overlapping): from an angle the
     // two legs are foreshortened differently and always read as uneven.
     final otherKnee = _otherKnee;
-    final hipWidth = _hipWidth(points);
     if (otherKnee != null && (hipWidth == null || hipWidth < _sideOnHipWidth)) {
       _repAsymmetryJudged++;
       if ((_knee! - otherKnee).abs() > 15) {
@@ -586,6 +604,9 @@ class SquatAnalyzer implements RepAnalyzer {
       } else {
         _asymmetryStreak = 0;
       }
+    } else {
+      // Unmeasured is not uneven: a stale streak would keep the cue up.
+      _asymmetryStreak = 0;
     }
     _trackHeelRise();
     if (_phase == SquatPhase.bottom && _repBottomUs == null) {
@@ -725,14 +746,15 @@ class SquatAnalyzer implements RepAnalyzer {
     return (leftHip.x - rightHip.x).abs();
   }
 
-  /// False on knee valgus: knees caving *medially* (toward the body
-  /// midline) past their ankles. Knees pushed out are fine. Both legs are
-  /// judged together: from an angled camera, knees travelling forward over
-  /// the toes shift both legs the same way on screen, which cancels out of
-  /// the sum, while a real cave-in moves them toward each other. Side-on
+  /// False on knee valgus: a knee caving *medially* (toward the body
+  /// midline) past its ankle. Knees pushed out are fine. From an angled
+  /// camera, knees travelling forward over the toes shift both legs the
+  /// same way on screen — one leg reads as caving, the other as pushed out
+  /// by the same amount. So a cave-in must show on the worse leg *and*
+  /// survive averaging both legs, where that shared shift cancels: one leg
+  /// caving alone still counts, a forward shift alone never does. Side-on
   /// views (hips overlapping) and unconfident legs are never flagged.
-  bool _kneeTracking(Map<SquatJoint, SquatPoint> points) {
-    final hipWidth = _hipWidth(points);
+  bool _kneeTracking(Map<SquatJoint, SquatPoint> points, double? hipWidth) {
     if (hipWidth == null || hipWidth < _minHipWidth) return true;
     final leftHip = points[SquatJoint.leftHip]!;
     final rightHip = points[SquatJoint.rightHip]!;
@@ -748,11 +770,10 @@ class SquatAnalyzer implements RepAnalyzer {
     }
     // +1 when the left leg's medial side (toward the right hip) is +x.
     final medial = rightHip.x >= leftHip.x ? 1 : -1;
-    final caveIn =
-        ((leftKnee.x - leftAnkle.x) * medial +
-            (rightKnee.x - rightAnkle.x) * -medial) /
-        2;
-    return caveIn <= hipWidth * 0.3;
+    final left = (leftKnee.x - leftAnkle.x) * medial;
+    final right = (rightKnee.x - rightAnkle.x) * -medial;
+    final limit = hipWidth * 0.3;
+    return math.max(left, right) <= limit || (left + right) / 2 <= limit / 2;
   }
 }
 

@@ -99,6 +99,29 @@ void main() {
     expect(analyzer.repetitions, 0);
   });
 
+  test('plank analyzer forgets the old hips after leaving the plank', () {
+    final analyzer = PlankAnalyzer();
+    Map<SquatJoint, SquatPoint> plank(double hipY) => {
+      SquatJoint.leftShoulder: const SquatPoint(.2, .5),
+      SquatJoint.leftElbow: const SquatPoint(.2, .65),
+      SquatJoint.leftHip: SquatPoint(.45, hipY),
+      SquatJoint.leftAnkle: const SquatPoint(.75, .6),
+    };
+    var us = 0;
+    SquatAnalysis feed(Map<SquatJoint, SquatPoint> pose, int count) {
+      late SquatAnalysis result;
+      for (var i = 0; i < count; i++) {
+        us += 66000;
+        result = analyzer.analyze(pose, timestampUs: us);
+      }
+      return result;
+    }
+
+    expect(feed(plank(.68), 10).cue, 'Đừng để hông xệ');
+    feed(const {}, 30); // dropped to the knees for a couple of seconds
+    expect(feed(plank(.545), 1).cue, 'Tốt lắm, giữ nguyên');
+  });
+
   test('push-up analyzer flags sagging hips in torso lengths', () {
     final result = PushupAnalyzer().analyze({
       SquatJoint.leftShoulder: const SquatPoint(.3, .4),

@@ -11,12 +11,18 @@ abstract interface class FormVoice {
 /// reading Vietnamese cues with another language's voice is worse than
 /// silence.
 class TtsFormVoice implements FormVoice {
+  /// How long a failed setup waits before trying again. The Android engine
+  /// may still be binding on a cold start, so one failure must not silence
+  /// the whole session.
+  static const retryAfter = Duration(seconds: 10);
+
   FlutterTts? _tts;
   Future<bool>? _ready;
+  DateTime? _failedAt;
 
   Future<bool> _init() async {
     try {
-      final tts = _tts = FlutterTts();
+      final tts = _tts ??= FlutterTts();
       if (await tts.isLanguageAvailable('vi-VN') != true) return false;
       await tts.setLanguage('vi-VN');
       await tts.setSpeechRate(.55);
@@ -26,11 +32,25 @@ class TtsFormVoice implements FormVoice {
     }
   }
 
+  Future<bool> _ensureReady() async {
+    final failedAt = _failedAt;
+    if (failedAt != null) {
+      if (DateTime.now().difference(failedAt) < retryAfter) return false;
+      _failedAt = null;
+      _ready = null;
+    }
+    final ready = await (_ready ??= _init());
+    if (!ready) _failedAt = DateTime.now();
+    return ready;
+  }
+
   @override
   Future<void> speak(String text) async {
-    if (!await (_ready ??= _init())) return;
+    if (!await _ensureReady()) return;
     try {
-      // Flushes anything still being said: the newest cue matters most.
+      // The newest cue matters most: cut off anything still being said
+      // instead of queueing behind it (iOS queues by default).
+      await _tts!.stop();
       await _tts!.speak(text);
     } catch (_) {
       // A transient engine error drops this cue.

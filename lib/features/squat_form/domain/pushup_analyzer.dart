@@ -105,7 +105,9 @@ class PushupAnalyzer implements RepAnalyzer {
         _elbow = _height = _topHeight = _hipOffsetSmoothed = null;
         _clearRep();
       }
-      final headOn = armVisible && _headOn(points);
+      final headOn =
+          armVisible &&
+          proneHeadOn(points, minimumConfidence: minimumConfidence);
       return SquatAnalysis(
         phase: _phase,
         repetitions: _repetitions,
@@ -261,20 +263,6 @@ class PushupAnalyzer implements RepAnalyzer {
     _repFrames = _repSagFrames = _repPikeFrames = 0;
   }
 
-  /// Body pointing at the camera: the shoulders look wider than the torso
-  /// is long, so the hip line and elbow bend can't be read.
-  bool _headOn(Map<SquatJoint, SquatPoint> points) {
-    final left = points[SquatJoint.leftShoulder];
-    final right = points[SquatJoint.rightShoulder];
-    final hip = points[SquatJoint.leftHip] ?? points[SquatJoint.rightHip];
-    if (left == null || right == null || hip == null) return false;
-    if ([left, right, hip].any((p) => p.confidence < minimumConfidence)) {
-      return false;
-    }
-    final mid = SquatPoint((left.x + right.x) / 2, (left.y + right.y) / 2);
-    return _distance(left, right) > _distance(mid, hip) * .8;
-  }
-
   double _smooth(double? previous, double value, double alpha) =>
       previous == null ? value : previous + alpha * (value - previous);
 
@@ -390,10 +378,8 @@ class PushupAnalyzer implements RepAnalyzer {
     ].every((point) => point.y >= 0 && point.y <= 1);
     // Upper arm plus forearm: the shoulder-wrist distance shrinks as the
     // elbow bends and would read as "arm too small" at every bottom.
-    final armLength = _distance(shoulder, elbow) + _distance(elbow, wrist);
+    final armLength =
+        pointDistance(shoulder, elbow) + pointDistance(elbow, wrist);
     return inFrame && armLength > 0.12;
   }
-
-  static double _distance(SquatPoint a, SquatPoint b) =>
-      math.sqrt(math.pow(a.x - b.x, 2) + math.pow(a.y - b.y, 2));
 }

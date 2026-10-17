@@ -73,6 +73,33 @@ void main() {
       );
     });
 
+    test('a tip said with the count is not repeated once it shows', () {
+      final coach = FormVoiceCoach();
+      // An earlier warning is still held on screen when the rep counts.
+      expect(
+        coach.next(
+          count: 1,
+          timed: false,
+          cue: 'Hạ người chậm hơn',
+          tone: CueTone.warn,
+          tip: 'hạ người chậm hơn',
+          analysisCue: 'Rep sau: hạ người chậm hơn',
+          nowUs: 0,
+        ),
+        '1. hạ người chậm hơn',
+      );
+      expect(
+        say(
+          coach,
+          count: 1,
+          cue: 'Rep sau: hạ người chậm hơn',
+          tone: CueTone.warn,
+          atMs: 2000,
+        ),
+        isNull,
+      );
+    });
+
     test('says a warning once, then waits before repeating it', () {
       final coach = FormVoiceCoach();
       const warn = 'Giữ gót chân chạm sàn';

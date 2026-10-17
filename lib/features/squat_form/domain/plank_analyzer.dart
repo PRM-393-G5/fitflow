@@ -85,7 +85,13 @@ class PlankAnalyzer implements RepAnalyzer {
     final rawOffset = side == null ? null : _hipOffset(points, side);
     if (side == null || rawOffset == null) {
       _lastTimestampUs = timestampUs;
-      final headOn = side != null && _inFrame(points, side) && _headOn(points);
+      // Out of the plank: the next hold starts fresh, not blended with
+      // the hips from before.
+      _offset = null;
+      final headOn =
+          side != null &&
+          _inFrame(points, side) &&
+          proneHeadOn(points, minimumConfidence: minimumConfidence);
       // Keep the accumulated hold: a dropped frame must not flash 0.
       return SquatAnalysis(
         phase: SquatPhase.findingBody,
@@ -103,6 +109,9 @@ class PlankAnalyzer implements RepAnalyzer {
     }
     if (!_supported(points, side)) {
       _lastTimestampUs = timestampUs;
+      // Out of the plank: the next hold starts fresh, not blended with
+      // the hips from before.
+      _offset = null;
       return SquatAnalysis(
         phase: SquatPhase.findingBody,
         repetitions: repetitions,
@@ -167,7 +176,7 @@ class PlankAnalyzer implements RepAnalyzer {
     if (!_inFrame(points, side)) return null;
     final spanX = ankle.x - shoulder.x;
     if (spanX.abs() < 0.15) return null;
-    final torso = _distance(shoulder, hip);
+    final torso = pointDistance(shoulder, hip);
     if (torso == 0) return null;
     final expectedY =
         shoulder.y + (hip.x - shoulder.x) / spanX * (ankle.y - shoulder.y);
@@ -182,7 +191,7 @@ class PlankAnalyzer implements RepAnalyzer {
     (SquatJoint, SquatJoint, SquatJoint) side,
   ) {
     final shoulder = points[side.$1]!;
-    final margin = _distance(shoulder, points[side.$2]!) * 0.35;
+    final margin = pointDistance(shoulder, points[side.$2]!) * 0.35;
     final arm = side.$1 == SquatJoint.leftShoulder
         ? const [SquatJoint.leftElbow, SquatJoint.leftWrist]
         : const [SquatJoint.rightElbow, SquatJoint.rightWrist];
@@ -204,23 +213,6 @@ class PlankAnalyzer implements RepAnalyzer {
     side.$2,
     side.$3,
   ].every((joint) => points[joint]!.y >= 0 && points[joint]!.y <= 1);
-
-  /// Body pointing at the camera: the shoulders look wider than the torso
-  /// is long, so the hip line can't be read.
-  bool _headOn(Map<SquatJoint, SquatPoint> points) {
-    final left = points[SquatJoint.leftShoulder];
-    final right = points[SquatJoint.rightShoulder];
-    final hip = points[SquatJoint.leftHip] ?? points[SquatJoint.rightHip];
-    if (left == null || right == null || hip == null) return false;
-    if ([left, right, hip].any((p) => p.confidence < minimumConfidence)) {
-      return false;
-    }
-    final mid = SquatPoint((left.x + right.x) / 2, (left.y + right.y) / 2);
-    return _distance(left, right) > _distance(mid, hip) * .8;
-  }
-
-  static double _distance(SquatPoint a, SquatPoint b) =>
-      math.sqrt(math.pow(a.x - b.x, 2) + math.pow(a.y - b.y, 2));
 
   (SquatJoint, SquatJoint, SquatJoint)? _bestSide(
     Map<SquatJoint, SquatPoint> points,

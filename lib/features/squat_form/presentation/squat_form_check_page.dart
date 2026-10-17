@@ -409,6 +409,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     if (paused) {
       // Flag first so frames already in flight are ignored.
       setState(() => _paused = true);
+      _voice.stop();
       if (camera != null && camera.value.isStreamingImages) {
         await camera.stopImageStream();
       }
@@ -585,6 +586,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       _analyzer.pauseTiming();
+      _voice.stop();
       _serialized(_closeCamera);
     } else if (state == AppLifecycleState.resumed) {
       _resume();

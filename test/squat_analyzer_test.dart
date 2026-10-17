@@ -145,6 +145,52 @@ void main() {
     });
   });
 
+  group('live cues need a real, current fault', () {
+    // Frontal view, hips .14 apart; each knee's offset toward the midline
+    // is set separately.
+    Map<SquatJoint, SquatPoint> frontal(double leftIn, double rightIn) => {
+      SquatJoint.leftShoulder: const SquatPoint(.3, .3),
+      SquatJoint.rightShoulder: const SquatPoint(.5, .3),
+      SquatJoint.leftHip: const SquatPoint(.33, .6),
+      SquatJoint.rightHip: const SquatPoint(.47, .6),
+      SquatJoint.leftKnee: SquatPoint(.3 + leftIn, .62),
+      SquatJoint.rightKnee: SquatPoint(.5 - rightIn, .62),
+      SquatJoint.leftAnkle: const SquatPoint(.3, .9),
+      SquatJoint.rightAnkle: const SquatPoint(.5, .9),
+    };
+    Map<SquatJoint, SquatPoint> standing() => {
+      ...frontal(0, 0),
+      SquatJoint.leftShoulder: const SquatPoint(.3, .1),
+      SquatJoint.rightShoulder: const SquatPoint(.5, .1),
+      SquatJoint.leftHip: const SquatPoint(.33, .45),
+      SquatJoint.rightHip: const SquatPoint(.47, .45),
+      SquatJoint.leftKnee: const SquatPoint(.315, .68),
+      SquatJoint.rightKnee: const SquatPoint(.485, .68),
+    };
+    String bentCue(double leftIn, double rightIn) {
+      final analyzer = SquatAnalyzer(smoothingFactor: 1, transitionFrames: 2);
+      for (var i = 0; i < 3; i++) {
+        analyzer.analyze(standing());
+      }
+      late SquatAnalysis result;
+      for (var i = 0; i < 5; i++) {
+        result = analyzer.analyze(frontal(leftIn, rightIn));
+      }
+      return result.cue;
+    }
+
+    test('one knee caving alone is caught', () {
+      // .07 = half the hip width on one leg; the other stays straight.
+      expect(bentCue(.07, 0), 'Giữ gối theo hướng mũi chân');
+    });
+
+    test('both knees shifting the same way on screen is not valgus', () {
+      // A forward knee travel seen at an angle: one leg reads in, the other
+      // out by the same amount.
+      expect(bentCue(.07, -.07), isNot('Giữ gối theo hướng mũi chân'));
+    });
+  });
+
   test('clean aligned rep records no faults', () {
     final analyzer = SquatAnalyzer(smoothingFactor: 1, transitionFrames: 2);
 
@@ -228,6 +274,21 @@ void main() {
     feed(twoLegs(.62, .7, rightKneeX: .45), 6);
     feed(twoLegs(.4, .7), 3);
     expect(analyzer.repRecords.single.faults, contains('asymmetry'));
+  });
+
+  test('the uneven cue clears when the other leg drops out', () {
+    final analyzer = SquatAnalyzer(transitionFrames: 2);
+    final feed = _Feeder(analyzer);
+    feed(twoLegs(.4, .7), 3);
+    expect(
+      feed(twoLegs(.62, .7, rightKneeX: .45), 4).cue,
+      'Dồn đều lực hai chân',
+    );
+    final lost = {
+      ...twoLegs(.62, .7),
+      SquatJoint.rightKnee: const SquatPoint(.62, .7, confidence: .2),
+    };
+    expect(feed(lost, 1).cue, isNot('Dồn đều lực hai chân'));
   });
 
   test('counts a rep when the body shrinks at the bottom and drops out', () {

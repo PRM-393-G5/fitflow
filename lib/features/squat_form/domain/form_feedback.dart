@@ -46,18 +46,22 @@ class FormVoiceCoach {
 
   /// The utterance for this frame, or null. [cue] and [tone] are the cue
   /// on screen (after [CueStabilizer]), [tip] the analysis' `nextRepTip`.
+  /// [analysisCue] is the analyzer's own cue, which the stabilizer may not
+  /// show yet: a count that carries the tip covers it too.
   String? next({
     required int count,
     required bool timed,
     required String cue,
     required CueTone tone,
     String? tip,
+    String? analysisCue,
     required int nowUs,
   }) {
     final previous = _count;
     _count = count;
     if (count > previous) {
       if (!timed) {
+        if (analysisCue != null) _lastByText[analysisCue] = nowUs;
         return _say(tip == null ? '$count' : '$count. $tip', cue, nowUs);
       }
       if (previous == 0) return _say('Bắt đầu tính giờ', cue, nowUs);
@@ -126,6 +130,7 @@ class LiveFeedback {
       cue: cue.cue!,
       tone: cue.tone,
       tip: analysis.nextRepTip,
+      analysisCue: analysis.cue,
       nowUs: nowUs,
     );
     final changed =
