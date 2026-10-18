@@ -19,6 +19,7 @@ import '../domain/form_feedback.dart';
 import '../domain/plank_analyzer.dart';
 import '../domain/pose_frame.dart';
 import '../domain/pushup_analyzer.dart';
+import '../domain/shoulder_press_analyzer.dart';
 import '../domain/squat_analyzer.dart';
 import 'form_voice.dart';
 import 'pose_overlay.dart';
@@ -68,6 +69,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     FormExercise.squat => SquatAnalyzer(),
     FormExercise.pushup => PushupAnalyzer(),
     FormExercise.plank => PlankAnalyzer(),
+    FormExercise.shoulderPress => ShoulderPressAnalyzer(),
   };
   final _detector = PoseDetector(
     options: PoseDetectorOptions(
@@ -476,6 +478,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
               FormExercise.squat => 'Legs',
               FormExercise.pushup => 'Chest',
               FormExercise.plank => 'Core',
+              FormExercise.shoulderPress => 'Shoulders',
             },
             sets: 1,
             reps: timed ? 0 : result.amount,
@@ -1021,6 +1024,14 @@ class _SetupGuide extends StatelessWidget {
         ),
         (FLucideIcons.scanEye, 'Thấy trọn người từ đầu đến chân'),
       ],
+      FormExercise.shoulderPress => const [
+        (
+          FLucideIcons.smartphone,
+          'Đặt điện thoại ngang ngực trở lên, cách 2 m',
+        ),
+        (FLucideIcons.personStanding, 'Đứng quay mặt về phía camera'),
+        (FLucideIcons.scanEye, 'Thấy từ thắt lưng lên, cả khi giơ tay cao'),
+      ],
     };
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -1094,6 +1105,9 @@ String _faultLabel(String code) => switch (code) {
   'fastEccentric' => 'Dropped too fast',
   'hipSag' => 'Hips sagging',
   'hipPike' => 'Hips too high',
+  'noLockout' => 'Arms not locked out',
+  'unevenArms' => 'Uneven arms',
+  'partialRange' => 'Partial range',
   _ => code,
 };
 

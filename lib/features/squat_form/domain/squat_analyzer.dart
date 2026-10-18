@@ -140,7 +140,8 @@ const squatFastDescentMs = 360;
 enum FormExercise {
   squat('Squat'),
   pushup('Push-up'),
-  plank('Plank');
+  plank('Plank'),
+  shoulderPress('Shoulder press');
 
   const FormExercise(this.label);
   final String label;
@@ -154,6 +155,10 @@ enum FormExercise {
       return lower.contains('plank') && !lower.contains('side') ? plank : null;
     }
     if (RegExp(r'push[\s-]?ups?\b').hasMatch(lower)) return pushup;
+    // Standing presses only: a bench press lies down out of view.
+    if (RegExp(r'(shoulder|overhead|military)\s+press').hasMatch(lower)) {
+      return shoulderPress;
+    }
     if (lower.contains('squat') && !lower.contains('split')) return squat;
     return null;
   }
@@ -197,6 +202,9 @@ const faultTips = {
   'fastEccentric': 'hạ người chậm hơn',
   'hipSag': 'siết bụng, giữ hông thẳng',
   'hipPike': 'hạ hông xuống thẳng hàng',
+  'noLockout': 'đẩy thẳng tay lên hết',
+  'unevenArms': 'đẩy đều hai tay',
+  'partialRange': 'hạ khuỷu xuống ngang vai',
 };
 
 /// The between-reps cue after [last]: praise for a clean rep, otherwise
@@ -779,9 +787,11 @@ class SquatAnalyzer implements RepAnalyzer {
   /// enough to judge knee valgus.
   static const _minHipWidth = 0.04;
 
-  /// Hips closer than this mean the camera is side-on: both legs are seen
-  /// from the same angle, so their knee angles can be compared.
-  static const _sideOnHipWidth = 0.025;
+  /// Hips closer than this mean the camera is squarely side-on (within
+  /// ~10°): only then are both legs, each turned out with its toes, seen
+  /// from a similar enough angle to compare their knees. At 15° off they
+  /// already read uneven on a symmetric squat.
+  static const _sideOnHipWidth = 0.015;
 
   /// On-screen distance between confident hips, or null.
   double? _hipWidth(Map<SquatJoint, SquatPoint> points) {
@@ -834,7 +844,9 @@ Rules:
 - Reference rep numbers when calling out specific reps.
 - Fault codes: shallowDepth, kneeValgus (knees caved in), forwardLean,
   heelsUp, asymmetry (one leg dominant), fastEccentric (dropped too fast),
-  hipSag (hips sagging below the body line), hipPike (hips too high).
+  hipSag (hips sagging below the body line), hipPike (hips too high),
+  noLockout (arms not straightened overhead), unevenArms (one arm lagging),
+  partialRange (pressed again before lowering to the shoulders).
 - For a plank, judge how much of the hold was in good form.
 - Be direct and encouraging; plain text only.''';
 
