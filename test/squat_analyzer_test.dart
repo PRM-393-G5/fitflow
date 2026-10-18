@@ -43,14 +43,16 @@ void main() {
   );
 
   group('knee valgus is directional', () {
-    // Left leg drives the angles; the right hip only locates the midline,
-    // which sits at x=.5 (to the knee's +x side).
+    // Left leg drives the angles; the right leg mirrors it about the
+    // midline at x=.5 (to the left knee's +x side).
     Map<SquatJoint, SquatPoint> pose(double kneeX, double kneeY) => {
       SquatJoint.leftShoulder: const SquatPoint(.4, .1),
       SquatJoint.leftHip: const SquatPoint(.4, .45),
       SquatJoint.rightHip: const SquatPoint(.6, .45),
       SquatJoint.leftKnee: SquatPoint(kneeX, kneeY),
+      SquatJoint.rightKnee: SquatPoint(1 - kneeX, kneeY),
       SquatJoint.leftAnkle: const SquatPoint(.4, .9),
+      SquatJoint.rightAnkle: const SquatPoint(.6, .9),
       SquatJoint.leftFoot: const SquatPoint(.5, .9),
     };
 
@@ -94,11 +96,44 @@ void main() {
         SquatJoint.rightAnkle: const SquatPoint(.5, .9),
       };
 
-      final caved = SquatAnalyzer().analyze(frontal(.08));
-      expect(caved.cue, 'Giữ gối theo hướng mũi chân');
-      final out = SquatAnalyzer().analyze(frontal(-.08));
+      // Stand tall, then bend: valgus is judged only while bending, so a
+      // wide stance standing up is never flagged.
+      Map<SquatJoint, SquatPoint> standing() => {
+        ...frontal(0),
+        SquatJoint.leftKnee: const SquatPoint(.315, .68),
+        SquatJoint.rightKnee: const SquatPoint(.485, .68),
+      };
+      SquatAnalysis bend(double kneeOffset) {
+        final analyzer = SquatAnalyzer(smoothingFactor: 1, transitionFrames: 2);
+        for (var i = 0; i < 3; i++) {
+          expect(
+            analyzer.analyze(standing()).cue,
+            isNot('Giữ gối theo hướng mũi chân'),
+          );
+        }
+        // Lower the hips so the knee angle reads as a bend.
+        final bent = {
+          ...frontal(kneeOffset),
+          SquatJoint.leftHip: const SquatPoint(.33, .6),
+          SquatJoint.rightHip: const SquatPoint(.47, .6),
+          SquatJoint.leftShoulder: const SquatPoint(.3, .3),
+          SquatJoint.rightShoulder: const SquatPoint(.5, .3),
+          SquatJoint.leftKnee: SquatPoint(.3 + kneeOffset, .62),
+          SquatJoint.rightKnee: SquatPoint(.5 - kneeOffset, .62),
+        };
+        // Held a few frames: the live cue waits for a sustained cave-in.
+        late SquatAnalysis result;
+        for (var i = 0; i < 5; i++) {
+          result = analyzer.analyze(bent);
+        }
+        expect(result.phase, isNot(SquatPhase.standing));
+        return result;
+      }
+
+      expect(bend(.08).cue, 'Giữ gối theo hướng mũi chân');
+      final out = bend(-.08);
       expect(out.cue, isNot('Giữ gối theo hướng mũi chân'));
-      expect(out.score, 100);
+      expect(out.score, isNot(lessThan(80)));
     });
 
     test('side-on view with overlapping hips is never flagged', () {
@@ -107,6 +142,57 @@ void main() {
         SquatJoint.rightHip: const SquatPoint(.41, .45),
       });
       expect(result.cue, isNot('Giữ gối theo hướng mũi chân'));
+    });
+  });
+
+  group('live cues need a real, current fault', () {
+    // Frontal view, hips .14 apart; each knee's offset toward the midline
+    // is set separately.
+    Map<SquatJoint, SquatPoint> frontal(double leftIn, double rightIn) => {
+      SquatJoint.leftShoulder: const SquatPoint(.3, .3),
+      SquatJoint.rightShoulder: const SquatPoint(.5, .3),
+      SquatJoint.leftHip: const SquatPoint(.33, .6),
+      SquatJoint.rightHip: const SquatPoint(.47, .6),
+      SquatJoint.leftKnee: SquatPoint(.3 + leftIn, .62),
+      SquatJoint.rightKnee: SquatPoint(.5 - rightIn, .62),
+      SquatJoint.leftAnkle: const SquatPoint(.3, .9),
+      SquatJoint.rightAnkle: const SquatPoint(.5, .9),
+    };
+    Map<SquatJoint, SquatPoint> standing() => {
+      ...frontal(0, 0),
+      SquatJoint.leftShoulder: const SquatPoint(.3, .1),
+      SquatJoint.rightShoulder: const SquatPoint(.5, .1),
+      SquatJoint.leftHip: const SquatPoint(.33, .45),
+      SquatJoint.rightHip: const SquatPoint(.47, .45),
+      SquatJoint.leftKnee: const SquatPoint(.315, .68),
+      SquatJoint.rightKnee: const SquatPoint(.485, .68),
+    };
+    String bentCue(double leftIn, double rightIn) {
+      final analyzer = SquatAnalyzer(smoothingFactor: 1, transitionFrames: 2);
+      for (var i = 0; i < 3; i++) {
+        analyzer.analyze(standing());
+      }
+      late SquatAnalysis result;
+      for (var i = 0; i < 5; i++) {
+        result = analyzer.analyze(frontal(leftIn, rightIn));
+      }
+      return result.cue;
+    }
+
+    test('one knee caving alone is caught', () {
+      // .07 = half the hip width on one leg; the other stays straight.
+      expect(bentCue(.07, 0), 'Giữ gối theo hướng mũi chân');
+    });
+
+    test('one knee caving is caught even with the other pushed out', () {
+      // Limit is .3 of the .14 hip width: left caves 1.2x, right is out .3x.
+      expect(bentCue(.05, -.0126), 'Giữ gối theo hướng mũi chân');
+    });
+
+    test('both knees shifting the same way on screen is not valgus', () {
+      // A forward knee travel seen at an angle: one leg reads in, the other
+      // out by the same amount.
+      expect(bentCue(.07, -.07), isNot('Giữ gối theo hướng mũi chân'));
     });
   });
 
@@ -193,6 +279,21 @@ void main() {
     feed(twoLegs(.62, .7, rightKneeX: .45), 6);
     feed(twoLegs(.4, .7), 3);
     expect(analyzer.repRecords.single.faults, contains('asymmetry'));
+  });
+
+  test('the uneven cue clears when the other leg drops out', () {
+    final analyzer = SquatAnalyzer(transitionFrames: 2);
+    final feed = _Feeder(analyzer);
+    feed(twoLegs(.4, .7), 3);
+    expect(
+      feed(twoLegs(.62, .7, rightKneeX: .45), 4).cue,
+      'Dồn đều lực hai chân',
+    );
+    final lost = {
+      ...twoLegs(.62, .7),
+      SquatJoint.rightKnee: const SquatPoint(.62, .7, confidence: .2),
+    };
+    expect(feed(lost, 1).cue, isNot('Dồn đều lực hai chân'));
   });
 
   test('counts a rep when the body shrinks at the bottom and drops out', () {
@@ -296,6 +397,25 @@ void main() {
     test('a sustained heel lift is flagged', () {
       expect(faults(4), contains('heelsUp'));
     });
+  });
+
+  test('a pause mid-rep is not counted as descent time', () {
+    final analyzer = SquatAnalyzer(transitionFrames: 2);
+    final feed = _Feeder(analyzer);
+    Map<SquatJoint, SquatPoint> pose(double kneeX) => {
+      SquatJoint.leftShoulder: const SquatPoint(.4, .1),
+      SquatJoint.leftHip: const SquatPoint(.4, .45),
+      SquatJoint.leftKnee: SquatPoint(kneeX, .7),
+      SquatJoint.leftAnkle: const SquatPoint(.4, .9),
+    };
+    feed(pose(.4), 3);
+    feed(pose(.5), 2); // descending
+    analyzer.pauseTiming(); // paused mid-descent
+    feed(pose(.65), 3);
+    feed(pose(.5), 2);
+    feed(pose(.4), 3);
+    expect(analyzer.repRecords.single.descentMs, 0);
+    expect(analyzer.repRecords.single.faults, isNot(contains('fastEccentric')));
   });
 
   test('live cue, label and review share one depth threshold', () {

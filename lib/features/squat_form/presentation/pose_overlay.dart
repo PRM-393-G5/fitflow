@@ -2,6 +2,9 @@ import 'package:material_ui/material_ui.dart';
 
 import 'pose_render_model.dart';
 
+/// Live cue color for a form warning; the overlay paints faulty joints in it.
+const formWarningColor = Color(0xFFFFB547);
+
 class PoseOverlay extends CustomPainter {
   PoseOverlay({
     required this.model,
@@ -22,11 +25,19 @@ class PoseOverlay extends CustomPainter {
       ..color = const Color(0xFF62E6A5)
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round;
+    final faultLine = Paint()
+      ..color = formWarningColor
+      ..strokeWidth = 7
+      ..strokeCap = StrokeCap.round;
     final joint = Paint()..color = Colors.white;
+    final faultJoint = Paint()..color = formWarningColor;
+    final highlight = model.highlight;
     for (final bone in PoseRenderModel.bones) {
       final a = model.points[bone.$1];
       final b = model.points[bone.$2];
       if (a != null && b != null && a.confidence > .45 && b.confidence > .45) {
+        final faulty =
+            highlight.contains(bone.$1) || highlight.contains(bone.$2);
         canvas.drawLine(
           model.offset(
             a,
@@ -40,12 +51,13 @@ class PoseOverlay extends CustomPainter {
             mirrored: mirrored,
             previewAspect: previewAspect,
           ),
-          line,
+          faulty ? faultLine : line,
         );
       }
     }
-    for (final point in model.points.values) {
+    for (final MapEntry(key: id, value: point) in model.points.entries) {
       if (point.confidence > .45) {
+        final faulty = highlight.contains(id);
         canvas.drawCircle(
           model.offset(
             point,
@@ -53,8 +65,8 @@ class PoseOverlay extends CustomPainter {
             mirrored: mirrored,
             previewAspect: previewAspect,
           ),
-          5,
-          joint,
+          faulty ? 9 : 5,
+          faulty ? faultJoint : joint,
         );
       }
     }

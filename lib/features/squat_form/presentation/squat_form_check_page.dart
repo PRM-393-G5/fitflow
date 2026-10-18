@@ -15,17 +15,27 @@ import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../../domain/workout_stats.dart';
 import '../domain/adaptive_inference_scheduler.dart';
+import '../domain/form_feedback.dart';
 import '../domain/plank_analyzer.dart';
 import '../domain/pose_frame.dart';
 import '../domain/pushup_analyzer.dart';
 import '../domain/squat_analyzer.dart';
+import 'form_voice.dart';
 import 'pose_overlay.dart';
 import 'pose_render_model.dart';
 
 class SquatFormCheckPage extends StatefulWidget {
-  const SquatFormCheckPage({required this.controller, this.forSet, super.key});
+  const SquatFormCheckPage({
+    required this.controller,
+    this.forSet,
+    this.voice,
+    super.key,
+  });
 
   final AppController controller;
+
+  /// Spoken cues; defaults to device text-to-speech.
+  final FormVoice? voice;
 
   /// Set mode: opened from an active workout to count one set of this
   /// exercise. The exercise can't be switched, nothing is saved as a
@@ -43,8 +53,11 @@ typedef _FormResult = ({
   FormExercise exercise,
   int amount,
   List<RepRecord> records,
+  HoldSummary? hold,
   DateTime? startedAt,
 });
+
+const _voicePreferenceKey = 'form_check_voice';
 
 class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     with WidgetsBindingObserver {
@@ -68,7 +81,17 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
   final _clock = Stopwatch()..start();
   final _scheduler = AdaptiveInferenceScheduler();
   final _poseModel = PoseRenderModel();
-  SquatAnalysis? _analysis;
+  late LiveFeedback _feedback = _feedbackFor(_exercise);
+
+  static LiveFeedback _feedbackFor(FormExercise exercise) =>
+      LiveFeedback(timed: exercise == FormExercise.plank);
+  late final FormVoice _voice = widget.voice ?? TtsFormVoice();
+  late bool _voiceOn =
+      widget.controller.preferences.getBool(_voicePreferenceKey) ?? true;
+
+  /// Set once the body is first tracked; hides the camera setup guide.
+  bool _tracked = false;
+  bool _setupDismissed = false;
   DateTime? _startedAt;
   bool _processing = false;
   int _droppedFrames = 0;
@@ -270,16 +293,17 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
         _telemetryStartedUs = completedUs;
       }
       final next = _analyzer.analyze(points, timestampUs: completedUs);
-      final previous = _analysis;
-      if (previous == null ||
-          previous.phase != next.phase ||
-          previous.repetitions != next.repetitions ||
-          previous.cue != next.cue ||
-          (previous.score - next.score).abs() >= 5 ||
+      // Always fed, so turning voice on mid-set doesn't replay counts.
+      final feedback = _feedback.update(next, completedUs);
+      _poseModel.highlight = _feedback.shown!.faultJoints;
+      if (feedback.say != null && _voiceOn) _voice.speak(feedback.say!);
+      final tracked =
+          _tracked ||
+          (next.bodyVisible && next.phase != SquatPhase.findingBody);
+      if (feedback.changed ||
+          tracked != _tracked ||
           (_showTelemetry && telemetryWindowUs >= 1000000)) {
-        setState(() => _analysis = next);
-      } else {
-        _analysis = next;
+        setState(() => _tracked = tracked);
       }
     } catch (_) {
       // A transient native detector error drops this frame; never log hot-loop.
@@ -385,6 +409,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     if (paused) {
       // Flag first so frames already in flight are ignored.
       setState(() => _paused = true);
+      _voice.stop();
       if (camera != null && camera.value.isStreamingImages) {
         await camera.stopImageStream();
       }
@@ -408,12 +433,22 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     if (mounted) setState(() => _switchingCamera = false);
   }
 
-  _FormResult _snapshot() => (
-    exercise: _exercise,
-    amount: _analyzer.repetitions,
-    records: List.of(_analyzer.repRecords),
-    startedAt: _startedAt,
-  );
+  _FormResult _snapshot() {
+    final analyzer = _analyzer;
+    return (
+      exercise: _exercise,
+      amount: analyzer.repetitions,
+      records: List.of(analyzer.repRecords),
+      hold: analyzer is PlankAnalyzer ? analyzer.summary : null,
+      startedAt: _startedAt,
+    );
+  }
+
+  void _toggleVoice() {
+    setState(() => _voiceOn = !_voiceOn);
+    if (!_voiceOn) _voice.stop();
+    widget.controller.preferences.setBool(_voicePreferenceKey, _voiceOn);
+  }
 
   /// Persists [result] as a one-set session; empty results are dropped.
   Future<void> _saveSession(_FormResult result) async {
@@ -460,10 +495,12 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     setState(() {
       _exercise = exercise;
       _analyzer = _analyzerFor(exercise);
-      _analysis = null;
+      _feedback = _feedbackFor(exercise);
       if (_startedAt != null) _startedAt = DateTime.now();
       _poseModel.clear();
+      _tracked = _setupDismissed = false;
     });
+    _voice.stop();
     if (result.amount == 0) return;
     try {
       await _saveSession(result);
@@ -502,14 +539,16 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     try {
       _analyzer.pauseTiming();
       final result = _snapshot();
-      if (result.records.isNotEmpty) {
+      _voice.stop();
+      if (result.records.isNotEmpty || (result.hold?.trackedMs ?? 0) >= 3000) {
         await showFSheet<void>(
           context: context,
           side: .btt,
           mainAxisMaxRatio: .infinity,
           builder: (_) => _FormReviewSheet(
-            exercise: result.exercise.label,
+            exercise: result.exercise,
             records: result.records,
+            hold: result.hold,
           ),
         );
         if (!mounted) return;
@@ -547,6 +586,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       _analyzer.pauseTiming();
+      _voice.stop();
       _serialized(_closeCamera);
     } else if (state == AppLifecycleState.resumed) {
       _resume();
@@ -593,6 +633,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     SystemChrome.setPreferredOrientations(const []);
     // Queued behind any in-flight open so that controller is released too.
     _cameraQueue.then((_) => _teardown());
+    _voice.stop();
     _poseModel.dispose();
     super.dispose();
   }
@@ -647,7 +688,8 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     if (camera == null || !camera.value.isInitialized) {
       return const Center(child: FCircularProgress.loader());
     }
-    final analysis = _analysis;
+    final analysis = _feedback.shown;
+    final cue = _feedback.cue;
     // Android streams unmirrored frames under a mirrored front preview;
     // camera_avfoundation mirrors the front buffers themselves (preview and
     // stream alike), so iOS landmarks already match the preview.
@@ -729,6 +771,13 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                         onPress: () =>
                             setState(() => _showTelemetry = !_showTelemetry),
                       ),
+                    _CamButton(
+                      icon: _voiceOn
+                          ? FLucideIcons.volume2
+                          : FLucideIcons.volumeOff,
+                      tooltip: _voiceOn ? 'Tắt giọng nói' : 'Bật giọng nói',
+                      onPress: _toggleVoice,
+                    ),
                     _CamButton(
                       icon: _paused ? FLucideIcons.play : FLucideIcons.pause,
                       tooltip: _paused ? 'Tiếp tục' : 'Tạm dừng',
@@ -840,12 +889,18 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          analysis?.cue ?? 'Đặt điện thoại để thấy toàn thân',
+                          cue.cue ?? 'Đặt điện thoại để thấy toàn thân',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Color(0xFF62E6A5),
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
+                          style: TextStyle(
+                            color: switch (cue.tone) {
+                              CueTone.warn => formWarningColor,
+                              CueTone.good => const Color(0xFF62E6A5),
+                              CueTone.info => Colors.white,
+                            },
+                            // Big enough to read from where the user
+                            // trains, metres from the phone.
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
@@ -853,6 +908,16 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                   ),
                 ),
               ),
+              if (!_tracked && !_setupDismissed && !_paused)
+                Positioned(
+                  left: 20,
+                  right: 20,
+                  top: 72,
+                  child: _SetupGuide(
+                    exercise: _exercise,
+                    onDismiss: () => setState(() => _setupDismissed = true),
+                  ),
+                ),
               if (_paused)
                 const Center(
                   child: Text(
@@ -930,6 +995,96 @@ class _PermissionView extends StatelessWidget {
   );
 }
 
+/// Camera placement for each exercise. The analyzers read joint angles in
+/// 2D, so the angle to the camera decides whether reps count at all.
+class _SetupGuide extends StatelessWidget {
+  const _SetupGuide({required this.exercise, required this.onDismiss});
+
+  final FormExercise exercise;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final tips = switch (exercise) {
+      FormExercise.squat => const [
+        (FLucideIcons.smartphone, 'Đặt điện thoại ngang hông, cách 2–3 m'),
+        (FLucideIcons.personStanding, 'Đứng nghiêng người về phía camera'),
+        (FLucideIcons.scanEye, 'Thấy trọn người từ đầu đến chân'),
+      ],
+      FormExercise.pushup || FormExercise.plank => [
+        (FLucideIcons.smartphone, 'Đặt điện thoại sát sàn, cách 2–3 m'),
+        (
+          FLucideIcons.personStanding,
+          exercise == FormExercise.plank
+              ? 'Nằm ngang khung hình, khuỷu tay dưới vai'
+              : 'Nằm ngang khung hình, nghiêng về phía camera',
+        ),
+        (FLucideIcons.scanEye, 'Thấy trọn người từ đầu đến chân'),
+      ],
+    };
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xE6151515),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 4, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Đặt camera cho ${exercise.label}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                _CamButton(
+                  icon: FLucideIcons.x,
+                  tooltip: 'Ẩn hướng dẫn',
+                  onPress: onDismiss,
+                ),
+              ],
+            ),
+            for (final (icon, text) in tips)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, right: 12),
+                child: Row(
+                  children: [
+                    Icon(icon, color: const Color(0xFF62E6A5), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        text,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const Padding(
+              padding: EdgeInsets.only(top: 10, right: 12),
+              child: Text(
+                'Tự ẩn khi đã nhận diện được bạn.',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 String _faultLabel(String code) => switch (code) {
   'shallowDepth' => 'Shallow depth',
   'kneeValgus' => 'Knees caved in',
@@ -937,16 +1092,25 @@ String _faultLabel(String code) => switch (code) {
   'heelsUp' => 'Heels lifted',
   'asymmetry' => 'Uneven sides',
   'fastEccentric' => 'Dropped too fast',
+  'hipSag' => 'Hips sagging',
+  'hipPike' => 'Hips too high',
   _ => code,
 };
 
-/// Post-set review: per-rep telemetry plus an optional AI coach verdict
-/// (gpt-6-luna on the recorded [RepRecord]s).
-class _FormReviewSheet extends StatefulWidget {
-  const _FormReviewSheet({required this.exercise, required this.records});
+String _seconds(int ms) => '${(ms / 1000).round()}s';
 
-  final String exercise;
+/// Post-set review: per-rep telemetry (or a plank's hold breakdown) plus
+/// an optional AI coach verdict (gpt-6-luna on the same telemetry).
+class _FormReviewSheet extends StatefulWidget {
+  const _FormReviewSheet({
+    required this.exercise,
+    required this.records,
+    this.hold,
+  });
+
+  final FormExercise exercise;
   final List<RepRecord> records;
+  final HoldSummary? hold;
 
   @override
   State<_FormReviewSheet> createState() => _FormReviewSheetState();
@@ -965,8 +1129,9 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
       final json = await _service.generateJson(
         system: AiFormReviewPrompt.system,
         user: AiFormReviewPrompt.user(
-          exercise: widget.exercise,
+          exercise: widget.exercise.label,
           reps: widget.records,
+          hold: widget.hold?.toJson(),
         ),
         schema: AiFormReviewPrompt.schema,
         schemaName: 'form_review',
@@ -992,8 +1157,59 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
     }
   }
 
+  Widget _faults(Iterable<String> labels) => Wrap(
+    spacing: 6,
+    runSpacing: 4,
+    children: [
+      for (final label in labels)
+        FBadge(variant: .destructive, child: Text(label)),
+    ],
+  );
+
+  List<Widget> _holdBody(BuildContext context, HoldSummary hold) => [
+    Text(
+      '${_seconds(hold.goodMs)} in good form',
+      style: Theme.of(context).textTheme.titleSmall,
+    ),
+    const SizedBox(height: AppSpacing.xs),
+    if (hold.sagMs < 1000 && hold.pikeMs < 1000)
+      Text('Clean hold', style: Theme.of(context).textTheme.bodySmall)
+    else
+      _faults([
+        if (hold.sagMs >= 1000)
+          '${_faultLabel('hipSag')} · ${_seconds(hold.sagMs)}',
+        if (hold.pikeMs >= 1000)
+          '${_faultLabel('hipPike')} · ${_seconds(hold.pikeMs)}',
+      ]),
+    const SizedBox(height: AppSpacing.sm),
+  ];
+
+  Widget _rep(BuildContext context, RepRecord rep) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            [
+              'Rep ${rep.number}',
+              if (rep.minKneeAngle case final angle?) '${angle.round()}° depth',
+              if (rep.descentMs > 0) '↓${rep.descentMs}ms ↑${rep.ascentMs}ms',
+            ].join(' · '),
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          if (rep.faults.isEmpty)
+            Text('Clean rep', style: Theme.of(context).textTheme.bodySmall)
+          else
+            _faults(rep.faults.map(_faultLabel)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final hold = widget.hold;
     final clean = widget.records.where((rep) => rep.faults.isEmpty).length;
     return SafeArea(
       child: Padding(
@@ -1010,48 +1226,23 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      '${widget.exercise} — form review',
+                      '${widget.exercise.label} — form review',
                       style: Theme.of(context).textTheme.titleLarge
                           ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  Text('$clean/${widget.records.length} clean reps'),
+                  Text(
+                    hold != null
+                        ? '${_seconds(hold.goodMs)}/${_seconds(hold.trackedMs)} good'
+                        : '$clean/${widget.records.length} clean reps',
+                  ),
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
-              ...widget.records.map(
-                (rep) => Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Rep ${rep.number} · ${rep.minKneeAngle.round()}°'
-                        ' depth'
-                        '${rep.descentMs > 0 ? ' · ↓${rep.descentMs}ms ↑${rep.ascentMs}ms' : ''}',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      if (rep.faults.isEmpty)
-                        Text(
-                          'Clean rep',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        )
-                      else
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          children: [
-                            for (final fault in rep.faults)
-                              FBadge(
-                                variant: .destructive,
-                                child: Text(_faultLabel(fault)),
-                              ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
-              ),
+              if (hold != null)
+                ..._holdBody(context, hold)
+              else
+                ...widget.records.map((rep) => _rep(context, rep)),
               if (OpenAiService.configured) ...[
                 const SizedBox(height: AppSpacing.sm),
                 if (_summary == null)
