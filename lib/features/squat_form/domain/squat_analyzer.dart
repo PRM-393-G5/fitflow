@@ -93,6 +93,14 @@ double angleDegrees(SquatPoint a, SquatPoint vertex, SquatPoint c) {
   return math.acos(cosine) * 180 / math.pi;
 }
 
+/// Smoothing weight for a frame [dtUs] after the previous one: a 180 ms
+/// time constant, so smoothing behaves the same at any frame rate.
+double smoothingAlpha(int dtUs) => 1 - math.exp(-dtUs / 180000);
+
+/// Every point inside the frame vertically.
+bool allInFrame(Iterable<SquatPoint> points) =>
+    points.every((point) => point.y >= 0 && point.y <= 1);
+
 double pointDistance(SquatPoint a, SquatPoint b) =>
     math.sqrt(math.pow(a.x - b.x, 2) + math.pow(a.y - b.y, 2));
 
@@ -197,7 +205,9 @@ const faultTips = {
   final fault = last.faults.firstOrNull;
   if (fault == null) return (cue: 'Rep chuẩn!', tone: CueTone.good, tip: null);
   final tip = faultTips[fault] ?? fault;
-  return (cue: 'Rep sau: $tip', tone: CueTone.warn, tip: tip);
+  // Info, not warn: the tip is said once with the count, and must not hold
+  // off a real warning on the next rep (see CueStabilizer).
+  return (cue: 'Rep sau: $tip', tone: CueTone.info, tip: tip);
 }
 
 abstract interface class RepAnalyzer {
@@ -252,10 +262,17 @@ class SquatAnalyzer implements RepAnalyzer {
   int? _repAscentUs;
   double? _otherKnee;
 
-  /// Whether [_otherKnee] was measured this frame. A one-frame flicker of
-  /// the far leg keeps its smoothing, so it never restarts from a raw
-  /// angle against this leg's lagging smoothed one.
-  bool _otherKneeSeen = false;
+  /// Consecutive frames the far leg was measured / missed. A flicker of a
+  /// frame or two keeps its smoothing; a longer loss restarts it, and it is
+  /// only compared once it has caught up — never a raw or stale angle
+  /// against this leg's smoothed one.
+  int _otherKneeSeenFrames = 0;
+  int _otherKneeMissedFrames = 0;
+  static const _otherKneeSettleFrames = 5;
+
+  /// False once a pause interrupts the rep in progress: its timing would
+  /// include the pause.
+  bool _repTimed = false;
   double _repMinKnee = 180;
   SquatJoint? _heelJoint;
   double? _heelY;
@@ -306,7 +323,10 @@ class SquatAnalyzer implements RepAnalyzer {
   }
 
   @override
-  void pauseTiming() => _lastTimestampUs = null;
+  void pauseTiming() {
+    _lastTimestampUs = _lastStandingUs = null;
+    _repTimed = false;
+  }
 
   @override
   SquatAnalysis analyze(
@@ -343,7 +363,7 @@ class SquatAnalyzer implements RepAnalyzer {
     _lastTimestampUs = timestampUs;
     final alpha = timestampUs == null || previousUs == null
         ? smoothingFactor
-        : 1 - math.exp(-(timestampUs - previousUs) / 180000);
+        : smoothingAlpha(timestampUs - previousUs);
     _knee = _smooth(_knee, angleDegrees(hip, knee, ankle), alpha);
     _hip = _smooth(_hip, angleDegrees(shoulder, hip, knee), alpha);
     _trunk = _smooth(
@@ -367,8 +387,14 @@ class SquatAnalyzer implements RepAnalyzer {
       _standingSpan = _smooth(_standingSpan, (ankle.y - shoulder.y).abs(), .2);
     }
     final otherRaw = _otherKneeAngle(points, side);
-    _otherKneeSeen = otherRaw != null;
-    if (otherRaw != null) _otherKnee = _smooth(_otherKnee, otherRaw, alpha);
+    if (otherRaw != null) {
+      _otherKneeSeenFrames++;
+      _otherKneeMissedFrames = 0;
+      _otherKnee = _smooth(_otherKnee, otherRaw, alpha);
+    } else {
+      _otherKneeSeenFrames = 0;
+      if (++_otherKneeMissedFrames > 2) _otherKnee = null;
+    }
     _trackHeel(points, side, alpha);
     // Judged only while bending: standing in a wide stance the knees sit
     // inside the ankles without caving.
@@ -556,13 +582,14 @@ class SquatAnalyzer implements RepAnalyzer {
     Map<SquatJoint, SquatPoint> points,
     (SquatJoint, SquatJoint, SquatJoint, SquatJoint, SquatJoint) side,
   ) {
-    final ys = [
+    final joints = [
       side.$1,
       side.$2,
       side.$3,
       side.$4,
-    ].map((joint) => points[joint]!.y).toList();
-    if (!ys.every((value) => value >= 0 && value <= 1)) return false;
+    ].map((joint) => points[joint]!).toList();
+    if (!allInFrame(joints)) return false;
+    final ys = [for (final joint in joints) joint.y];
     // Acquire only with the whole body standing tall in frame. Once
     // tracking, the body legitimately shrinks at the bottom of a squat, so
     // accept down to a fraction of the calibrated standing height.
@@ -590,6 +617,7 @@ class SquatAnalyzer implements RepAnalyzer {
       // From the last frame seen standing: with sparse frames the rep can
       // appear straight at the bottom, which must read as slow, not 0 ms.
       _repStartUs = _lastStandingUs ?? timestampUs;
+      _repTimed = true;
       _repMinKnee = _knee!;
       _repHeelBaseY = _heelY;
       _repHeelRiseFrames = 0;
@@ -605,7 +633,9 @@ class SquatAnalyzer implements RepAnalyzer {
     // Both legs smoothed alike, so neither lags the other on a fast
     // descent. Only judged side-on (hips overlapping): from an angle the
     // two legs are foreshortened differently and always read as uneven.
-    final otherKnee = _otherKneeSeen ? _otherKnee : null;
+    final otherKnee = _otherKneeSeenFrames >= _otherKneeSettleFrames
+        ? _otherKnee
+        : null;
     if (otherKnee != null && (hipWidth == null || hipWidth < _sideOnHipWidth)) {
       _repAsymmetryJudged++;
       if ((_knee! - otherKnee).abs() > 15) {
@@ -634,7 +664,10 @@ class SquatAnalyzer implements RepAnalyzer {
     final ascentUs = _repAscentUs;
     final bottomUs = _repBottomUs ?? ascentUs;
     final hasTiming =
-        timestampUs != null && ascentUs != null && bottomUs != null;
+        _repTimed &&
+        timestampUs != null &&
+        ascentUs != null &&
+        bottomUs != null;
     // Descent ends on reaching the bottom, so a pause there isn't
     // mistaken for a slow, controlled lowering.
     final descentMs = hasTiming ? (bottomUs - _repStartUs!) ~/ 1000 : 0;

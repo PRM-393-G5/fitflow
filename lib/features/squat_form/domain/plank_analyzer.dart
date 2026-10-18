@@ -32,10 +32,6 @@ class PlankAnalyzer implements RepAnalyzer {
 
   final double minimumConfidence;
 
-  /// Smoothing time constant for the hip offset, so one jittery landmark
-  /// can't flash a bad score or cost hold time.
-  static const _smoothingUs = 180000;
-
   /// Longest frame-to-frame gap credited as hold time. Larger gaps (pause,
   /// camera switch, app background) are skipped instead of counted.
   final int maxFrameGapUs;
@@ -94,10 +90,9 @@ class PlankAnalyzer implements RepAnalyzer {
     final rawOffset = side == null ? null : _hipOffset(points, side);
     if (side == null || rawOffset == null) {
       _lastTimestampUs = timestampUs;
+      final inFrame = side != null && _inFrame(points, side);
       final headOn =
-          side != null &&
-          _inFrame(points, side) &&
-          proneHeadOn(points, minimumConfidence: minimumConfidence);
+          inFrame && proneHeadOn(points, minimumConfidence: minimumConfidence);
       // Keep the accumulated hold: a dropped frame must not flash 0.
       return SquatAnalysis(
         phase: SquatPhase.findingBody,
@@ -105,7 +100,7 @@ class PlankAnalyzer implements RepAnalyzer {
         score: 0,
         cue: headOn
             ? 'Xoay người nằm ngang so với camera'
-            : side == null || !_inFrame(points, side)
+            : !inFrame
             ? 'Lùi ra để thấy toàn thân'
             : 'Vào tư thế plank để bắt đầu',
         // Lying on the floor the user can't read the screen: say it.
@@ -138,9 +133,10 @@ class PlankAnalyzer implements RepAnalyzer {
         ? rawOffset
         : previousUs == null || timestampUs == null
         ? (previous + rawOffset) / 2
+        // Smoothed so one jittery landmark can't flash a bad score or cost
+        // hold time.
         : previous +
-              (1 - math.exp(-(timestampUs - previousUs) / _smoothingUs)) *
-                  (rawOffset - previous);
+              smoothingAlpha(timestampUs - previousUs) * (rawOffset - previous);
     final score = (100 - offset.abs() * 200).round().clamp(0, 100);
     final good = score >= 70;
     final sagging = offset > _hipTolerance;
@@ -218,11 +214,7 @@ class PlankAnalyzer implements RepAnalyzer {
   bool _inFrame(
     Map<SquatJoint, SquatPoint> points,
     (SquatJoint, SquatJoint, SquatJoint) side,
-  ) => [
-    side.$1,
-    side.$2,
-    side.$3,
-  ].every((joint) => points[joint]!.y >= 0 && points[joint]!.y <= 1);
+  ) => allInFrame([points[side.$1]!, points[side.$2]!, points[side.$3]!]);
 
   (SquatJoint, SquatJoint, SquatJoint)? _bestSide(
     Map<SquatJoint, SquatPoint> points,

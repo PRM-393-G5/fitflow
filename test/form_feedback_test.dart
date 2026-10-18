@@ -52,6 +52,29 @@ void main() {
       expect(feedback.cue.cue, 'Hạ ngực thấp hơn');
     });
 
+    test('a warning fixed while still held on screen is not said', () {
+      final feedback = LiveFeedback(timed: false);
+      SquatAnalysis at(String cue, CueTone tone) => SquatAnalysis(
+        phase: SquatPhase.standing,
+        repetitions: 1,
+        score: 100,
+        cue: cue,
+        tone: tone,
+        bodyVisible: true,
+      );
+      // The count is said; the warning half a second later must wait.
+      feedback.update(at('Rep chuẩn!', CueTone.good), 0);
+      expect(
+        feedback.update(at('Đừng để hông xệ', CueTone.warn), 500000).say,
+        isNull,
+      );
+      // Fixed at once, but the stabilizer still shows the warning.
+      final good = at('Tốt lắm, giữ nguyên', CueTone.good);
+      for (final us in [1600000, 1700000]) {
+        expect(feedback.update(good, us).say, isNull);
+      }
+    });
+
     test('shows the loss once the analyzer gives up the rep', () {
       final feedback = LiveFeedback(timed: false);
       feedback.update(analysis(visible: true), 0);
@@ -91,49 +114,10 @@ void main() {
           coach,
           count: 2,
           cue: 'Rep sau: xuống sâu hơn',
-          tone: CueTone.warn,
           tip: 'xuống sâu hơn',
           atMs: 3000,
         ),
         '2. xuống sâu hơn',
-      );
-      // The tip was just said with the count; the cue isn't repeated.
-      expect(
-        say(
-          coach,
-          count: 2,
-          cue: 'Rep sau: xuống sâu hơn',
-          tone: CueTone.warn,
-          atMs: 5000,
-        ),
-        isNull,
-      );
-    });
-
-    test('a tip said with the count is not repeated once it shows', () {
-      final coach = FormVoiceCoach();
-      // An earlier warning is still held on screen when the rep counts.
-      expect(
-        coach.next(
-          count: 1,
-          timed: false,
-          cue: 'Hạ người chậm hơn',
-          tone: CueTone.warn,
-          tip: 'hạ người chậm hơn',
-          analysisCue: 'Rep sau: hạ người chậm hơn',
-          nowUs: 0,
-        ),
-        '1. hạ người chậm hơn',
-      );
-      expect(
-        say(
-          coach,
-          count: 1,
-          cue: 'Rep sau: hạ người chậm hơn',
-          tone: CueTone.warn,
-          atMs: 2000,
-        ),
-        isNull,
       );
     });
 
@@ -143,19 +127,44 @@ void main() {
         say(coach, count: 1, tip: 'giữ gót chạm sàn', atMs: 0),
         '1. giữ gót chạm sàn',
       );
+      // Tips are info-toned (see betweenRepsCue), so never re-said alone.
+      final tip = betweenRepsCue(
+        const RepRecord(
+          number: 1,
+          descentMs: 0,
+          ascentMs: 0,
+          faults: ['heelsUp'],
+        ),
+      );
+      expect(tip.tone, isNot(CueTone.warn));
       for (final atMs in [7000, 14000, 21000]) {
         expect(
           say(
             coach,
             count: 1,
-            cue: 'Rep sau: giữ gót chạm sàn',
-            tone: CueTone.warn,
-            tip: 'giữ gót chạm sàn',
+            cue: tip.cue,
+            tone: tip.tone,
+            tip: tip.tip,
             atMs: atMs,
           ),
           isNull,
         );
       }
+    });
+
+    test('a real warning while resting after a faulty rep is said', () {
+      final coach = FormVoiceCoach();
+      say(coach, count: 1, tip: 'siết bụng, giữ hông thẳng', atMs: 0);
+      expect(
+        say(
+          coach,
+          count: 1,
+          cue: 'Đừng để hông xệ',
+          tone: CueTone.warn,
+          atMs: 2000,
+        ),
+        'Đừng để hông xệ',
+      );
     });
 
     test('says a warning once, then waits before repeating it', () {

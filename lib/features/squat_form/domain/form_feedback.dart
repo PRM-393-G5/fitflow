@@ -46,46 +46,39 @@ class FormVoiceCoach {
 
   /// The utterance for this frame, or null. [cue] and [tone] are the cue
   /// on screen (after [CueStabilizer]), [tip] the analysis' `nextRepTip`.
-  /// [analysisCue] is the analyzer's own cue, which the stabilizer may not
-  /// show yet: a count that carries the tip covers it too.
+  /// The tip's own between-reps cue is info-toned, so it is only ever said
+  /// here, with the count.
   String? next({
     required int count,
     required bool timed,
     required String cue,
     required CueTone tone,
     String? tip,
-    String? analysisCue,
     required int nowUs,
   }) {
     final previous = _count;
     _count = count;
     if (count > previous) {
       if (!timed) {
-        if (analysisCue != null) _lastByText[analysisCue] = nowUs;
-        return _say(tip == null ? '$count' : '$count. $tip', cue, nowUs);
+        return _say(tip == null ? '$count' : '$count. $tip', nowUs);
       }
-      if (previous == 0) return _say('Bắt đầu tính giờ', cue, nowUs);
+      if (previous == 0) return _say('Bắt đầu tính giờ', nowUs);
       if (count ~/ 10 > previous ~/ 10) {
-        return _say('${count ~/ 10 * 10} giây', cue, nowUs);
+        return _say('${count ~/ 10 * 10} giây', nowUs);
       }
     }
-    // A next-rep tip is said once, with the count — not again while the
-    // user rests at the top.
-    if (tone != CueTone.warn || tip != null) return null;
+    if (tone != CueTone.warn) return null;
     final lastUs = _lastUs;
     if (lastUs != null && nowUs - lastUs < minGapUs) return null;
     final saidUs = _lastByText[cue];
     if (saidUs != null && nowUs - saidUs < repeatGapUs) return null;
-    return _say(cue, cue, nowUs);
+    return _say(cue, nowUs);
   }
 
-  String _say(String text, String cue, int nowUs) {
+  String _say(String text, int nowUs) {
     _lastUs = nowUs;
     // Only entries within the repeat gap are ever read.
     _lastByText.removeWhere((_, saidUs) => nowUs - saidUs >= repeatGapUs);
-    // What was on screen counts as said: a count that already carried the
-    // tip must not be followed by the same tip again.
-    _lastByText[cue] = nowUs;
     _lastByText[text] = nowUs;
     return text;
   }
@@ -133,9 +126,10 @@ class LiveFeedback {
       count: analysis.repetitions,
       timed: timed,
       cue: cue.cue!,
-      tone: cue.tone,
+      // A warning still held on screen after the analyzer cleared it is
+      // not said: the user already fixed it.
+      tone: analysis.cue == cue.cue ? cue.tone : CueTone.info,
       tip: analysis.nextRepTip,
-      analysisCue: analysis.cue,
       nowUs: nowUs,
     );
     final changed =

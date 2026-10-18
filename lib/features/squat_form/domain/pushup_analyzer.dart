@@ -56,6 +56,7 @@ class PushupAnalyzer implements RepAnalyzer {
   int _repFrames = 0;
   int _repSagFrames = 0;
   int _repPikeFrames = 0;
+  bool _repTimed = false;
 
   @override
   int get repetitions => _repetitions;
@@ -80,7 +81,11 @@ class PushupAnalyzer implements RepAnalyzer {
   }
 
   @override
-  void pauseTiming() => _lastTimestampUs = null;
+  void pauseTiming() {
+    _lastTimestampUs = null;
+    // The rep in progress would count the pause as descent time.
+    _repTimed = false;
+  }
 
   @override
   SquatAnalysis analyze(
@@ -130,7 +135,7 @@ class PushupAnalyzer implements RepAnalyzer {
     _lastTimestampUs = timestampUs;
     final alpha = timestampUs == null || previousUs == null
         ? smoothingFactor
-        : 1 - math.exp(-(timestampUs - previousUs) / 180000);
+        : smoothingAlpha(timestampUs - previousUs);
     _elbow = _smooth(_elbow, angleDegrees(shoulder, elbow, wrist), alpha);
     _height = _smooth(_height, wrist.y - shoulder.y, alpha);
     final topHeight = _topHeight;
@@ -228,7 +233,10 @@ class PushupAnalyzer implements RepAnalyzer {
         _phase == SquatPhase.bottom ||
         _phase == SquatPhase.ascending;
     if (!inRep) return;
-    _repStartUs ??= timestampUs ?? 0;
+    if (_repStartUs == null) {
+      _repStartUs = timestampUs ?? 0;
+      _repTimed = true;
+    }
     _repFrames++;
     if (sagging) _repSagFrames++;
     if (piking) _repPikeFrames++;
@@ -240,6 +248,7 @@ class PushupAnalyzer implements RepAnalyzer {
     if (_repFrames == 0) return;
     final start = _repStartUs, bottom = _repBottomUs, ascent = _repAscentUs;
     final hasTiming =
+        _repTimed &&
         timestampUs != null &&
         start != null &&
         bottom != null &&
@@ -370,11 +379,7 @@ class PushupAnalyzer implements RepAnalyzer {
     final shoulder = points[side.$1]!;
     final elbow = points[side.$2]!;
     final wrist = points[side.$3]!;
-    final inFrame = [
-      shoulder,
-      elbow,
-      wrist,
-    ].every((point) => point.y >= 0 && point.y <= 1);
+    final inFrame = allInFrame([shoulder, elbow, wrist]);
     // Upper arm plus forearm: the shoulder-wrist distance shrinks as the
     // elbow bends and would read as "arm too small" at every bottom.
     final armLength =

@@ -399,6 +399,25 @@ void main() {
     });
   });
 
+  test('a pause mid-rep is not counted as descent time', () {
+    final analyzer = SquatAnalyzer(transitionFrames: 2);
+    final feed = _Feeder(analyzer);
+    Map<SquatJoint, SquatPoint> pose(double kneeX) => {
+      SquatJoint.leftShoulder: const SquatPoint(.4, .1),
+      SquatJoint.leftHip: const SquatPoint(.4, .45),
+      SquatJoint.leftKnee: SquatPoint(kneeX, .7),
+      SquatJoint.leftAnkle: const SquatPoint(.4, .9),
+    };
+    feed(pose(.4), 3);
+    feed(pose(.5), 2); // descending
+    analyzer.pauseTiming(); // paused mid-descent
+    feed(pose(.65), 3);
+    feed(pose(.5), 2);
+    feed(pose(.4), 3);
+    expect(analyzer.repRecords.single.descentMs, 0);
+    expect(analyzer.repRecords.single.faults, isNot(contains('fastEccentric')));
+  });
+
   test('live cue, label and review share one depth threshold', () {
     expect(squatCountDepthDegrees, greaterThanOrEqualTo(squatGoodDepthDegrees));
     final analyzer = SquatAnalyzer(transitionFrames: 2);
