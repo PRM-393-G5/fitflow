@@ -423,7 +423,9 @@ class SquatAnalyzer implements RepAnalyzer {
     final heelsUp = _repHeelRiseFrames >= heelRiseFrames;
     final uneven = _asymmetryStreak >= _asymmetryCueFrames;
     final bottomUs = _repBottomUs;
+    // Same timing rules as the rep's fastEccentric fault (see _closeRep).
     final fastRep =
+        _repTimed &&
         (_phase == SquatPhase.bottom || _phase == SquatPhase.ascending) &&
         bottomUs != null &&
         _repStartUs != null &&

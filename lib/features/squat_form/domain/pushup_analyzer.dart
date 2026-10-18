@@ -246,7 +246,10 @@ class PushupAnalyzer implements RepAnalyzer {
 
   void _closeRep(int? timestampUs) {
     if (_repFrames == 0) return;
-    final start = _repStartUs, bottom = _repBottomUs, ascent = _repAscentUs;
+    // Sparse frames can jump from bottom straight back to the top: the
+    // descent is still known, the ascent then reads as 0.
+    final start = _repStartUs, bottom = _repBottomUs;
+    final ascent = _repAscentUs ?? timestampUs;
     final hasTiming =
         _repTimed &&
         timestampUs != null &&
