@@ -624,18 +624,33 @@ void main() {
     });
 
     test('hands above the top of the frame while holding overhead', () {
-      // Framed tight: locked-out hands leave the frame for the 0.8 s hold.
+      // Framed tight: locked-out hands leave the frame for the 0.8 s hold,
+      // one a moment before the other, at normal and quick tempo.
       const tight = SimCamera(
         azimuthDeg: 0,
         scale: .75,
         floorY: 1.5,
         distanceM: 2,
       );
-      for (final frames in sets(
-        ShoulderPressMovement(pauseS: .8),
-        camera: tight,
-      )) {
-        expect(replay(ShoulderPressAnalyzer(), frames).count, 5);
+      for (final movement in [
+        ShoulderPressMovement(pauseS: .8, rightShortfall: .05),
+        ShoulderPressMovement(pauseS: .8, pressS: .4, rightShortfall: .05),
+      ]) {
+        for (final frames in sets(movement, camera: tight)) {
+          final run = replay(ShoulderPressAnalyzer(), frames);
+          expect(run.count, 5);
+          // Lockout happened out of view: not judged, so not a fault.
+          expect(run.faults, isEmpty);
+          // Still facing the camera: no "turn" warning, press wording.
+          expect(
+            spoken(ShoulderPressAnalyzer(), frames),
+            isNot(contains('Quay mặt về phía camera')),
+          );
+          expect(
+            run.outputs.map((o) => o.phaseLabel),
+            isNot(contains('Đủ sâu')),
+          );
+        }
       }
     });
 
@@ -655,6 +670,7 @@ void main() {
       for (final frames in sets(movement)) {
         final record = replay(ShoulderPressAnalyzer(), frames).records.single;
         expect(record.faults, containsAll(['partialRange', 'noLockout']));
+        expect(record.descentMs, greaterThan(0));
       }
     });
 

@@ -297,6 +297,7 @@ class SquatAnalyzer implements RepAnalyzer {
   int _valgusStreak = 0;
   double? _viewRatio;
   double? _hipGap;
+  int _hipGapMissed = 0;
   int _turnedStreak = 0;
   static const _turnedCueFrames = 5;
 
@@ -421,11 +422,19 @@ class SquatAnalyzer implements RepAnalyzer {
     // out instead of reading as hips apart.
     final leftHip = _reliable(points, SquatJoint.leftHip);
     final rightHip = _reliable(points, SquatJoint.rightHip);
-    _hipGap = leftHip == null || rightHip == null
-        ? null
-        : _smooth(_hipGap, leftHip.x - rightHip.x, alpha);
+    if (leftHip != null && rightHip != null) {
+      _hipGapMissed = 0;
+      _hipGap = _smooth(_hipGap, leftHip.x - rightHip.x, alpha);
+    } else if (++_hipGapMissed > 3) {
+      // A flicker of the far hip keeps the smoothing; a real loss (hips
+      // overlapping side-on, one hidden) drops it.
+      _hipGap = null;
+    }
     final hipGap = _hipGap;
-    final legsSideOn = hipGap == null || hipGap.abs() < _sideOnHipWidth;
+    final legsSideOn =
+        hipGap == null ||
+        hipGap.abs() / math.max(pointDistance(shoulder, hip), 1e-6) <
+            _sideOnHipRatio;
     final kneeTrackingOk = !bending || _kneeTracking(points, hipWidth);
     _valgusStreak = kneeTrackingOk ? 0 : _valgusStreak + 1;
     // The rep's fault share counts every frame; the live cue waits for a
@@ -805,11 +814,12 @@ class SquatAnalyzer implements RepAnalyzer {
   /// enough to judge knee valgus.
   static const _minHipWidth = 0.04;
 
-  /// Hips closer than this mean the camera is squarely side-on (within
-  /// ~10°): only then are both legs, each turned out with its toes, seen
-  /// from a similar enough angle to compare their knees. At 15° off they
-  /// already read uneven on a symmetric squat.
-  static const _sideOnHipWidth = 0.015;
+  /// Smoothed hip gap over torso length below which the camera is squarely
+  /// side-on (within ~10°: facing reads ~0.4): only then are both legs,
+  /// each turned out with its toes, seen from a similar enough angle to
+  /// compare their knees — at 15° off they already read uneven on a
+  /// symmetric squat. Relative to the torso, so distance doesn't matter.
+  static const _sideOnHipRatio = 0.07;
 
   /// On-screen distance between confident hips, or null.
   double? _hipWidth(Map<SquatJoint, SquatPoint> points) {

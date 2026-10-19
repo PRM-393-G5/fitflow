@@ -37,9 +37,12 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
   static const _rackLiftBent = 0.72;
   static const _rackElbowDegrees = 110.0;
 
-  /// A press reaching at least this lift without getting overhead was a
-  /// real attempt that stopped short (around the forehead).
+  /// A press reaching at least this lift, with the elbow opened past
+  /// [_attemptElbowDegrees], without getting overhead was a real attempt
+  /// that stopped short (around the forehead). The elbow rule keeps a rack
+  /// misread from an angle (lift ~0.7, elbow ~115°) from counting.
   static const _attemptLift = 0.68;
+  static const _attemptElbowDegrees = 120.0;
 
   /// Lift at or above which the press is overhead: ~1.0 locked out, ~0.93
   /// even with the elbows still bent to 140°.
@@ -94,6 +97,9 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
   /// Pressed again before reaching the shoulders: a partial range rep.
   bool _repShortLower = false;
   double _repMaxLift = 0;
+  double _repMaxElbow = 0;
+  double _repLowestLift = double.infinity;
+  int? _repLowestUs;
 
   /// The last press turned back before getting overhead; cleared when the
   /// next press starts.
@@ -103,7 +109,21 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
   /// of the frame from a lost detection.
   double? _wristY;
   double? _shoulderRatio;
-  static const _frameTopMargin = 0.12;
+
+  /// Wrists last seen this close to the top of the frame, while pressing
+  /// or overhead, went out of the top rather than being lost.
+  static const _frameTopMargin = 0.3;
+
+  /// ...and already lifting off the shoulders (the rack reads ~0.47).
+  static const _exitLift = 0.55;
+  double? _lastLift;
+
+  /// The hands left the frame during this rep: its lockout went unseen, so
+  /// it isn't judged.
+  bool _repOutOfFrame = false;
+
+  /// The arms are currently out over the top of the frame.
+  bool _outOverTop = false;
 
   @override
   int get repetitions => _repetitions;
@@ -152,17 +172,38 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
       SquatJoint.rightElbow,
       SquatJoint.rightWrist,
     );
-    // Side-on, the detector usually loses confidence in the hidden arm
-    // altogether, so one arm seen alone reads as side-on too.
-    final sideOn =
-        _sideOn(points, left ?? right) || (left == null) != (right == null);
+    // Side-on, the detector loses confidence in the hidden arm altogether,
+    // shoulder included, so one arm seen alone reads as side-on too. A
+    // hand merely out of the top of the frame keeps its shoulder.
+    final hiddenShoulder =
+        points[left == null
+            ? SquatJoint.leftShoulder
+            : SquatJoint.rightShoulder];
+    final oneArmHidden =
+        (left == null) != (right == null) &&
+        (hiddenShoulder == null ||
+            hiddenShoulder.confidence < minimumConfidence);
+    final sideOn = _sideOn(points, left ?? right) || oneArmHidden;
     if (left == null || right == null || sideOn) {
       // Hands pressed up out of the top of the frame stay out for the
-      // whole lockout pause: ride that out much longer than a glitch.
+      // whole lockout pause: ride that out much longer than a glitch. A
+      // quick press can leave before the phase even turns to pressing.
+      // The shoulders must still be there: a lost pose is a glitch, and
+      // a side-on user should hear about it, not be waited out.
+      final shouldersSeen = [
+        points[SquatJoint.leftShoulder],
+        points[SquatJoint.rightShoulder],
+      ].every((p) => p != null && p.confidence >= minimumConfidence);
       final exitedTop =
-          (_phase == SquatPhase.bottom || _phase == SquatPhase.descending) &&
-          (_wristY ?? 1) < _frameTopMargin;
-      final limit = _phase == SquatPhase.bottom || exitedTop
+          !sideOn &&
+          shouldersSeen &&
+          _phase != SquatPhase.findingBody &&
+          (_wristY ?? 1) < _frameTopMargin &&
+          (_lastLift ?? 0) >= _exitLift;
+      if (exitedTop) _repOutOfFrame = _outOverTop = true;
+      // Sticky until the arms are back: a dropped frame while the hands
+      // are out mustn't fall back to the short limit.
+      final limit = _phase == SquatPhase.bottom || _outOverTop
           ? dropoutFrames * 6
           : dropoutFrames;
       if (++_missingFrames > limit) {
@@ -170,7 +211,8 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
         _candidate = null;
         _candidateFrames = 0;
         _reachedTop = false;
-        _leftLift = _rightLift = _elbow = _wristY = null;
+        _leftLift = _rightLift = _elbow = _wristY = _lastLift = null;
+        _outOverTop = false;
         _unevenStreak = 0;
         _shortPress = false;
         _clearRep();
@@ -183,10 +225,14 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
         // Side-on reps never count: worth saying, not just showing.
         tone: sideOn ? CueTone.warn : CueTone.info,
         bodyVisible: false,
+        label: _label(null),
       );
     }
     _missingFrames = 0;
+    final backFromTop = _outOverTop;
+    _outOverTop = false;
     _wristY = math.min(left.wristY, right.wristY);
+    _lastLift = (left.lift + right.lift) / 2;
 
     final previousUs = _lastTimestampUs;
     _lastTimestampUs = timestampUs;
@@ -217,11 +263,18 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
       _repShortLower = true;
       _repLocked = false;
       _repLockFrames = _repFrames = _repUnevenFrames = 0;
-      _repStartUs = timestampUs;
-      _repTopUs = _repLowerUs = null;
+      _repOutOfFrame = false;
+      // This press started at the lowest point of the partial lowering.
+      _repStartUs = _repLowestUs ?? timestampUs;
+      _repTopUs = _repLowerUs = _repLowestUs = null;
+      _repLowestLift = double.infinity;
     }
 
+    // Only mid-rep: getting set, one hand can be up before the other.
     final uneven =
+        (_phase == SquatPhase.descending ||
+            _phase == SquatPhase.bottom ||
+            _phase == SquatPhase.ascending) &&
         (_shoulderRatio ?? 1) >= _unevenFacingRatio &&
         (_leftLift! - _rightLift!).abs() > _unevenLift;
     _unevenStreak = uneven ? _unevenStreak + 1 : 0;
@@ -234,17 +287,22 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
       _closeRep(timestampUs);
     } else if (_phase == SquatPhase.standing &&
         _repFrames > 0 &&
-        _repMaxLift >= _attemptLift) {
+        _repMaxLift >= _attemptLift &&
+        _repMaxElbow >= _attemptElbowDegrees) {
       // Back at the shoulders without getting overhead: no rep, but the
       // user must hear why rather than see the count just not move.
       _shortPress = true;
     }
     if (_phase == SquatPhase.standing) _clearRep();
+    // A quick press can leave the frame while still reading as the rack:
+    // the rep starting now had its lockout out of view.
+    if (backFromTop) _repOutOfFrame = true;
 
     // Overhead the arms may still be straightening: only a hint. Once
     // lowering, a press that never locked out is final.
     final bentOverhead = _phase == SquatPhase.bottom && !_repLocked;
-    final missedLockout = _phase == SquatPhase.ascending && !_repLocked;
+    final missedLockout =
+        _phase == SquatPhase.ascending && !_repLocked && !_repOutOfFrame;
     final shortLower = _repShortLower && _phase != SquatPhase.standing;
     var score = 100;
     if (unevenLive) score -= 15;
@@ -299,15 +357,18 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
       nextRepTip: between?.tip,
       bodyVisible: true,
       kneeAngle: _elbow,
-      label: switch (_phase) {
-        SquatPhase.findingBody => null,
-        SquatPhase.standing => lift < 0 ? 'Tay buông' : 'Ở vai',
-        SquatPhase.descending => 'Đang đẩy',
-        SquatPhase.bottom => 'Trên đầu',
-        SquatPhase.ascending => 'Đang hạ',
-      },
+      label: _label(lift),
     );
   }
+
+  /// Press wording for the phase; [lift] null when the arms aren't seen.
+  String? _label(double? lift) => switch (_phase) {
+    SquatPhase.findingBody => null,
+    SquatPhase.standing => (lift ?? 0) < 0 ? 'Tay buông' : 'Ở vai',
+    SquatPhase.descending => 'Đang đẩy',
+    SquatPhase.bottom => 'Trên đầu',
+    SquatPhase.ascending => 'Đang hạ',
+  };
 
   double _smooth(double? previous, double value, double alpha) =>
       previous == null ? value : previous + alpha * (value - previous);
@@ -361,6 +422,11 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
     }
     _repFrames++;
     _repMaxLift = math.max(_repMaxLift, lift);
+    _repMaxElbow = math.max(_repMaxElbow, rawElbow);
+    if (_phase == SquatPhase.ascending && lift < _repLowestLift) {
+      _repLowestLift = lift;
+      _repLowestUs = timestampUs;
+    }
     // Two straight frames in a row, so one jittery frame can't lock out.
     _repLockFrames = rawElbow >= lockoutDegrees ? _repLockFrames + 1 : 0;
     if (_repLockFrames >= 2) _repLocked = true;
@@ -390,7 +456,7 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
           // First fault becomes the spoken tip: one arm lagging is the
           // more specific fix than "lock out", which it also causes.
           if (_repUnevenFrames / _repFrames > 0.3) 'unevenArms',
-          if (!_repLocked) 'noLockout',
+          if (!_repLocked && !_repOutOfFrame) 'noLockout',
           if (_repShortLower) 'partialRange',
         ],
       ),
@@ -400,7 +466,10 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
   void _clearRep() {
     _repStartUs = _repTopUs = _repLowerUs = null;
     _repLocked = false;
-    _repMaxLift = 0;
+    _repMaxLift = _repMaxElbow = 0;
+    _repOutOfFrame = false;
+    _repLowestLift = double.infinity;
+    _repLowestUs = null;
     _repFrames = _repUnevenFrames = _repLockFrames = 0;
     _repShortLower = false;
   }
@@ -469,6 +538,9 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
           : previous + smoothingFactor * (ratio - previous);
       return smoothed < _facingRatio;
     }
+    // Without hips the ratio can't be refreshed: don't let a stale one
+    // keep gating unevenness.
+    _shoulderRatio = null;
     return arm != null && width < arm.length * _facingRatioArm;
   }
 }
