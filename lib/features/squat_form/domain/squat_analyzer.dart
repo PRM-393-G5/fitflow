@@ -160,7 +160,10 @@ enum FormExercise {
     // and one arm or a seat/machine never moves both arms through the rack.
     if (RegExp(r'\b(shoulder|overhead|military)[\s-]?press\b|\bohp\b')
             .hasMatch(lower) &&
-        !RegExp(r'single|one[\s-]?arm|machine|seated').hasMatch(lower)) {
+        // Squat-to-press thrusters are left to the squat check below.
+        !RegExp(
+          r'single|one[\s-]?arm|1[\s-]?arm|unilateral|alternat|machine|seated|squat',
+        ).hasMatch(lower)) {
       return shoulderPress;
     }
     if (lower.contains('squat') && !lower.contains('split')) return squat;
@@ -903,5 +906,21 @@ Rules:
     Map<String, Object>? hold,
   }) => hold != null
       ? 'Exercise: $exercise\nHold telemetry: ${jsonEncode(hold)}'
-      : 'Exercise: $exercise\nRep telemetry: ${jsonEncode([for (final rep in reps) rep.toJson()])}';
+      : 'Exercise: $exercise\nRep telemetry: ${jsonEncode([for (final rep in reps) _repJson(exercise, rep)])}';
+
+  /// A press goes up first: its records keep the squat-shaped fields
+  /// (down, then up), so name them for what they hold before the coach
+  /// reads the tempo backwards.
+  static Map<String, Object> _repJson(String exercise, RepRecord rep) {
+    final json = rep.toJson();
+    if (exercise != FormExercise.shoulderPress.label) return json;
+    return {
+      for (final MapEntry(:key, :value) in json.entries)
+        switch (key) {
+          'descentMs' => 'pressUpMs',
+          'ascentMs' => 'lowerMs',
+          _ => key,
+        }: value,
+    };
+  }
 }

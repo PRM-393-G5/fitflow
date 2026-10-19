@@ -206,4 +206,25 @@ void main() {
       expect(said, ['Bắt đầu tính giờ', '10 giây', '20 giây']);
     });
   });
+
+  test('the AI coach reads press tempo as press up, then lower', () {
+    const rep = RepRecord(
+      number: 1,
+      descentMs: 500,
+      ascentMs: 2000,
+      faults: [],
+    );
+    final press = AiFormReviewPrompt.user(
+      exercise: FormExercise.shoulderPress.label,
+      reps: const [rep],
+    );
+    expect(press, contains('"pressUpMs":500'));
+    expect(press, contains('"lowerMs":2000'));
+    expect(press, isNot(contains('descentMs')));
+    final squat = AiFormReviewPrompt.user(
+      exercise: FormExercise.squat.label,
+      reps: const [rep],
+    );
+    expect(squat, contains('"descentMs":500'));
+  });
 }

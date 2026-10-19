@@ -35,6 +35,10 @@ void main() {
     expect(FormExercise.match('Pushup', timed: false), FormExercise.pushup);
     expect(FormExercise.match('Plank', timed: true), FormExercise.plank);
     expect(
+      FormExercise.match('Squat to Overhead Press', timed: false),
+      FormExercise.squat,
+    );
+    expect(
       FormExercise.match('Shoulder Press', timed: false),
       FormExercise.shoulderPress,
     );
@@ -63,6 +67,8 @@ void main() {
       'One Arm Overhead Press',
       'Machine Shoulder Press',
       'Seated Dumbbell Shoulder Press',
+      'Alternating Dumbbell Shoulder Press',
+      '1-arm Overhead Press',
     ]) {
       expect(FormExercise.match(name, timed: false), isNull, reason: name);
     }

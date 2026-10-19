@@ -74,6 +74,7 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
   /// a steady "face the camera" rather than counting half the frames.
   static const _facingAgainRatio = 0.62;
   bool _turnedAway = false;
+  int? _facingUs;
 
   /// Without hips in frame: shoulder width over the arm's on-screen length,
   /// ~0.65 facing, ~0 side-on. Looser, since arm length varies with pose.
@@ -166,6 +167,7 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
     _shortPress = _notFromRack = _rackReady = _outOverTop = false;
     _shoulderRatio = _armRatio = _wristY = _lastLift = null;
     _turnedAway = false;
+    _facingUs = null;
     _repRecords.clear();
     _clearRep();
   }
@@ -209,7 +211,14 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
     final alpha = timestampUs == null || previousUs == null
         ? smoothingFactor
         : smoothingAlpha(timestampUs - previousUs);
-    final sideOn = _sideOn(points, left ?? right, alpha) || oneArmHidden;
+    // The facing check runs on every frame, side-on ones included, so it
+    // keeps its own clock rather than the both-arms-seen one above.
+    final facingUs = _facingUs;
+    _facingUs = timestampUs;
+    final facingAlpha = timestampUs == null || facingUs == null
+        ? smoothingFactor
+        : smoothingAlpha(timestampUs - facingUs);
+    final sideOn = _sideOn(points, left ?? right, facingAlpha) || oneArmHidden;
     if (left == null || right == null || sideOn) {
       // Hands pressed up out of the top of the frame stay out for the
       // whole lockout pause: ride that out much longer than a glitch. A
@@ -257,7 +266,9 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
         _candidateFrames = 0;
         _reachedTop = false;
         _leftLift = _rightLift = _elbow = _wristY = _lastLift = null;
-        _outOverTop = _rackReady = false;
+        _outOverTop = _rackReady = _turnedAway = false;
+        // Whoever comes back may stand differently: no stale view state.
+        _shoulderRatio = _armRatio = _facingUs = null;
         _unevenStreak = 0;
         _shortPress = false;
         _clearRep();
@@ -601,7 +612,12 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
     _shoulderRatio = null;
     if (arm == null) return false;
     final armRatio = _armRatio = _smooth(_armRatio, width / arm.length, alpha);
-    return armRatio < _facingRatioArm;
+    // Same hysteresis as the torso path: arm length swings between rack
+    // and lockout, which would flip a bare threshold frame to frame.
+    _turnedAway = _turnedAway
+        ? armRatio < _facingRatioArm + .05
+        : armRatio < _facingRatioArm;
+    return _turnedAway;
   }
 }
 
