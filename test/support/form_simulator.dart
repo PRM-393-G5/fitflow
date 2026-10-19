@@ -545,6 +545,44 @@ class ShoulderPressMovement implements Movement {
   }
 }
 
+/// Not a press: straight arms raised from hanging at the sides to
+/// overhead and back, elbows never bending at the shoulders.
+class StraightArmRaiseMovement implements Movement {
+  StraightArmRaiseMovement({this.reps = 5})
+    : timeline = RepTimeline(
+        reps: reps,
+        descentS: 1,
+        pauseS: .3,
+        ascentS: 1,
+        restS: .6,
+      );
+
+  final int reps;
+  final RepTimeline timeline;
+
+  @override
+  double get durationS => timeline.durationS;
+
+  @override
+  Pose3 poseAt(double t) {
+    final press = ShoulderPressMovement().poseAt(0);
+    final pose = Map.of(press);
+    // From pointing down (-85°) through the side to overhead (85°).
+    final angle = _rad(-85 + 170 * timeline.progress(t));
+    for (final side in const [1, -1]) {
+      final left = side == 1;
+      final shoulder =
+          pose[left ? SquatJoint.leftShoulder : SquatJoint.rightShoulder]!;
+      final direction = V3(.02, math.sin(angle), side * math.cos(angle));
+      final elbow = shoulder + direction * Body.upperArm;
+      pose[left ? SquatJoint.leftElbow : SquatJoint.rightElbow] = elbow;
+      pose[left ? SquatJoint.leftWrist : SquatJoint.rightWrist] =
+          elbow + direction * Body.forearm;
+    }
+    return pose;
+  }
+}
+
 /// One analyzer frame: what the page would hand to `analyze`.
 class SimFrame {
   const SimFrame(this.timestampUs, this.points);

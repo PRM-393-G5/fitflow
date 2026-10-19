@@ -609,16 +609,23 @@ void main() {
       }
     });
 
-    test('turned 45-60° away from the camera is told to face it', () {
-      // The arms foreshorten unevenly there: never a false "uneven".
+    test('turned 60° away is told to face the camera; never a false '
+        '"uneven" from 45° on', () {
       for (final azimuth in [45.0, 60.0]) {
         for (final frames in sets(
           ShoulderPressMovement(),
           camera: upperBody(azimuth: azimuth),
         )) {
           final said = spoken(ShoulderPressAnalyzer(), frames);
-          expect(said, contains('Quay mặt về phía camera'), reason: '$azimuth');
           expect(said, isNot(contains('Đẩy đều hai tay')), reason: '$azimuth');
+          // 45° sits on the facing limit: counted cleanly or told to turn.
+          final counted = replay(ShoulderPressAnalyzer(), frames).count == 5;
+          expect(
+            said.contains('Quay mặt về phía camera') ||
+                (azimuth < 60 && counted),
+            isTrue,
+            reason: '$azimuth',
+          );
         }
       }
     });
@@ -651,6 +658,55 @@ void main() {
             isNot(contains('Đủ sâu')),
           );
         }
+      }
+    });
+
+    test('a frame cut at the forehead still counts every press', () {
+      // The wrists leave the frame before the press reads as overhead.
+      const cut = SimCamera(
+        azimuthDeg: 0,
+        scale: .8,
+        floorY: 1.55,
+        distanceM: 2,
+      );
+      for (final frames in sets(ShoulderPressMovement(), camera: cut)) {
+        final run = replay(ShoulderPressAnalyzer(), frames);
+        expect(run.count, 5);
+        expect(
+          spoken(ShoulderPressAnalyzer(), frames),
+          isNot(contains('Đẩy tay lên cao hết cỡ')),
+        );
+      }
+    });
+
+    test('a straight-arm raise from hanging arms is not a press', () {
+      for (final frames in sets(StraightArmRaiseMovement())) {
+        expect(replay(ShoulderPressAnalyzer(), frames).count, 0);
+        expect(
+          spoken(ShoulderPressAnalyzer(), frames),
+          contains('Gập khuỷu, đưa tay ngang vai rồi đẩy'),
+        );
+      }
+    });
+
+    test('chest-up framing (no hips) still guards against false uneven', () {
+      SimCamera chestUp(double azimuth) =>
+          SimCamera(azimuthDeg: azimuth, scale: .75, floorY: 1.9, distanceM: 2);
+      for (final frames in sets(ShoulderPressMovement(), camera: chestUp(40))) {
+        expect(
+          replay(ShoulderPressAnalyzer(), frames).faults,
+          isNot(contains('unevenArms')),
+        );
+      }
+      // Squarely facing, a lagging arm is still caught.
+      for (final frames in sets(
+        ShoulderPressMovement(rightShortfall: .6),
+        camera: chestUp(0),
+      )) {
+        expect(
+          replay(ShoulderPressAnalyzer(), frames).faults,
+          contains('unevenArms'),
+        );
       }
     });
 

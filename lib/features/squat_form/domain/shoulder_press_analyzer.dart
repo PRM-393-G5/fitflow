@@ -69,6 +69,12 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
   /// it frame to frame.
   static const _facingRatio = 0.56;
 
+  /// Once turned away, the ratio must climb back to this to count as
+  /// facing again: hysteresis, so standing right on the limit (~45°) gives
+  /// a steady "face the camera" rather than counting half the frames.
+  static const _facingAgainRatio = 0.62;
+  bool _turnedAway = false;
+
   /// Without hips in frame: shoulder width over the arm's on-screen length,
   /// ~0.65 facing, ~0 side-on. Looser, since arm length varies with pose.
   static const _facingRatioArm = 0.35;
@@ -125,6 +131,21 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
   /// The arms are currently out over the top of the frame.
   bool _outOverTop = false;
 
+  /// The last rack frame had the hands at the shoulders with elbows bent,
+  /// and whether the rep in progress started from there.
+  bool _rackReady = false;
+  bool _repFromRack = false;
+
+  /// The last "rep" was a straight-arm raise from hanging arms.
+  bool _notFromRack = false;
+  static const _rackMinLift = 0.25;
+  static const _rackReadyElbowDegrees = 125.0;
+  double? _armRatio;
+
+  /// Without hips: shoulder width over arm length at or above which the
+  /// user is squarely facing (~0.67 facing, ~0.55 at 40° off).
+  static const _unevenFacingRatioArm = 0.6;
+
   @override
   int get repetitions => _repetitions;
   @override
@@ -142,8 +163,9 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
     _leftLift = _rightLift = _elbow = null;
     _lastTimestampUs = null;
     _missingFrames = _unevenStreak = 0;
-    _shortPress = false;
-    _shoulderRatio = null;
+    _shortPress = _notFromRack = _rackReady = _outOverTop = false;
+    _shoulderRatio = _armRatio = _wristY = _lastLift = null;
+    _turnedAway = false;
     _repRecords.clear();
     _clearRep();
   }
@@ -183,7 +205,11 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
         (left == null) != (right == null) &&
         (hiddenShoulder == null ||
             hiddenShoulder.confidence < minimumConfidence);
-    final sideOn = _sideOn(points, left ?? right) || oneArmHidden;
+    final previousUs = _lastTimestampUs;
+    final alpha = timestampUs == null || previousUs == null
+        ? smoothingFactor
+        : smoothingAlpha(timestampUs - previousUs);
+    final sideOn = _sideOn(points, left ?? right, alpha) || oneArmHidden;
     if (left == null || right == null || sideOn) {
       // Hands pressed up out of the top of the frame stay out for the
       // whole lockout pause: ride that out much longer than a glitch. A
@@ -200,7 +226,26 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
           _phase != SquatPhase.findingBody &&
           (_wristY ?? 1) < _frameTopMargin &&
           (_lastLift ?? 0) >= _exitLift;
-      if (exitedTop) _repOutOfFrame = _outOverTop = true;
+      if (exitedTop) {
+        // Hands gone over the top while lifting: they're overhead, whatever
+        // the phase had caught up to (a quick press can leave still
+        // reading as the rack). The rep counts once, back at the
+        // shoulders; its lockout and tempo went unseen.
+        _outOverTop = true;
+        if (_phase != SquatPhase.bottom) {
+          if (_repStartUs == null) {
+            _repStartUs = timestampUs ?? 0;
+            _repFromRack = _rackReady;
+            _shortPress = _notFromRack = false;
+          }
+          _phase = SquatPhase.bottom;
+          _candidate = null;
+          _candidateFrames = 0;
+        }
+        _reachedTop = _repOutOfFrame = true;
+        _repTimed = false;
+        _repFrames = math.max(_repFrames, 1);
+      }
       // Sticky until the arms are back: a dropped frame while the hands
       // are out mustn't fall back to the short limit.
       final limit = _phase == SquatPhase.bottom || _outOverTop
@@ -212,7 +257,7 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
         _candidateFrames = 0;
         _reachedTop = false;
         _leftLift = _rightLift = _elbow = _wristY = _lastLift = null;
-        _outOverTop = false;
+        _outOverTop = _rackReady = false;
         _unevenStreak = 0;
         _shortPress = false;
         _clearRep();
@@ -229,16 +274,11 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
       );
     }
     _missingFrames = 0;
-    final backFromTop = _outOverTop;
     _outOverTop = false;
     _wristY = math.min(left.wristY, right.wristY);
     _lastLift = (left.lift + right.lift) / 2;
 
-    final previousUs = _lastTimestampUs;
     _lastTimestampUs = timestampUs;
-    final alpha = timestampUs == null || previousUs == null
-        ? smoothingFactor
-        : smoothingAlpha(timestampUs - previousUs);
     _leftLift = _smooth(_leftLift, left.lift, alpha);
     _rightLift = _smooth(_rightLift, right.lift, alpha);
     // Lockout is as good as the weaker arm.
@@ -275,13 +315,20 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
         (_phase == SquatPhase.descending ||
             _phase == SquatPhase.bottom ||
             _phase == SquatPhase.ascending) &&
-        (_shoulderRatio ?? 1) >= _unevenFacingRatio &&
+        (_shoulderRatio != null
+            ? _shoulderRatio! >= _unevenFacingRatio
+            : (_armRatio ?? 1) >= _unevenFacingRatioArm) &&
         (_leftLift! - _rightLift!).abs() > _unevenLift;
     _unevenStreak = uneven ? _unevenStreak + 1 : 0;
     final unevenLive = _unevenStreak >= _unevenCueFrames;
     _trackRep(timestampUs, uneven: uneven, rawElbow: rawElbow, lift: lift);
     if (_phase == SquatPhase.bottom) _reachedTop = true;
-    if (_phase == SquatPhase.standing && _reachedTop) {
+    if (_phase == SquatPhase.standing && _reachedTop && !_repFromRack) {
+      // Arms raised from hanging, never bent at the shoulders: a raise,
+      // not a press. Say how to start rather than count it.
+      _reachedTop = false;
+      _notFromRack = true;
+    } else if (_phase == SquatPhase.standing && _reachedTop) {
       _repetitions++;
       _reachedTop = false;
       _closeRep(timestampUs);
@@ -293,10 +340,17 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
       // user must hear why rather than see the count just not move.
       _shortPress = true;
     }
-    if (_phase == SquatPhase.standing) _clearRep();
-    // A quick press can leave the frame while still reading as the rack:
-    // the rep starting now had its lockout out of view.
-    if (backFromTop) _repOutOfFrame = true;
+    if (_phase == SquatPhase.standing) {
+      _clearRep();
+      // Ready to press once the hands have been up at the shoulders with
+      // the elbows bent; only dropping the arms undoes it (the last rack
+      // frame may already be opening into the press).
+      if (lift >= _rackMinLift && _elbow! <= _rackReadyElbowDegrees) {
+        _rackReady = true;
+      } else if (lift < _rackMinLift) {
+        _rackReady = false;
+      }
+    }
 
     // Overhead the arms may still be straightening: only a hint. Once
     // lowering, a press that never locked out is final.
@@ -328,6 +382,8 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
         ? ('Tốt, hạ xuống từ từ', CueTone.good)
         : _phase == SquatPhase.ascending
         ? ('Hạ xuống ngang vai', CueTone.info)
+        : _notFromRack
+        ? ('Gập khuỷu, đưa tay ngang vai rồi đẩy', CueTone.warn)
         : _shortPress
         ? ('Đẩy tay lên cao hết cỡ', CueTone.warn)
         : between != null
@@ -418,7 +474,8 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
     if (_repStartUs == null) {
       _repStartUs = timestampUs ?? 0;
       _repTimed = true;
-      _shortPress = false;
+      _shortPress = _notFromRack = false;
+      _repFromRack = _rackReady;
     }
     _repFrames++;
     _repMaxLift = math.max(_repMaxLift, lift);
@@ -521,7 +578,7 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
 
   /// Shoulders narrow on screen: the user is turned away from the camera,
   /// so one arm foreshortens or hides the other.
-  bool _sideOn(Map<SquatJoint, SquatPoint> points, _Arm? arm) {
+  bool _sideOn(Map<SquatJoint, SquatPoint> points, _Arm? arm, double alpha) {
     final left = points[SquatJoint.leftShoulder];
     final right = points[SquatJoint.rightShoulder];
     if (left == null || right == null) return false;
@@ -533,15 +590,18 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
     if (torso != null) {
       final ratio = width / torso;
       final previous = _shoulderRatio;
-      final smoothed = _shoulderRatio = previous == null
-          ? ratio
-          : previous + smoothingFactor * (ratio - previous);
-      return smoothed < _facingRatio;
+      final smoothed = _shoulderRatio = _smooth(previous, ratio, alpha);
+      _turnedAway = _turnedAway
+          ? smoothed < _facingAgainRatio
+          : smoothed < _facingRatio;
+      return _turnedAway;
     }
-    // Without hips the ratio can't be refreshed: don't let a stale one
-    // keep gating unevenness.
+    // Without hips the torso ratio can't be refreshed: don't let a stale
+    // one keep gating unevenness; the arm ratio stands in.
     _shoulderRatio = null;
-    return arm != null && width < arm.length * _facingRatioArm;
+    if (arm == null) return false;
+    final armRatio = _armRatio = _smooth(_armRatio, width / arm.length, alpha);
+    return armRatio < _facingRatioArm;
   }
 }
 

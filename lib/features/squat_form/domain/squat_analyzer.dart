@@ -148,16 +148,19 @@ enum FormExercise {
 
   /// The analyzer that can count a planned exercise, by name and kind, or
   /// null when none fits. Variants the analyzers can't judge are left out:
-  /// split squats (one leg forward), side planks (not prone).
+  /// split squats (one leg forward), side planks (not prone), and presses
+  /// that aren't two-armed and standing.
   static FormExercise? match(String name, {required bool timed}) {
     final lower = name.toLowerCase();
     if (timed) {
       return lower.contains('plank') && !lower.contains('side') ? plank : null;
     }
     if (RegExp(r'push[\s-]?ups?\b').hasMatch(lower)) return pushup;
-    // Standing presses only: a bench press lies down out of view.
+    // Standing two-arm presses only: a bench press lies down out of view,
+    // and one arm or a seat/machine never moves both arms through the rack.
     if (RegExp(r'\b(shoulder|overhead|military)[\s-]?press\b|\bohp\b')
-        .hasMatch(lower)) {
+            .hasMatch(lower) &&
+        !RegExp(r'single|one[\s-]?arm|machine|seated').hasMatch(lower)) {
       return shoulderPress;
     }
     if (lower.contains('squat') && !lower.contains('split')) return squat;
@@ -359,6 +362,9 @@ class SquatAnalyzer implements RepAnalyzer {
         _candidateFrames = 0;
         _reachedDepth = false;
         _clearRepTracking();
+        // Whoever comes back may stand differently: no stale view state.
+        _turnedStreak = _hipGapMissed = 0;
+        _hipGap = null;
       }
       return SquatAnalysis(
         phase: _phase,
@@ -417,14 +423,13 @@ class SquatAnalyzer implements RepAnalyzer {
         _phase == SquatPhase.descending ||
         _phase == SquatPhase.bottom ||
         _phase == SquatPhase.ascending;
-    final hipWidth = _hipWidth(points);
+    final rawHipGap = _hipGapOf(points);
+    final hipWidth = rawHipGap?.abs();
     // Signed and smoothed, so landmark jitter around a true zero averages
     // out instead of reading as hips apart.
-    final leftHip = _reliable(points, SquatJoint.leftHip);
-    final rightHip = _reliable(points, SquatJoint.rightHip);
-    if (leftHip != null && rightHip != null) {
+    if (rawHipGap != null) {
       _hipGapMissed = 0;
-      _hipGap = _smooth(_hipGap, leftHip.x - rightHip.x, alpha);
+      _hipGap = _smooth(_hipGap, rawHipGap, alpha);
     } else if (++_hipGapMissed > 3) {
       // A flicker of the far hip keeps the smoothing; a real loss (hips
       // overlapping side-on, one hidden) drops it.
@@ -821,12 +826,13 @@ class SquatAnalyzer implements RepAnalyzer {
   /// symmetric squat. Relative to the torso, so distance doesn't matter.
   static const _sideOnHipRatio = 0.07;
 
-  /// On-screen distance between confident hips, or null.
-  double? _hipWidth(Map<SquatJoint, SquatPoint> points) {
+  /// Signed on-screen gap between confident hips (left minus right x), or
+  /// null.
+  double? _hipGapOf(Map<SquatJoint, SquatPoint> points) {
     final leftHip = _reliable(points, SquatJoint.leftHip);
     final rightHip = _reliable(points, SquatJoint.rightHip);
     if (leftHip == null || rightHip == null) return null;
-    return (leftHip.x - rightHip.x).abs();
+    return leftHip.x - rightHip.x;
   }
 
   /// False on knee valgus: a knee caving *medially* (toward the body

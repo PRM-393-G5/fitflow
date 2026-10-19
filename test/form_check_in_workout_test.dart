@@ -58,6 +58,14 @@ void main() {
     expect(FormExercise.match('Squat hold', timed: true), isNull);
     expect(FormExercise.match('Dumbbell Bench Press', timed: false), isNull);
     expect(FormExercise.match('Shoulder Press', timed: true), isNull);
+    for (final name in [
+      'Single-arm Dumbbell Shoulder Press',
+      'One Arm Overhead Press',
+      'Machine Shoulder Press',
+      'Seated Dumbbell Shoulder Press',
+    ]) {
+      expect(FormExercise.match(name, timed: false), isNull, reason: name);
+    }
   });
 
   Future<AppController> pumpWorkout(
