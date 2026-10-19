@@ -82,7 +82,7 @@ void main() {
       });
     }
 
-    test('depth anywhere from 65° to 100° is clean', () {
+    test('depth anywhere from 65° to 95° is clean', () {
       for (final knee in [65.0, 85.0, 95.0]) {
         final runs = _runs(SquatMovement(kneeMinDeg: knee), SquatAnalyzer.new);
         expect(runs.every((run) => run.count == 5), isTrue, reason: '$knee°');
@@ -388,6 +388,19 @@ void main() {
       }
     });
 
+    test('squatting 30° off side-on is told to turn further', () {
+      // Depth foreshortens past ~20° off; the user must hear it.
+      for (final frames in sets(
+        SquatMovement(),
+        camera: const SimCamera(azimuthDeg: 60),
+      )) {
+        expect(
+          spoken(SquatAnalyzer(), frames),
+          contains('Xoay nghiêng người về phía camera'),
+        );
+      }
+    });
+
     test('lying head-on to the camera is told to turn sideways', () {
       const headOn = SimCamera(
         azimuthDeg: 0,
@@ -567,7 +580,7 @@ void main() {
     });
 
     test('one arm lagging: warned live, highlighted, told to press evenly', () {
-      for (final frames in sets(ShoulderPressMovement(rightLag: .6))) {
+      for (final frames in sets(ShoulderPressMovement(rightShortfall: .6))) {
         final run = replay(ShoulderPressAnalyzer(), frames);
         expect(run.count, 5);
         expect(
@@ -593,6 +606,69 @@ void main() {
         expect(run.count, 1);
         expect(run.records.single.faults, contains('partialRange'));
         expect(warnings(frames), contains('Hạ khuỷu xuống ngang vai'));
+      }
+    });
+
+    test('turned 45-60° away from the camera is told to face it', () {
+      // The arms foreshorten unevenly there: never a false "uneven".
+      for (final azimuth in [45.0, 60.0]) {
+        for (final frames in sets(
+          ShoulderPressMovement(),
+          camera: upperBody(azimuth: azimuth),
+        )) {
+          final said = spoken(ShoulderPressAnalyzer(), frames);
+          expect(said, contains('Quay mặt về phía camera'), reason: '$azimuth');
+          expect(said, isNot(contains('Đẩy đều hai tay')), reason: '$azimuth');
+        }
+      }
+    });
+
+    test('hands above the top of the frame while holding overhead', () {
+      // Framed tight: locked-out hands leave the frame for the 0.8 s hold.
+      const tight = SimCamera(
+        azimuthDeg: 0,
+        scale: .75,
+        floorY: 1.5,
+        distanceM: 2,
+      );
+      for (final frames in sets(
+        ShoulderPressMovement(pauseS: .8),
+        camera: tight,
+      )) {
+        expect(replay(ShoulderPressAnalyzer(), frames).count, 5);
+      }
+    });
+
+    test('a press stopping at the forehead is not a rep, and says why', () {
+      for (final frames in sets(ShoulderPressMovement(topP: .4))) {
+        expect(replay(ShoulderPressAnalyzer(), frames).count, 0);
+        expect(
+          spoken(ShoulderPressAnalyzer(), frames),
+          contains('Đẩy tay lên cao hết cỡ'),
+        );
+      }
+    });
+
+    test('a partial-range rep is judged on its last press', () {
+      // Bent-arm re-presses after a full first one must still miss lockout.
+      final movement = ShoulderPressMovement(lowestP: .4, elbowTopDeg: 140);
+      for (final frames in sets(movement)) {
+        final record = replay(ShoulderPressAnalyzer(), frames).records.single;
+        expect(record.faults, containsAll(['partialRange', 'noLockout']));
+      }
+    });
+
+    test('side-on with the hidden arm lost is told to face the camera', () {
+      // A real detector drops confidence in the occluded arm.
+      for (final frames in sets(
+        ShoulderPressMovement(),
+        camera: upperBody(azimuth: 90),
+        noise: const SimNoise(farConfidence: .3),
+      )) {
+        expect(
+          spoken(ShoulderPressAnalyzer(), frames),
+          contains('Quay mặt về phía camera'),
+        );
       }
     });
 

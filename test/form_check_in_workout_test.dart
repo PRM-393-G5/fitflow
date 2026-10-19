@@ -42,6 +42,13 @@ void main() {
       FormExercise.match('Dumbbell Overhead Press', timed: false),
       FormExercise.shoulderPress,
     );
+    for (final name in ['Shoulder-Press', 'shoulderpress', 'OHP']) {
+      expect(
+        FormExercise.match(name, timed: false),
+        FormExercise.shoulderPress,
+        reason: name,
+      );
+    }
   });
 
   test('leaves out variants and kinds the analyzers cannot judge', () {

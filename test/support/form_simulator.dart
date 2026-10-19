@@ -66,7 +66,9 @@ class SimCamera {
   /// Upright width / height; the page is portrait-locked (480x720 medium).
   final double aspect;
 
-  /// Frame y of the floor, at the subject's distance.
+  /// Frame y of the floor at the subject's distance when the camera is
+  /// level; with [pitchDeg] the floor moves (only the aim point stays put,
+  /// at `floorY - aimHeightM * scale`).
   final double floorY;
 
   /// Horizontal body coordinate (metres) drawn at the frame center.
@@ -456,7 +458,8 @@ class ShoulderPressMovement implements Movement {
   ShoulderPressMovement({
     this.reps = 5,
     this.elbowTopDeg = 172,
-    this.rightLag = 0,
+    this.rightShortfall = 0,
+    this.topP = 1,
     this.lowestP = 0,
     double pressS = .9,
     double pauseS = .25,
@@ -475,8 +478,12 @@ class ShoulderPressMovement implements Movement {
   /// Elbow angle at the top: ~172 locked out, lower for a half press.
   final double elbowTopDeg;
 
-  /// How far the right arm trails the left (0..1 of the press).
-  final double rightLag;
+  /// How far short of the left arm the right one stops (0..1 of its
+  /// range): a weaker arm that never gets as high, not one that catches up.
+  final double rightShortfall;
+
+  /// How far up each press goes (1 = locked out overhead).
+  final double topP;
 
   /// Lowest point between reps (0 = back to the shoulders).
   final double lowestP;
@@ -496,11 +503,11 @@ class ShoulderPressMovement implements Movement {
     // presses stop at [lowestP].
     final inSet =
         t >= timeline.leadS && t < timeline.durationS - timeline.tailS;
-    final p = inSet ? lowestP + (1 - lowestP) * raw : raw;
+    final p = (inSet ? lowestP + (1 - lowestP) * raw : raw) * topP;
     final pose = <SquatJoint, V3>{};
     for (final side in const [1, -1]) {
       final left = side == 1;
-      final armP = left ? p : p * (1 - rightLag);
+      final armP = left ? p : p * (1 - rightShortfall);
       // Upper arm from horizontal-outward (rack) to nearly vertical.
       final beta = _rad(80 * armP);
       final elbowAngle = 90 + (elbowTopDeg - 90) * armP;

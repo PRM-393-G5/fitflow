@@ -156,7 +156,8 @@ enum FormExercise {
     }
     if (RegExp(r'push[\s-]?ups?\b').hasMatch(lower)) return pushup;
     // Standing presses only: a bench press lies down out of view.
-    if (RegExp(r'(shoulder|overhead|military)\s+press').hasMatch(lower)) {
+    if (RegExp(r'\b(shoulder|overhead|military)[\s-]?press\b|\bohp\b')
+        .hasMatch(lower)) {
       return shoulderPress;
     }
     if (lower.contains('squat') && !lower.contains('split')) return squat;
@@ -295,16 +296,20 @@ class SquatAnalyzer implements RepAnalyzer {
   int _asymmetryStreak = 0;
   int _valgusStreak = 0;
   double? _viewRatio;
+  double? _hipGap;
+  int _turnedStreak = 0;
+  static const _turnedCueFrames = 5;
 
   /// Consecutive faulty frames before a live cue shows: one jittery frame
   /// must never put a correction on screen, let alone say it aloud.
   static const _asymmetryCueFrames = 3;
   static const _valgusCueFrames = 3;
 
-  /// On-screen hip width over torso length above which the user faces the
-  /// camera instead of standing side-on: ~0.4 facing, ~0 side-on, 0.25 is
-  /// about 50° off side-on, where reps stop counting reliably.
-  static const _frontalViewRatio = 0.25;
+  /// On-screen hip width over torso length above which the user should
+  /// turn further side-on: ~0.4 facing, ~0 side-on, 0.17 is about 25° off
+  /// side-on, still clear of 15° off (~0.10). Beyond that the knee bend foreshortens fast (a 75° squat
+  /// reads ~98° at 30° off), so depth is misjudged.
+  static const _frontalViewRatio = 0.17;
 
   @override
   int get repetitions => _repetitions;
@@ -321,7 +326,8 @@ class SquatAnalyzer implements RepAnalyzer {
     _candidateFrames = 0;
     _repetitions = 0;
     _reachedDepth = false;
-    _knee = _hip = _trunk = _otherKnee = _heelY = _viewRatio = null;
+    _knee = _hip = _trunk = _otherKnee = _heelY = _viewRatio = _hipGap = null;
+    _turnedStreak = 0;
     _heelJoint = null;
     _lastTimestampUs = _lastStandingUs = null;
     _missingFrames = 0;
@@ -411,12 +417,21 @@ class SquatAnalyzer implements RepAnalyzer {
         _phase == SquatPhase.bottom ||
         _phase == SquatPhase.ascending;
     final hipWidth = _hipWidth(points);
+    // Signed and smoothed, so landmark jitter around a true zero averages
+    // out instead of reading as hips apart.
+    final leftHip = _reliable(points, SquatJoint.leftHip);
+    final rightHip = _reliable(points, SquatJoint.rightHip);
+    _hipGap = leftHip == null || rightHip == null
+        ? null
+        : _smooth(_hipGap, leftHip.x - rightHip.x, alpha);
+    final hipGap = _hipGap;
+    final legsSideOn = hipGap == null || hipGap.abs() < _sideOnHipWidth;
     final kneeTrackingOk = !bending || _kneeTracking(points, hipWidth);
     _valgusStreak = kneeTrackingOk ? 0 : _valgusStreak + 1;
     // The rep's fault share counts every frame; the live cue waits for a
     // sustained cave-in.
     final caving = _valgusStreak >= _valgusCueFrames;
-    _trackRep(side, timestampUs, kneeTrackingOk, hipWidth);
+    _trackRep(side, timestampUs, kneeTrackingOk, legsSideOn);
     if (_phase == SquatPhase.bottom) _reachedDepth = true;
     if (_phase == SquatPhase.standing && _reachedDepth) {
       _repetitions++;
@@ -445,8 +460,11 @@ class SquatAnalyzer implements RepAnalyzer {
       alpha,
     );
     // Facing the camera the knee bend is invisible, so reps never count.
+    _turnedStreak = _viewRatio! > _frontalViewRatio ? _turnedStreak + 1 : 0;
+    // Sustained, so a jittery first frame (smoothing starts raw) can't
+    // greet the user with a camera warning.
     final facingCamera =
-        _viewRatio! > _frontalViewRatio &&
+        _turnedStreak >= _turnedCueFrames &&
         (_phase == SquatPhase.standing || _phase == SquatPhase.descending);
 
     var score = 100;
@@ -615,7 +633,7 @@ class SquatAnalyzer implements RepAnalyzer {
     (SquatJoint, SquatJoint, SquatJoint, SquatJoint, SquatJoint) side,
     int? timestampUs,
     bool kneeTrackingOk,
-    double? hipWidth,
+    bool legsSideOn,
   ) {
     final inRep =
         _phase == SquatPhase.descending ||
@@ -646,7 +664,7 @@ class SquatAnalyzer implements RepAnalyzer {
     final otherKnee = _otherKneeSeenFrames >= _otherKneeSettleFrames
         ? _otherKnee
         : null;
-    if (otherKnee != null && (hipWidth == null || hipWidth < _sideOnHipWidth)) {
+    if (otherKnee != null && legsSideOn) {
       _repAsymmetryJudged++;
       if ((_knee! - otherKnee).abs() > 15) {
         _repAsymmetryFrames++;
