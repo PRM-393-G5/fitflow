@@ -140,20 +140,32 @@ const squatFastDescentMs = 360;
 enum FormExercise {
   squat('Squat'),
   pushup('Push-up'),
-  plank('Plank');
+  plank('Plank'),
+  shoulderPress('Shoulder press');
 
   const FormExercise(this.label);
   final String label;
 
   /// The analyzer that can count a planned exercise, by name and kind, or
   /// null when none fits. Variants the analyzers can't judge are left out:
-  /// split squats (one leg forward), side planks (not prone).
+  /// split squats (one leg forward), side planks (not prone), and presses
+  /// that aren't two-armed and standing.
   static FormExercise? match(String name, {required bool timed}) {
     final lower = name.toLowerCase();
     if (timed) {
       return lower.contains('plank') && !lower.contains('side') ? plank : null;
     }
     if (RegExp(r'push[\s-]?ups?\b').hasMatch(lower)) return pushup;
+    // Standing two-arm presses only: a bench press lies down out of view,
+    // and one arm or a seat/machine never moves both arms through the rack.
+    if (RegExp(r'\b(shoulder|overhead|military)[\s-]?press\b|\bohp\b')
+            .hasMatch(lower) &&
+        // Squat-to-press thrusters are left to the squat check below.
+        !RegExp(
+          r'single|one[\s-]?arm|1[\s-]?arm|unilateral|alternat|machine|seated|squat',
+        ).hasMatch(lower)) {
+      return shoulderPress;
+    }
     if (lower.contains('squat') && !lower.contains('split')) return squat;
     return null;
   }
@@ -197,6 +209,9 @@ const faultTips = {
   'fastEccentric': 'hạ người chậm hơn',
   'hipSag': 'siết bụng, giữ hông thẳng',
   'hipPike': 'hạ hông xuống thẳng hàng',
+  'noLockout': 'đẩy thẳng tay lên hết',
+  'unevenArms': 'đẩy đều hai tay',
+  'partialRange': 'hạ khuỷu xuống ngang vai',
 };
 
 /// The between-reps cue after [last]: praise for a clean rep, otherwise
@@ -287,16 +302,21 @@ class SquatAnalyzer implements RepAnalyzer {
   int _asymmetryStreak = 0;
   int _valgusStreak = 0;
   double? _viewRatio;
+  double? _hipGap;
+  int _hipGapMissed = 0;
+  int _turnedStreak = 0;
+  static const _turnedCueFrames = 5;
 
   /// Consecutive faulty frames before a live cue shows: one jittery frame
   /// must never put a correction on screen, let alone say it aloud.
   static const _asymmetryCueFrames = 3;
   static const _valgusCueFrames = 3;
 
-  /// On-screen hip width over torso length above which the user faces the
-  /// camera instead of standing side-on: ~0.4 facing, ~0 side-on, 0.25 is
-  /// about 50° off side-on, where reps stop counting reliably.
-  static const _frontalViewRatio = 0.25;
+  /// On-screen hip width over torso length above which the user should
+  /// turn further side-on: ~0.4 facing, ~0 side-on, 0.17 is about 25° off
+  /// side-on, still clear of 15° off (~0.10). Beyond that the knee bend foreshortens fast (a 75° squat
+  /// reads ~98° at 30° off), so depth is misjudged.
+  static const _frontalViewRatio = 0.17;
 
   @override
   int get repetitions => _repetitions;
@@ -313,7 +333,8 @@ class SquatAnalyzer implements RepAnalyzer {
     _candidateFrames = 0;
     _repetitions = 0;
     _reachedDepth = false;
-    _knee = _hip = _trunk = _otherKnee = _heelY = _viewRatio = null;
+    _knee = _hip = _trunk = _otherKnee = _heelY = _viewRatio = _hipGap = null;
+    _turnedStreak = 0;
     _heelJoint = null;
     _lastTimestampUs = _lastStandingUs = null;
     _missingFrames = 0;
@@ -344,6 +365,9 @@ class SquatAnalyzer implements RepAnalyzer {
         _candidateFrames = 0;
         _reachedDepth = false;
         _clearRepTracking();
+        // Whoever comes back may stand differently: no stale view state.
+        _turnedStreak = _hipGapMissed = 0;
+        _hipGap = null;
       }
       return SquatAnalysis(
         phase: _phase,
@@ -402,13 +426,29 @@ class SquatAnalyzer implements RepAnalyzer {
         _phase == SquatPhase.descending ||
         _phase == SquatPhase.bottom ||
         _phase == SquatPhase.ascending;
-    final hipWidth = _hipWidth(points);
+    final rawHipGap = _hipGapOf(points);
+    final hipWidth = rawHipGap?.abs();
+    // Signed and smoothed, so landmark jitter around a true zero averages
+    // out instead of reading as hips apart.
+    if (rawHipGap != null) {
+      _hipGapMissed = 0;
+      _hipGap = _smooth(_hipGap, rawHipGap, alpha);
+    } else if (++_hipGapMissed > 3) {
+      // A flicker of the far hip keeps the smoothing; a real loss (hips
+      // overlapping side-on, one hidden) drops it.
+      _hipGap = null;
+    }
+    final hipGap = _hipGap;
+    final legsSideOn =
+        hipGap == null ||
+        hipGap.abs() / math.max(pointDistance(shoulder, hip), 1e-6) <
+            _sideOnHipRatio;
     final kneeTrackingOk = !bending || _kneeTracking(points, hipWidth);
     _valgusStreak = kneeTrackingOk ? 0 : _valgusStreak + 1;
     // The rep's fault share counts every frame; the live cue waits for a
     // sustained cave-in.
     final caving = _valgusStreak >= _valgusCueFrames;
-    _trackRep(side, timestampUs, kneeTrackingOk, hipWidth);
+    _trackRep(side, timestampUs, kneeTrackingOk, legsSideOn);
     if (_phase == SquatPhase.bottom) _reachedDepth = true;
     if (_phase == SquatPhase.standing && _reachedDepth) {
       _repetitions++;
@@ -437,8 +477,11 @@ class SquatAnalyzer implements RepAnalyzer {
       alpha,
     );
     // Facing the camera the knee bend is invisible, so reps never count.
+    _turnedStreak = _viewRatio! > _frontalViewRatio ? _turnedStreak + 1 : 0;
+    // Sustained, so a jittery first frame (smoothing starts raw) can't
+    // greet the user with a camera warning.
     final facingCamera =
-        _viewRatio! > _frontalViewRatio &&
+        _turnedStreak >= _turnedCueFrames &&
         (_phase == SquatPhase.standing || _phase == SquatPhase.descending);
 
     var score = 100;
@@ -607,7 +650,7 @@ class SquatAnalyzer implements RepAnalyzer {
     (SquatJoint, SquatJoint, SquatJoint, SquatJoint, SquatJoint) side,
     int? timestampUs,
     bool kneeTrackingOk,
-    double? hipWidth,
+    bool legsSideOn,
   ) {
     final inRep =
         _phase == SquatPhase.descending ||
@@ -638,7 +681,7 @@ class SquatAnalyzer implements RepAnalyzer {
     final otherKnee = _otherKneeSeenFrames >= _otherKneeSettleFrames
         ? _otherKnee
         : null;
-    if (otherKnee != null && (hipWidth == null || hipWidth < _sideOnHipWidth)) {
+    if (otherKnee != null && legsSideOn) {
       _repAsymmetryJudged++;
       if ((_knee! - otherKnee).abs() > 15) {
         _repAsymmetryFrames++;
@@ -779,16 +822,20 @@ class SquatAnalyzer implements RepAnalyzer {
   /// enough to judge knee valgus.
   static const _minHipWidth = 0.04;
 
-  /// Hips closer than this mean the camera is side-on: both legs are seen
-  /// from the same angle, so their knee angles can be compared.
-  static const _sideOnHipWidth = 0.025;
+  /// Smoothed hip gap over torso length below which the camera is squarely
+  /// side-on (within ~10°: facing reads ~0.4): only then are both legs,
+  /// each turned out with its toes, seen from a similar enough angle to
+  /// compare their knees — at 15° off they already read uneven on a
+  /// symmetric squat. Relative to the torso, so distance doesn't matter.
+  static const _sideOnHipRatio = 0.07;
 
-  /// On-screen distance between confident hips, or null.
-  double? _hipWidth(Map<SquatJoint, SquatPoint> points) {
+  /// Signed on-screen gap between confident hips (left minus right x), or
+  /// null.
+  double? _hipGapOf(Map<SquatJoint, SquatPoint> points) {
     final leftHip = _reliable(points, SquatJoint.leftHip);
     final rightHip = _reliable(points, SquatJoint.rightHip);
     if (leftHip == null || rightHip == null) return null;
-    return (leftHip.x - rightHip.x).abs();
+    return leftHip.x - rightHip.x;
   }
 
   /// False on knee valgus: a knee caving *medially* (toward the body
@@ -834,7 +881,9 @@ Rules:
 - Reference rep numbers when calling out specific reps.
 - Fault codes: shallowDepth, kneeValgus (knees caved in), forwardLean,
   heelsUp, asymmetry (one leg dominant), fastEccentric (dropped too fast),
-  hipSag (hips sagging below the body line), hipPike (hips too high).
+  hipSag (hips sagging below the body line), hipPike (hips too high),
+  noLockout (arms not straightened overhead), unevenArms (one arm lagging),
+  partialRange (pressed again before lowering to the shoulders).
 - For a plank, judge how much of the hold was in good form.
 - Be direct and encouraging; plain text only.''';
 
@@ -857,5 +906,21 @@ Rules:
     Map<String, Object>? hold,
   }) => hold != null
       ? 'Exercise: $exercise\nHold telemetry: ${jsonEncode(hold)}'
-      : 'Exercise: $exercise\nRep telemetry: ${jsonEncode([for (final rep in reps) rep.toJson()])}';
+      : 'Exercise: $exercise\nRep telemetry: ${jsonEncode([for (final rep in reps) _repJson(exercise, rep)])}';
+
+  /// A press goes up first: its records keep the squat-shaped fields
+  /// (down, then up), so name them for what they hold before the coach
+  /// reads the tempo backwards.
+  static Map<String, Object> _repJson(String exercise, RepRecord rep) {
+    final json = rep.toJson();
+    if (exercise != FormExercise.shoulderPress.label) return json;
+    return {
+      for (final MapEntry(:key, :value) in json.entries)
+        switch (key) {
+          'descentMs' => 'pressUpMs',
+          'ascentMs' => 'lowerMs',
+          _ => key,
+        }: value,
+    };
+  }
 }

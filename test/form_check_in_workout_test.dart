@@ -34,6 +34,25 @@ void main() {
     expect(FormExercise.match('push ups', timed: false), FormExercise.pushup);
     expect(FormExercise.match('Pushup', timed: false), FormExercise.pushup);
     expect(FormExercise.match('Plank', timed: true), FormExercise.plank);
+    expect(
+      FormExercise.match('Squat to Overhead Press', timed: false),
+      FormExercise.squat,
+    );
+    expect(
+      FormExercise.match('Shoulder Press', timed: false),
+      FormExercise.shoulderPress,
+    );
+    expect(
+      FormExercise.match('Dumbbell Overhead Press', timed: false),
+      FormExercise.shoulderPress,
+    );
+    for (final name in ['Shoulder-Press', 'shoulderpress', 'OHP']) {
+      expect(
+        FormExercise.match(name, timed: false),
+        FormExercise.shoulderPress,
+        reason: name,
+      );
+    }
   });
 
   test('leaves out variants and kinds the analyzers cannot judge', () {
@@ -42,6 +61,17 @@ void main() {
     expect(FormExercise.match('Plank', timed: false), isNull);
     expect(FormExercise.match('Squat hold', timed: true), isNull);
     expect(FormExercise.match('Dumbbell Bench Press', timed: false), isNull);
+    expect(FormExercise.match('Shoulder Press', timed: true), isNull);
+    for (final name in [
+      'Single-arm Dumbbell Shoulder Press',
+      'One Arm Overhead Press',
+      'Machine Shoulder Press',
+      'Seated Dumbbell Shoulder Press',
+      'Alternating Dumbbell Shoulder Press',
+      '1-arm Overhead Press',
+    ]) {
+      expect(FormExercise.match(name, timed: false), isNull, reason: name);
+    }
   });
 
   Future<AppController> pumpWorkout(

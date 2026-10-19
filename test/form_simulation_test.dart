@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prm/features/squat_form/domain/plank_analyzer.dart';
 import 'package:prm/features/squat_form/domain/pushup_analyzer.dart';
+import 'package:prm/features/squat_form/domain/shoulder_press_analyzer.dart';
 import 'package:prm/features/squat_form/domain/squat_analyzer.dart';
 
 import 'support/form_simulator.dart';
@@ -38,10 +39,21 @@ double _anyFaultRate(List<SimResult> runs) {
 }
 
 /// Camera on the floor, far enough for a prone body to fit a portrait frame.
-const _prone = SimCamera(scale: .33, floorY: .72, centerU: -.65);
+/// The phone on the floor aims low, at the prone body.
+const _prone = SimCamera(
+  scale: .33,
+  floorY: .72,
+  centerU: -.65,
+  aimHeightM: .25,
+);
 
-SimCamera _proneAt(double azimuth, {double scale = .33}) =>
-    SimCamera(azimuthDeg: azimuth, scale: scale, floorY: .72, centerU: -.65);
+SimCamera _proneAt(double azimuth, {double scale = .33}) => SimCamera(
+  azimuthDeg: azimuth,
+  scale: scale,
+  floorY: .72,
+  centerU: -.65,
+  aimHeightM: .25,
+);
 
 void main() {
   group('squat, good form', () {
@@ -53,7 +65,9 @@ void main() {
       }
     });
 
-    for (final azimuth in [60.0, 75.0]) {
+    // Further off side-on the knee bend foreshortens fast: a 75° squat
+    // reads ~98° at 60°, so only near side-on is promised.
+    for (final azimuth in [75.0, 80.0]) {
       test('angled $azimuth°: counts every rep with no false faults', () {
         final runs = _runs(
           SquatMovement(),
@@ -68,8 +82,8 @@ void main() {
       });
     }
 
-    test('depth anywhere from 65° to 100° is clean', () {
-      for (final knee in [65.0, 85.0, 100.0]) {
+    test('depth anywhere from 65° to 95° is clean', () {
+      for (final knee in [65.0, 85.0, 95.0]) {
         final runs = _runs(SquatMovement(kneeMinDeg: knee), SquatAnalyzer.new);
         expect(runs.every((run) => run.count == 5), isTrue, reason: '$knee°');
         expect(_cleanRate(runs), 1, reason: '$knee°');
@@ -106,7 +120,11 @@ void main() {
     });
 
     test('just short of depth counts but is flagged shallow', () {
-      final runs = _runs(SquatMovement(kneeMinDeg: 103), SquatAnalyzer.new);
+      // Held at the bottom, so smoothing settles inside the 100–105° band.
+      final runs = _runs(
+        SquatMovement(kneeMinDeg: 103, pauseS: .6),
+        SquatAnalyzer.new,
+      );
       expect(runs.every((run) => run.count == 5), isTrue);
       expect(_faultRate(runs, 'shallowDepth'), greaterThan(.4));
     });
@@ -350,7 +368,7 @@ void main() {
     }
 
     test('a shallow squat is told to go deeper on the next rep', () {
-      for (final frames in sets(SquatMovement(kneeMinDeg: 103))) {
+      for (final frames in sets(SquatMovement(kneeMinDeg: 103, pauseS: .6))) {
         final cues = shownCues(SquatAnalyzer(), frames).map((c) => c.$1);
         expect(cues, contains('Rep sau: xuống sâu hơn'));
       }
@@ -370,8 +388,26 @@ void main() {
       }
     });
 
+    test('squatting 30° off side-on is told to turn further', () {
+      // Depth foreshortens past ~20° off; the user must hear it.
+      for (final frames in sets(
+        SquatMovement(),
+        camera: const SimCamera(azimuthDeg: 60),
+      )) {
+        expect(
+          spoken(SquatAnalyzer(), frames),
+          contains('Xoay nghiêng người về phía camera'),
+        );
+      }
+    });
+
     test('lying head-on to the camera is told to turn sideways', () {
-      const headOn = SimCamera(azimuthDeg: 0, scale: .33, floorY: .72);
+      const headOn = SimCamera(
+        azimuthDeg: 0,
+        scale: .33,
+        floorY: .72,
+        aimHeightM: .25,
+      );
       for (final frames in sets(PushupMovement(), camera: headOn)) {
         expect(
           spoken(PushupAnalyzer(), frames),
@@ -451,6 +487,287 @@ void main() {
       replay(sagging, simulate(PlankMovement(sagM: .12), camera: _prone));
       expect(sagging.summary.goodMs, 0);
       expect(sagging.summary.sagMs, greaterThan(15000));
+    });
+  });
+
+  group('shoulder press (facing the camera, upper body only)', () {
+    /// Framed from the waist up, 2 m away.
+    SimCamera upperBody({double pitch = 0, double azimuth = 0}) => SimCamera(
+      azimuthDeg: azimuth,
+      pitchDeg: pitch,
+      scale: .6,
+      floorY: 1.35,
+      distanceM: 2,
+    );
+
+    List<List<SimFrame>> sets(
+      Movement movement, {
+      SimCamera? camera,
+      SimNoise noise = const SimNoise(),
+    }) => [
+      for (var seed = 1; seed <= _seeds; seed++)
+        simulate(
+          movement,
+          camera: camera ?? upperBody(),
+          noise: noise,
+          seed: seed,
+        ),
+    ];
+
+    Set<String> warnings(List<SimFrame> frames) => {
+      for (final (cue, tone) in shownCues(ShoulderPressAnalyzer(), frames))
+        if (tone == CueTone.warn) cue,
+    };
+
+    test('good presses: counted, clean, 100, only the count spoken', () {
+      for (final camera in [
+        upperBody(),
+        // A phone on a shelf or projector, tilted down.
+        upperBody(pitch: 30),
+        upperBody(pitch: 60),
+        // Not squarely facing the camera.
+        upperBody(azimuth: 35),
+        // Whole body in frame, further away.
+        const SimCamera(azimuthDeg: 0, scale: .4, floorY: .95),
+      ]) {
+        for (final frames in sets(ShoulderPressMovement(), camera: camera)) {
+          final run = replay(ShoulderPressAnalyzer(), frames);
+          expect(run.count, 5);
+          expect(run.faults, isEmpty);
+          expect(run.minScore, 100);
+          expect(spoken(ShoulderPressAnalyzer(), frames), [
+            '1',
+            '2',
+            '3',
+            '4',
+            '5',
+          ]);
+          expect(warnings(frames), isEmpty);
+        }
+      }
+    });
+
+    test('survives jitter, low frame rate and quick reps', () {
+      for (final (movement, noise) in [
+        (ShoulderPressMovement(), const SimNoise(sigma: .008)),
+        (ShoulderPressMovement(), const SimNoise(fps: 10)),
+        (
+          ShoulderPressMovement(pressS: .4, lowerS: .5, pauseS: .1, restS: .2),
+          const SimNoise(),
+        ),
+      ]) {
+        for (final frames in sets(movement, noise: noise)) {
+          final run = replay(ShoulderPressAnalyzer(), frames);
+          expect(run.count, 5);
+          expect(run.faults, isEmpty);
+        }
+      }
+    });
+
+    test('arms left bent overhead: counted, flagged, told to lock out', () {
+      for (final frames in sets(ShoulderPressMovement(elbowTopDeg: 140))) {
+        final run = replay(ShoulderPressAnalyzer(), frames);
+        expect(run.count, 5);
+        expect(
+          run.records.every((r) => r.faults.contains('noLockout')),
+          isTrue,
+        );
+        expect(
+          spoken(ShoulderPressAnalyzer(), frames),
+          contains('2. đẩy thẳng tay lên hết'),
+        );
+      }
+    });
+
+    test('one arm lagging: warned live, highlighted, told to press evenly', () {
+      for (final frames in sets(ShoulderPressMovement(rightShortfall: .6))) {
+        final run = replay(ShoulderPressAnalyzer(), frames);
+        expect(run.count, 5);
+        expect(
+          run.records.every((r) => r.faults.first == 'unevenArms'),
+          isTrue,
+        );
+        expect(warnings(frames), contains('Đẩy đều hai tay'));
+        expect(
+          run.outputs.any((o) => o.faultJoints.contains(SquatJoint.rightWrist)),
+          isTrue,
+        );
+        expect(
+          spoken(ShoulderPressAnalyzer(), frames),
+          contains('2. đẩy đều hai tay'),
+        );
+      }
+    });
+
+    test('pressing again before reaching the shoulders is not a rep', () {
+      for (final frames in sets(ShoulderPressMovement(lowestP: .4))) {
+        final run = replay(ShoulderPressAnalyzer(), frames);
+        // Only the final full lowering completes one, partial-range, rep.
+        expect(run.count, 1);
+        expect(run.records.single.faults, contains('partialRange'));
+        expect(warnings(frames), contains('Hạ khuỷu xuống ngang vai'));
+      }
+    });
+
+    test('turned 60° away is told to face the camera; never a false '
+        '"uneven" from 45° on', () {
+      for (final azimuth in [45.0, 60.0]) {
+        for (final frames in sets(
+          ShoulderPressMovement(),
+          camera: upperBody(azimuth: azimuth),
+        )) {
+          final said = spoken(ShoulderPressAnalyzer(), frames);
+          expect(said, isNot(contains('Đẩy đều hai tay')), reason: '$azimuth');
+          // 45° sits on the facing limit: counted cleanly or told to turn.
+          final counted = replay(ShoulderPressAnalyzer(), frames).count == 5;
+          expect(
+            said.contains('Quay mặt về phía camera') ||
+                (azimuth < 60 && counted),
+            isTrue,
+            reason: '$azimuth',
+          );
+        }
+      }
+    });
+
+    test('hands above the top of the frame while holding overhead', () {
+      // Framed tight: locked-out hands leave the frame for the 0.8 s hold,
+      // one a moment before the other, at normal and quick tempo.
+      const tight = SimCamera(
+        azimuthDeg: 0,
+        scale: .75,
+        floorY: 1.5,
+        distanceM: 2,
+      );
+      for (final movement in [
+        ShoulderPressMovement(pauseS: .8, rightShortfall: .05),
+        ShoulderPressMovement(pauseS: .8, pressS: .4, rightShortfall: .05),
+      ]) {
+        for (final frames in sets(movement, camera: tight)) {
+          final run = replay(ShoulderPressAnalyzer(), frames);
+          expect(run.count, 5);
+          // Lockout happened out of view: not judged, so not a fault.
+          expect(run.faults, isEmpty);
+          // Still facing the camera: no "turn" warning, press wording.
+          expect(
+            spoken(ShoulderPressAnalyzer(), frames),
+            isNot(contains('Quay mặt về phía camera')),
+          );
+          expect(
+            run.outputs.map((o) => o.phaseLabel),
+            isNot(contains('Đủ sâu')),
+          );
+        }
+      }
+    });
+
+    test('a frame cut at the forehead still counts every press', () {
+      // The wrists leave the frame before the press reads as overhead.
+      const cut = SimCamera(
+        azimuthDeg: 0,
+        scale: .8,
+        floorY: 1.55,
+        distanceM: 2,
+      );
+      for (final frames in sets(ShoulderPressMovement(), camera: cut)) {
+        final run = replay(ShoulderPressAnalyzer(), frames);
+        expect(run.count, 5);
+        expect(
+          spoken(ShoulderPressAnalyzer(), frames),
+          isNot(contains('Đẩy tay lên cao hết cỡ')),
+        );
+      }
+    });
+
+    test('a straight-arm raise from hanging arms is not a press', () {
+      for (final frames in sets(StraightArmRaiseMovement())) {
+        expect(replay(ShoulderPressAnalyzer(), frames).count, 0);
+        expect(
+          spoken(ShoulderPressAnalyzer(), frames),
+          contains('Gập khuỷu, đưa tay ngang vai rồi đẩy'),
+        );
+      }
+    });
+
+    test('chest-up framing (no hips) still guards against false uneven', () {
+      SimCamera chestUp(double azimuth) =>
+          SimCamera(azimuthDeg: azimuth, scale: .75, floorY: 1.9, distanceM: 2);
+      for (final frames in sets(ShoulderPressMovement(), camera: chestUp(40))) {
+        expect(
+          replay(ShoulderPressAnalyzer(), frames).faults,
+          isNot(contains('unevenArms')),
+        );
+      }
+      // Squarely facing, a lagging arm is still caught.
+      for (final frames in sets(
+        ShoulderPressMovement(rightShortfall: .6),
+        camera: chestUp(0),
+      )) {
+        expect(
+          replay(ShoulderPressAnalyzer(), frames).faults,
+          contains('unevenArms'),
+        );
+      }
+    });
+
+    test('a press stopping at the forehead is not a rep, and says why', () {
+      for (final frames in sets(ShoulderPressMovement(topP: .4))) {
+        expect(replay(ShoulderPressAnalyzer(), frames).count, 0);
+        expect(
+          spoken(ShoulderPressAnalyzer(), frames),
+          contains('Đẩy tay lên cao hết cỡ'),
+        );
+      }
+    });
+
+    test('a partial-range rep is judged on its last press', () {
+      // Bent-arm re-presses after a full first one must still miss lockout.
+      final movement = ShoulderPressMovement(lowestP: .4, elbowTopDeg: 140);
+      for (final frames in sets(movement)) {
+        final record = replay(ShoulderPressAnalyzer(), frames).records.single;
+        expect(record.faults, containsAll(['partialRange', 'noLockout']));
+        expect(record.descentMs, greaterThan(0));
+      }
+    });
+
+    test('side-on with the hidden arm lost is told to face the camera', () {
+      // A real detector drops confidence in the occluded arm.
+      for (final frames in sets(
+        ShoulderPressMovement(),
+        camera: upperBody(azimuth: 90),
+        noise: const SimNoise(farConfidence: .3),
+      )) {
+        expect(
+          spoken(ShoulderPressAnalyzer(), frames),
+          contains('Quay mặt về phía camera'),
+        );
+      }
+    });
+
+    test('standing side-on is told to face the camera, never counts', () {
+      for (final frames in sets(
+        ShoulderPressMovement(),
+        camera: upperBody(azimuth: 90),
+      )) {
+        expect(replay(ShoulderPressAnalyzer(), frames).count, 0);
+        expect(
+          spoken(ShoulderPressAnalyzer(), frames),
+          contains('Quay mặt về phía camera'),
+        );
+      }
+    });
+
+    test('rep tempo is recorded for the review', () {
+      final run = replay(
+        ShoulderPressAnalyzer(),
+        simulate(ShoulderPressMovement(), camera: upperBody()),
+      );
+      expect(run.records, hasLength(5));
+      expect(
+        run.records.every((r) => r.descentMs > 0 && r.ascentMs > 0),
+        isTrue,
+      );
+      expect(run.records.every((r) => r.minKneeAngle == null), isTrue);
     });
   });
 }

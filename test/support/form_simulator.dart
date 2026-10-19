@@ -39,18 +39,25 @@ abstract final class Body {
 }
 
 /// Phone camera looking at the subject. [azimuthDeg] 90 = camera on the
-/// body's left side (side-on), 0 = straight in front.
+/// body's left side (side-on), 0 = straight in front. [pitchDeg] tilts it
+/// down, as when the phone sits up high (a shelf, a projector).
 class SimCamera {
   const SimCamera({
     this.azimuthDeg = 90,
+    this.pitchDeg = 0,
     this.scale = .436,
     this.distanceM = 3,
     this.aspect = 480 / 720,
     this.floorY = .92,
     this.centerU = 0,
+    this.aimHeightM = 1,
   });
 
   final double azimuthDeg;
+  final double pitchDeg;
+
+  /// Body height (metres) the tilted camera aims at: it pivots about it.
+  final double aimHeightM;
 
   /// Frame units (upright image height = 1) per metre at the subject.
   final double scale;
@@ -59,7 +66,9 @@ class SimCamera {
   /// Upright width / height; the page is portrait-locked (480x720 medium).
   final double aspect;
 
-  /// Frame y of the floor.
+  /// Frame y of the floor at the subject's distance when the camera is
+  /// level; with [pitchDeg] the floor moves (only the aim point stays put,
+  /// at `floorY - aimHeightM * scale`).
   final double floorY;
 
   /// Horizontal body coordinate (metres) drawn at the frame center.
@@ -70,17 +79,25 @@ class SimCamera {
     return p.x * math.sin(a) - p.z * math.cos(a);
   }
 
-  /// Distance toward the camera, metres.
+  /// Horizontal distance toward the camera, metres — what decides which
+  /// side of the body is occluded.
   double depth(V3 p) {
     final a = _rad(azimuthDeg);
     return p.x * math.cos(a) + p.z * math.sin(a);
   }
 
   (double, double) project(V3 p) {
-    final perspective = distanceM / (distanceM - depth(p));
+    final pitch = _rad(pitchDeg);
+    // Tilted down about the aim point: height and nearness mix into the
+    // image's vertical axis, and higher points come closer to the camera.
+    final height = p.y - aimHeightM;
+    final up = height * math.cos(pitch) - depth(p) * math.sin(pitch);
+    final towardCamera = depth(p) * math.cos(pitch) + height * math.sin(pitch);
+    final perspective = distanceM / (distanceM - towardCamera);
     return (
       aspect / 2 + (_u(p) - centerU) * scale * perspective,
-      floorY - p.y * scale * perspective,
+      // Perspective scales about the aim point, where the lens points.
+      floorY - aimHeightM * scale - up * scale * perspective,
     );
   }
 }
@@ -429,6 +446,138 @@ class PlankMovement implements Movement {
         .04,
         z * .6,
       );
+    }
+    return pose;
+  }
+}
+
+/// Standing overhead press with both arms in the frontal plane: from the
+/// rack (upper arms out to the sides, elbows bent 90°, hands up) to arms
+/// straight overhead.
+class ShoulderPressMovement implements Movement {
+  ShoulderPressMovement({
+    this.reps = 5,
+    this.elbowTopDeg = 172,
+    this.rightShortfall = 0,
+    this.topP = 1,
+    this.lowestP = 0,
+    double pressS = .9,
+    double pauseS = .25,
+    double lowerS = 1.1,
+    double restS = .6,
+  }) : timeline = RepTimeline(
+         reps: reps,
+         descentS: pressS,
+         pauseS: pauseS,
+         ascentS: lowerS,
+         restS: restS,
+       );
+
+  final int reps;
+
+  /// Elbow angle at the top: ~172 locked out, lower for a half press.
+  final double elbowTopDeg;
+
+  /// How far short of the left arm the right one stops (0..1 of its
+  /// range): a weaker arm that never gets as high, not one that catches up.
+  final double rightShortfall;
+
+  /// How far up each press goes (1 = locked out overhead).
+  final double topP;
+
+  /// Lowest point between reps (0 = back to the shoulders).
+  final double lowestP;
+
+  /// Pressing up / holding / lowering, on the shared rep timeline.
+  final RepTimeline timeline;
+
+  static const _shoulderY = 1.44;
+
+  @override
+  double get durationS => timeline.durationS;
+
+  @override
+  Pose3 poseAt(double t) {
+    final raw = timeline.progress(t);
+    // The set starts and ends at the shoulders; only the rests between
+    // presses stop at [lowestP].
+    final inSet =
+        t >= timeline.leadS && t < timeline.durationS - timeline.tailS;
+    final p = (inSet ? lowestP + (1 - lowestP) * raw : raw) * topP;
+    final pose = <SquatJoint, V3>{};
+    for (final side in const [1, -1]) {
+      final left = side == 1;
+      final armP = left ? p : p * (1 - rightShortfall);
+      // Upper arm from horizontal-outward (rack) to nearly vertical.
+      final beta = _rad(80 * armP);
+      final elbowAngle = 90 + (elbowTopDeg - 90) * armP;
+      // Forearm direction, same convention: vertical in the rack, in line
+      // with the upper arm when locked out.
+      final gamma = beta + _rad(180 - elbowAngle);
+      final shoulder = V3(0, _shoulderY, side * Body.shoulderHalf);
+      final elbow =
+          shoulder +
+          V3(.04, math.sin(beta), side * math.cos(beta)) * Body.upperArm;
+      final wrist =
+          elbow +
+          V3(.02, math.sin(gamma), side * math.cos(gamma)) * Body.forearm;
+      pose[left ? SquatJoint.leftShoulder : SquatJoint.rightShoulder] =
+          shoulder;
+      pose[left ? SquatJoint.leftElbow : SquatJoint.rightElbow] = elbow;
+      pose[left ? SquatJoint.leftWrist : SquatJoint.rightWrist] = wrist;
+      pose[left ? SquatJoint.leftHip : SquatJoint.rightHip] = V3(
+        0,
+        _shoulderY - Body.torso,
+        side * Body.hipHalf,
+      );
+      pose[left ? SquatJoint.leftKnee : SquatJoint.rightKnee] = V3(
+        0,
+        Body.ankleHeight + Body.shank,
+        side * Body.hipHalf,
+      );
+      pose[left ? SquatJoint.leftAnkle : SquatJoint.rightAnkle] = V3(
+        0,
+        Body.ankleHeight,
+        side * Body.hipHalf,
+      );
+    }
+    return pose;
+  }
+}
+
+/// Not a press: straight arms raised from hanging at the sides to
+/// overhead and back, elbows never bending at the shoulders.
+class StraightArmRaiseMovement implements Movement {
+  StraightArmRaiseMovement({this.reps = 5})
+    : timeline = RepTimeline(
+        reps: reps,
+        descentS: 1,
+        pauseS: .3,
+        ascentS: 1,
+        restS: .6,
+      );
+
+  final int reps;
+  final RepTimeline timeline;
+
+  @override
+  double get durationS => timeline.durationS;
+
+  @override
+  Pose3 poseAt(double t) {
+    final press = ShoulderPressMovement().poseAt(0);
+    final pose = Map.of(press);
+    // From pointing down (-85°) through the side to overhead (85°).
+    final angle = _rad(-85 + 170 * timeline.progress(t));
+    for (final side in const [1, -1]) {
+      final left = side == 1;
+      final shoulder =
+          pose[left ? SquatJoint.leftShoulder : SquatJoint.rightShoulder]!;
+      final direction = V3(.02, math.sin(angle), side * math.cos(angle));
+      final elbow = shoulder + direction * Body.upperArm;
+      pose[left ? SquatJoint.leftElbow : SquatJoint.rightElbow] = elbow;
+      pose[left ? SquatJoint.leftWrist : SquatJoint.rightWrist] =
+          elbow + direction * Body.forearm;
     }
     return pose;
   }
