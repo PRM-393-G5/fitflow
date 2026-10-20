@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
 
@@ -164,7 +165,7 @@ class BodyMetricsPage extends StatelessWidget {
     BuildContext context,
     AppController controller,
   ) async {
-    final now = DateTime.now();
+    final now = clock.now();
     var picked = now;
     final date = await showAppDialog<DateTime>(
       context: context,
@@ -175,7 +176,8 @@ class BodyMetricsPage extends StatelessWidget {
         fit: BoxFit.scaleDown,
         child: FCalendar.grid(
           // Weigh-ins can't be logged in the future.
-          control: FGridCalendarControl(end: now),
+          // Today from the same clock as the end date, not the device's.
+          control: FGridCalendarControl(end: now, today: now),
           selectionControl: .managedSingle(
             initial: picked,
             onChange: (value) => picked = value ?? picked,
@@ -590,7 +592,7 @@ class _WeightTrendState extends State<_WeightTrend> {
   @override
   Widget build(BuildContext context) {
     final days = _range.days;
-    final now = DateTime.now();
+    final now = clock.now();
     final from = days == null
         ? null
         : DateTime(now.year, now.month, now.day - (days - 1));

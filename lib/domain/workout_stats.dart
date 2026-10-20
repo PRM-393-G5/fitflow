@@ -1,3 +1,5 @@
+import 'package:clock/clock.dart';
+
 import 'models/workout_session.dart';
 
 /// What a form-check session recorded: reps, or seconds held for planks.
@@ -41,7 +43,7 @@ abstract final class WorkoutStats {
     Iterable<WorkoutSession> sessions, {
     DateTime? now,
   }) {
-    final start = _monday(now ?? DateTime.now());
+    final start = _monday(now ?? clock.now());
     // Calendar construction (not Duration) keeps this DST-safe.
     final end = DateTime(start.year, start.month, start.day + 7);
     return training(sessions)
@@ -71,7 +73,7 @@ abstract final class WorkoutStats {
     int weeklyGoal, {
     DateTime? now,
   }) {
-    final thisMonday = _monday(now ?? DateTime.now());
+    final thisMonday = _monday(now ?? clock.now());
     final goal = weeklyGoal.clamp(1, 7);
     final perWeek = <DateTime, int>{};
     for (final session in training(sessions)) {

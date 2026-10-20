@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
 
@@ -168,7 +169,7 @@ class _DayCell extends StatelessWidget {
     final workout = rest ? null : controller.scheduledWorkout(weekday);
     final color =
         SchedulePage._categoryColors[workout?.category] ?? colors.primary;
-    final isToday = DateTime.now().weekday == weekday;
+    final isToday = clock.now().weekday == weekday;
     final foreground = workout == null ? colors.mutedForeground : color;
     final IconData icon;
     final String text;

@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:clock/clock.dart';
+
 import 'load_math.dart';
 import 'models/exercise.dart';
 import 'models/workout_session.dart';
@@ -142,7 +144,7 @@ abstract final class Progression {
     int maxAmount = 1 << 30,
     double maxWeightKg = double.infinity,
   }) {
-    final today = now ?? DateTime.now();
+    final today = now ?? clock.now();
     final target = _target(planned);
     final history = _history(sessions, planned, target);
     if (history.isEmpty) return null;

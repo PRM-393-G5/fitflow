@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -192,7 +193,7 @@ class ProfilePage extends StatelessWidget {
   /// when it is not this year).
   @visibleForTesting
   static String ago(DateTime time, {DateTime? now}) {
-    final today = now ?? DateTime.now();
+    final today = now ?? clock.now();
     final elapsed = today.difference(time);
     if (elapsed.inMinutes < 1) return 'just now';
     if (elapsed.inHours < 1) return '${elapsed.inMinutes} min ago';
@@ -236,7 +237,7 @@ class ProfilePage extends StatelessWidget {
       actions: [
         FButton(
           onPress: () async {
-            final now = DateTime.now();
+            final now = clock.now();
             final stamp =
                 '${now.year}${now.month.toString().padLeft(2, '0')}'
                 '${now.day.toString().padLeft(2, '0')}';

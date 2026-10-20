@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:clock/clock.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:forui/forui.dart';
@@ -375,7 +376,7 @@ class _ActivityHeatmap extends StatelessWidget {
       counts[day] = (counts[day] ?? 0) + 1;
     }
     // Recomputed every build so the grid rolls over at midnight.
-    final now = DateTime.now();
+    final now = clock.now();
     final today = DateTime(now.year, now.month, now.day);
     final start = DateTime(
       today.year,
@@ -474,7 +475,7 @@ class _WeekChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
+    final now = clock.now();
     final today = DateTime(now.year, now.month, now.day);
     final monday = DateTime(
       today.year,
@@ -757,7 +758,7 @@ class _WeightCard extends StatelessWidget {
     final latest = entries.last;
     // The trend covers the last 30 days counted from today, so an old
     // log is never presented as recent.
-    final now = DateTime.now();
+    final now = clock.now();
     final from = DateTime(now.year, now.month, now.day - 30);
     final recent = [
       for (final entry in entries)

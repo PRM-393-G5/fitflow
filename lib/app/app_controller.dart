@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:clock/clock.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -155,7 +156,7 @@ class AppController extends ChangeNotifier {
   void _decodeSyncedLists() {
     weightEntries = _decodeWeights();
     final raw = preferences.getString(_foodLogKey);
-    foodLog = FoodLog.decode(raw)..prune(DateTime.now());
+    foodLog = FoodLog.decode(raw)..prune(clock.now());
     if (raw != null && !FoodLog.isCurrentFormat(raw)) {
       unawaited(_saveFoodLog());
     }
@@ -308,7 +309,7 @@ class AppController extends ChangeNotifier {
       final entriesBefore = foodLog.entries.toList();
       final mergedEntries = await repo.syncDocs('meals', [
         for (final entry in entriesBefore) entry.toJson(),
-      ], since: FoodLog.oldestKept(DateTime.now()));
+      ], since: FoodLog.oldestKept(clock.now()));
       if (stale()) return;
       if (mergedEntries != null) {
         final remoteEntries = <FoodEntry>[];
@@ -326,7 +327,7 @@ class AppController extends ChangeNotifier {
             foodLog.entries.toList(),
             (entry) => entry.id,
           ),
-        )..prune(DateTime.now());
+        )..prune(clock.now());
         await _saveFoodLog();
       }
 
@@ -758,7 +759,7 @@ class AppController extends ChangeNotifier {
   /// else the first plan. Null on a scheduled rest day.
   Workout? suggestedWorkout() {
     if (workouts.isEmpty) return null;
-    final today = DateTime.now().weekday;
+    final today = clock.now().weekday;
     if (isRestDay(today)) return null;
     final scheduled = scheduledWorkout(today);
     if (scheduled != null) return scheduled;
