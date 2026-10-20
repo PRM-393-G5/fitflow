@@ -1,4 +1,3 @@
-import 'package:clock/clock.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
 /// Speaks form-check cues aloud.
@@ -40,12 +39,12 @@ class TtsFormVoice implements FormVoice {
   Future<bool> _ensureReady() async {
     final failedAt = _failedAt;
     if (failedAt != null) {
-      if (clock.now().difference(failedAt) < retryAfter) return false;
+      if (DateTime.now().difference(failedAt) < retryAfter) return false;
       _failedAt = null;
       _ready = null;
     }
     final ready = await (_ready ??= _init());
-    if (!ready) _failedAt = clock.now();
+    if (!ready) _failedAt = DateTime.now();
     return ready;
   }
 

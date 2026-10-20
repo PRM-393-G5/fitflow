@@ -378,7 +378,7 @@ class FoodLog {
   FoodEntry add(DateTime day, Meal meal, {DateTime? now}) {
     final key = dayKey(day);
     final existing = days[key] ?? const [];
-    final micros = (now ?? clock.now()).microsecondsSinceEpoch;
+    final micros = (now ?? DateTime.now()).microsecondsSinceEpoch;
     var id = '$key:$micros';
     for (var n = 1; existing.any((entry) => entry.id == id); n++) {
       id = '$key:$micros-$n';

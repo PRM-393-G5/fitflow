@@ -343,7 +343,7 @@ class AppController extends ChangeNotifier {
             mergedEntries,
           ].every((merged) => merged != null);
       lastSyncFailed = !complete;
-      if (complete) lastSyncedAt = clock.now();
+      if (complete) lastSyncedAt = DateTime.now();
       finished = true;
     } catch (e) {
       debugPrint('Sync failed: $e');
@@ -430,7 +430,7 @@ class AppController extends ChangeNotifier {
   /// Stamps the meta change and pushes it to the cloud in the background
   /// (when signed in) — the UI never waits on the network.
   Future<void> _pushMeta({bool wait = false}) async {
-    final ts = clock.now().millisecondsSinceEpoch;
+    final ts = DateTime.now().millisecondsSinceEpoch;
     await preferences.setInt(_metaTsKey, ts);
     final repo = repository;
     if (repo is RemoteWorkoutRepository &&
@@ -813,7 +813,7 @@ class AppController extends ChangeNotifier {
   String exportJson() => const JsonEncoder.withIndent('  ').convert({
     'app': 'FitFlow',
     'version': _exportVersion,
-    'exportedAt': clock.now().toIso8601String(),
+    'exportedAt': DateTime.now().toIso8601String(),
     'workouts': workouts
         .where(isCustomWorkout)
         .map((item) => item.toJson())

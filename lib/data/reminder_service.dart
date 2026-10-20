@@ -1,4 +1,3 @@
-import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -42,7 +41,7 @@ class ReminderService {
       final info = await FlutterTimezone.getLocalTimezone();
       return tz.getLocation(info.identifier);
     } catch (e) {
-      final offset = clock.now().timeZoneOffset;
+      final offset = DateTime.now().timeZoneOffset;
       debugPrint('Could not resolve local timezone ($e), offset $offset');
       if (offset.inMinutes % 60 == 0) {
         // Etc/GMT names invert the sign: UTC+7 is "Etc/GMT-7".

@@ -176,7 +176,8 @@ class BodyMetricsPage extends StatelessWidget {
         fit: BoxFit.scaleDown,
         child: FCalendar.grid(
           // Weigh-ins can't be logged in the future.
-          control: FGridCalendarControl(end: now),
+          // Today from the same clock as the end date, not the device's.
+          control: FGridCalendarControl(end: now, today: now),
           selectionControl: .managedSingle(
             initial: picked,
             onChange: (value) => picked = value ?? picked,

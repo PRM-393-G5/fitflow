@@ -1,5 +1,3 @@
-import 'package:clock/clock.dart';
-
 import 'models/exercise.dart';
 import 'models/workout.dart';
 
@@ -136,7 +134,7 @@ abstract final class AiWorkoutParser {
     final level = _text(json['level'], '');
     final category = _text(json['category'], '');
     return Workout(
-      id: 'custom-ai-${clock.now().microsecondsSinceEpoch}',
+      id: 'custom-ai-${DateTime.now().microsecondsSinceEpoch}',
       name: _text(json['name'], 'AI Workout'),
       // The model's claimed minutes are ignored — estimate from the plan.
       duration: estimateWorkoutDuration(exercises),

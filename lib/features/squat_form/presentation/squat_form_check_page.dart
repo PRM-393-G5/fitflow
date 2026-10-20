@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:camera/camera.dart';
-import 'package:clock/clock.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
@@ -230,7 +229,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     }
     _description = description;
     _camera = controller;
-    _startedAt ??= clock.now();
+    _startedAt ??= DateTime.now();
     _analyzer.pauseTiming();
     _poseModel.clear();
     // A pause (or open review) survives reopening after background/resume.
@@ -457,7 +456,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
   Future<void> _saveSession(_FormResult result) async {
     final started = result.startedAt;
     if (started == null || result.amount == 0) return;
-    final completed = clock.now();
+    final completed = DateTime.now();
     final exercise = result.exercise;
     final timed = exercise == FormExercise.plank;
     await widget.controller.addSession(
@@ -500,7 +499,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
       _exercise = exercise;
       _analyzer = _analyzerFor(exercise);
       _feedback = _feedbackFor(exercise);
-      if (_startedAt != null) _startedAt = clock.now();
+      if (_startedAt != null) _startedAt = DateTime.now();
       _poseModel.clear();
       _tracked = _setupDismissed = false;
     });
