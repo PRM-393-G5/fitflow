@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:clock/clock.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
 import 'package:image_picker/image_picker.dart';
@@ -41,10 +42,10 @@ class _NutritionPageState extends State<NutritionPage>
 
   /// The calendar day the page considers "today" — re-checked on build
   /// and on resume so a page left open past midnight rolls over.
-  DateTime _today = _dayOf(DateTime.now());
+  DateTime _today = _dayOf(clock.now());
 
   /// The day whose food log is shown (today or one of the kept days).
-  DateTime _viewDay = _dayOf(DateTime.now());
+  DateTime _viewDay = _dayOf(clock.now());
 
   /// The controller's [AppController.dataEpoch] the cached data belongs
   /// to; a change means the user's data was wiped or replaced.
@@ -54,7 +55,7 @@ class _NutritionPageState extends State<NutritionPage>
   Uint8List? _photoBytes;
 
   /// Meal slot the analyzed photo will be logged to.
-  String _photoType = defaultMealType(DateTime.now());
+  String _photoType = defaultMealType(clock.now());
   Meal? _photoMeal;
   String _photoNote = '';
   bool _analyzing = false;
@@ -86,7 +87,7 @@ class _NutritionPageState extends State<NutritionPage>
       preferences.getString(NutritionPage._cacheKey),
     );
     _prefsCtrl.text = _cache.preferences;
-    _today = _dayOf(DateTime.now());
+    _today = _dayOf(clock.now());
     _viewDay = _today;
     _photoBytes = null;
     _photoMeal = null;
@@ -102,7 +103,7 @@ class _NutritionPageState extends State<NutritionPage>
   /// Moves [_today] to the current day; returns true when it changed. A
   /// viewed day that fell out of the kept window moves to today.
   bool _rollOver() {
-    final today = _dayOf(DateTime.now());
+    final today = _dayOf(clock.now());
     if (today == _today) return false;
     final oldest = FoodLog.oldestKeptDay(today);
     if (_viewDay == _today || _viewDay.isBefore(oldest)) _viewDay = today;
@@ -285,7 +286,7 @@ class _NutritionPageState extends State<NutritionPage>
     if (photo == null || !mounted) return;
     final bytes = await photo.readAsBytes();
     if (!mounted) return;
-    _photoType = type ?? defaultMealType(DateTime.now());
+    _photoType = type ?? defaultMealType(clock.now());
     await _analyze(bytes);
   }
 
@@ -406,7 +407,7 @@ class _NutritionPageState extends State<NutritionPage>
     final meal = await Navigator.of(context).push<Meal>(
       MaterialPageRoute(
         builder: (_) => LogMealPage(
-          type: type ?? defaultMealType(DateTime.now()),
+          type: type ?? defaultMealType(clock.now()),
           recent: recent,
         ),
       ),
@@ -1267,7 +1268,7 @@ class _DayCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.theme.colors;
     final enabled = onTap != null;
-    final now = DateTime.now();
+    final now = clock.now();
     final isToday =
         day.year == now.year && day.month == now.month && day.day == now.day;
     final dayColor = selected

@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
 
@@ -66,7 +67,7 @@ Future<void> confirmDeleteWorkout(BuildContext context, Workout workout) async {
 }
 
 String _relativeDay(DateTime date) {
-  final now = DateTime.now();
+  final now = clock.now();
   final today = DateTime(now.year, now.month, now.day);
   final day = DateTime(date.year, date.month, date.day);
   final days = today.difference(day).inDays;

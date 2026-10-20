@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:forui/forui.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -23,7 +24,7 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    final now = DateTime.now();
+    final now = clock.now();
     final today = controller.suggestedWorkout();
     final restDay = controller.isRestDay(now.weekday);
     final streak = WorkoutStats.weeklyStreak(

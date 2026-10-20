@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:clock/clock.dart';
+
 import 'body_metrics.dart';
 import 'training_options.dart';
 
@@ -179,7 +181,7 @@ class MealPlan {
 
   int get totalKcal => meals.fold(0, (sum, meal) => sum + meal.kcal);
 
-  bool get isToday => isOn(DateTime.now());
+  bool get isToday => isOn(clock.now());
 
   bool isOn(DateTime day) =>
       date.year == day.year && date.month == day.month && date.day == day.day;
@@ -376,7 +378,7 @@ class FoodLog {
   FoodEntry add(DateTime day, Meal meal, {DateTime? now}) {
     final key = dayKey(day);
     final existing = days[key] ?? const [];
-    final micros = (now ?? DateTime.now()).microsecondsSinceEpoch;
+    final micros = (now ?? clock.now()).microsecondsSinceEpoch;
     var id = '$key:$micros';
     for (var n = 1; existing.any((entry) => entry.id == id); n++) {
       id = '$key:$micros-$n';
@@ -899,7 +901,7 @@ abstract final class AiMealParser {
       meals.last = meals.last.withKcal(max(0, meals.last.kcal + drift));
     }
     return MealPlan(
-      date: DateTime.now(),
+      date: clock.now(),
       targetKcal: targetKcal,
       meals: meals,
       note: _text(json['note'], ''),

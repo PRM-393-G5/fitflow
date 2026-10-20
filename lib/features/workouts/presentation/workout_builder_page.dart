@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
 
@@ -194,7 +195,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
 
   /// Validates every row, showing per-field errors. Null when invalid.
   List<Exercise>? _validExercises() {
-    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final stamp = clock.now().microsecondsSinceEpoch;
     final exercises = <Exercise>[];
     var valid = true;
     for (final (index, draft) in _exercises.indexed) {
@@ -261,7 +262,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
     final workout = Workout(
       id: initial != null && AppController.isCustomWorkout(initial)
           ? initial.id
-          : 'custom-${DateTime.now().microsecondsSinceEpoch}',
+          : 'custom-${clock.now().microsecondsSinceEpoch}',
       name: name,
       exercises: exercises,
       duration: estimateWorkoutDuration(exercises),

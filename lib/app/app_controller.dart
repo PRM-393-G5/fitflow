@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:clock/clock.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -155,7 +156,7 @@ class AppController extends ChangeNotifier {
   void _decodeSyncedLists() {
     weightEntries = _decodeWeights();
     final raw = preferences.getString(_foodLogKey);
-    foodLog = FoodLog.decode(raw)..prune(DateTime.now());
+    foodLog = FoodLog.decode(raw)..prune(clock.now());
     if (raw != null && !FoodLog.isCurrentFormat(raw)) {
       unawaited(_saveFoodLog());
     }
@@ -308,7 +309,7 @@ class AppController extends ChangeNotifier {
       final entriesBefore = foodLog.entries.toList();
       final mergedEntries = await repo.syncDocs('meals', [
         for (final entry in entriesBefore) entry.toJson(),
-      ], since: FoodLog.oldestKept(DateTime.now()));
+      ], since: FoodLog.oldestKept(clock.now()));
       if (stale()) return;
       if (mergedEntries != null) {
         final remoteEntries = <FoodEntry>[];
@@ -326,7 +327,7 @@ class AppController extends ChangeNotifier {
             foodLog.entries.toList(),
             (entry) => entry.id,
           ),
-        )..prune(DateTime.now());
+        )..prune(clock.now());
         await _saveFoodLog();
       }
 
@@ -342,7 +343,7 @@ class AppController extends ChangeNotifier {
             mergedEntries,
           ].every((merged) => merged != null);
       lastSyncFailed = !complete;
-      if (complete) lastSyncedAt = DateTime.now();
+      if (complete) lastSyncedAt = clock.now();
       finished = true;
     } catch (e) {
       debugPrint('Sync failed: $e');
@@ -429,7 +430,7 @@ class AppController extends ChangeNotifier {
   /// Stamps the meta change and pushes it to the cloud in the background
   /// (when signed in) — the UI never waits on the network.
   Future<void> _pushMeta({bool wait = false}) async {
-    final ts = DateTime.now().millisecondsSinceEpoch;
+    final ts = clock.now().millisecondsSinceEpoch;
     await preferences.setInt(_metaTsKey, ts);
     final repo = repository;
     if (repo is RemoteWorkoutRepository &&
@@ -758,7 +759,7 @@ class AppController extends ChangeNotifier {
   /// else the first plan. Null on a scheduled rest day.
   Workout? suggestedWorkout() {
     if (workouts.isEmpty) return null;
-    final today = DateTime.now().weekday;
+    final today = clock.now().weekday;
     if (isRestDay(today)) return null;
     final scheduled = scheduledWorkout(today);
     if (scheduled != null) return scheduled;
@@ -812,7 +813,7 @@ class AppController extends ChangeNotifier {
   String exportJson() => const JsonEncoder.withIndent('  ').convert({
     'app': 'FitFlow',
     'version': _exportVersion,
-    'exportedAt': DateTime.now().toIso8601String(),
+    'exportedAt': clock.now().toIso8601String(),
     'workouts': workouts
         .where(isCustomWorkout)
         .map((item) => item.toJson())
