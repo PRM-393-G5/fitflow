@@ -10,6 +10,7 @@ import '../../../core/formatting.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/section_header.dart';
+import '../../../domain/form_trend.dart';
 import '../../../domain/models/body_weight_entry.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../../domain/personal_records.dart';
@@ -20,6 +21,7 @@ import '../../workouts/presentation/weight_units.dart';
 import 'session_detail_page.dart';
 import 'share_summary_dialog.dart';
 import '../../../core/widgets/app_card.dart';
+import 'form_quality_card.dart';
 
 class ProgressPage extends StatelessWidget {
   const ProgressPage({super.key});
@@ -36,6 +38,8 @@ class ProgressPage extends StatelessWidget {
     final records = PersonalRecords.all(sessions).values.toList();
     final week = WorkoutStats.thisWeek(sessions);
     final streak = WorkoutStats.weeklyStreak(sessions, controller.weeklyGoal);
+    // Camera-judged sets, from form checks and workouts alike.
+    final formTrends = FormTrend.of(sessions);
 
     return ResponsiveContent(
       child: Column(
@@ -117,6 +121,12 @@ class ProgressPage extends StatelessWidget {
           const SectionHeader(title: 'Activity'),
           const SizedBox(height: AppSpacing.sm),
           AppCard(child: _ActivityHeatmap(sessions: training)),
+          if (formTrends.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.lg),
+            const SectionHeader(title: 'Form quality'),
+            const SizedBox(height: AppSpacing.sm),
+            FormQualityCard(trends: formTrends),
+          ],
           const SizedBox(height: AppSpacing.lg),
           const SectionHeader(title: 'Body weight'),
           const SizedBox(height: AppSpacing.sm),

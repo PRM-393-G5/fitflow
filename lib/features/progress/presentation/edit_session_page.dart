@@ -139,9 +139,13 @@ class _EditSessionPageState extends State<EditSessionPage> {
       }
       final sets = exercises[change.exerciseIndex];
       final set = sets[change.setIndex];
+      final amount = change.amount ?? set.amount;
       sets[change.setIndex] = SetEntry(
-        amount: change.amount ?? set.amount,
+        amount: amount,
         weightKg: change.weightKg ?? set.weightKg,
+        // The camera verdict describes the reps it counted: kept while the
+        // count stands, dropped once the reps are edited.
+        form: amount == set.amount ? set.form : null,
       );
     }
     final updated = [

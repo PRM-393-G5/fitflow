@@ -1,17 +1,32 @@
+import 'form_result.dart';
+
 /// One actually-performed set, logged during a workout session.
 /// Empty on plan templates; only populated on session snapshots.
 class SetEntry {
-  const SetEntry({required this.amount, this.weightKg = 0});
+  const SetEntry({required this.amount, this.weightKg = 0, this.form});
 
   /// Reps for rep-based exercises, seconds held for timed exercises.
   final int amount;
   final double weightKg;
 
-  Map<String, Object> toJson() => {'amount': amount, 'weightKg': weightKg};
+  /// The camera form check's verdict, when the set was counted with it.
+  final FormResult? form;
+
+  SetEntry withForm(FormResult? form) =>
+      SetEntry(amount: amount, weightKg: weightKg, form: form);
+
+  Map<String, Object> toJson() => {
+    'amount': amount,
+    'weightKg': weightKg,
+    'form': ?form?.toJson(),
+  };
 
   factory SetEntry.fromJson(Map<String, dynamic> json) => SetEntry(
     amount: json['amount'] as int,
     weightKg: (json['weightKg'] as num?)?.toDouble() ?? 0,
+    form: json['form'] == null
+        ? null
+        : FormResult.fromJson(json['form'] as Map<String, dynamic>),
   );
 }
 

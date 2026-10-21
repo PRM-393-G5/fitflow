@@ -10,6 +10,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/load_math.dart';
 import '../../../domain/models/exercise.dart';
+import '../../../domain/models/form_result.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../../domain/personal_records.dart';
@@ -21,7 +22,7 @@ import 'weight_units.dart';
 
 /// Opens the camera form check for one set; resolves to the counted reps
 /// (or hold seconds), or null when nothing was counted.
-typedef FormCheckLauncher = Future<int?> Function(
+typedef FormCheckLauncher = Future<FormSetOutcome?> Function(
   BuildContext context,
   FormExercise exercise,
 );
@@ -58,6 +59,10 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
 
   /// Every planned set is logged; only Finish (or Undo) remains.
   bool _done = false;
+
+  /// The camera's verdict for the set it just counted, logged with that
+  /// set (see [_logSet]).
+  ({int exercise, int set, int amount, FormResult form})? _pendingForm;
   final _entries = <int, List<SetEntry>>{};
 
   /// Logged (exercise, set) positions in order, for "Undo last set".
@@ -256,6 +261,16 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   /// rest timer and the auto-finish when the caller is already finishing.
   void _logSet(SetEntry entry, {bool finishing = false}) {
     final rest = _exercise.restSeconds;
+    // The camera's verdict belongs to this set only if it's the set it
+    // counted, logged with the count it gave.
+    final pending = _pendingForm;
+    _pendingForm = null;
+    if (pending != null &&
+        pending.exercise == _exerciseIndex &&
+        pending.set == _setIndex &&
+        pending.amount == entry.amount) {
+      entry = entry.withForm(pending.form);
+    }
     setState(() {
       (_entries[_exerciseIndex] ??= []).add(entry);
       _log.add((_exerciseIndex, _setIndex));
@@ -345,7 +360,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     if (_done || _resting || _holding || _saving || _dialogOpen) return;
     final launch =
         widget.launchFormCheck ??
-        (context, exercise) => Navigator.of(context).push<int>(
+        (context, exercise) => Navigator.of(context).push<FormSetOutcome>(
           MaterialPageRoute(
             builder: (_) => SquatFormCheckPage(
               controller: widget.controller,
@@ -353,14 +368,22 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
             ),
           ),
         );
-    final counted = await _whilePaused(() => launch(context, exercise));
-    if (counted == null || counted < 1 || !mounted) return;
+    final outcome = await _whilePaused(() => launch(context, exercise));
+    if (outcome == null || outcome.amount < 1 || !mounted) return;
     final timed = _exercise.isTimed;
-    final amount = counted.clamp(1, timed ? _maxSeconds : _maxReps);
+    final amount = outcome.amount.clamp(1, timed ? _maxSeconds : _maxReps);
     setState(() {
       _amountCtrl.text = '$amount';
       _amountError = null;
     });
+    if (outcome.form case final form?) {
+      _pendingForm = (
+        exercise: _exerciseIndex,
+        set: _setIndex,
+        amount: amount,
+        form: form,
+      );
+    }
     showFToast(
       context: context,
       title: Text(

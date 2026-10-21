@@ -9,6 +9,7 @@ import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../../domain/workout_stats.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../squat_form/presentation/form_review_view.dart';
 import 'edit_session_page.dart';
 
 class SessionDetailPage extends StatelessWidget {
@@ -105,9 +106,22 @@ class SessionDetailPage extends StatelessWidget {
               children: [
                 for (final (index, exercise) in session.exercises.indexed)
                   FTile(
+                    key: Key('session-exercise-$index'),
                     prefix: FAvatar.raw(child: Text('${index + 1}')),
                     title: Text(exercise.name),
-                    subtitle: Text(_setsLine(exercise, controller.useMetric)),
+                    subtitle: Text(
+                      [
+                        _setsLine(exercise, controller.useMetric),
+                        ?_formLine(exercise),
+                      ].join('\n'),
+                    ),
+                    // Camera-judged sets open their per-rep review.
+                    suffix: _hasForm(exercise)
+                        ? const Icon(FLucideIcons.chevronRight)
+                        : null,
+                    onPress: _hasForm(exercise)
+                        ? () => _showForm(context, exercise)
+                        : null,
                   ),
               ],
             ),
@@ -115,6 +129,68 @@ class SessionDetailPage extends StatelessWidget {
       ),
     );
   }
+
+  static bool _hasForm(Exercise exercise) =>
+      exercise.performedSets.any((set) => set.form != null);
+
+  /// 'Form: 4/5 clean reps' over the camera-judged sets, or null.
+  static String? _formLine(Exercise exercise) {
+    final forms = [for (final set in exercise.performedSets) ?set.form];
+    if (forms.isEmpty) return null;
+    if (forms.length == 1) return 'Form: ${formSummaryLabel(forms.single)}';
+    final reps = [for (final form in forms) ...form.reps];
+    if (reps.isNotEmpty && forms.every((form) => form.hold == null)) {
+      final clean = reps.where((rep) => rep.clean).length;
+      return 'Form: $clean/${reps.length} clean reps over ${forms.length} sets';
+    }
+    final qualities = [for (final form in forms) ?form.quality];
+    final mean = qualities.isEmpty
+        ? 0
+        : qualities.reduce((a, b) => a + b) / qualities.length;
+    return 'Form: ${(mean * 100).round()}% good over ${forms.length} sets';
+  }
+
+  static void _showForm(BuildContext context, Exercise exercise) =>
+      showFSheet<void>(
+        context: context,
+        side: .btt,
+        mainAxisMaxRatio: .infinity,
+        builder: (context) => SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${exercise.name} — form review',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                for (final (index, set) in exercise.performedSets.indexed)
+                  if (set.form case final form?) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    Text(
+                      'Set ${index + 1} · ${formSummaryLabel(form)}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    FormReviewView(result: form),
+                  ],
+                const SizedBox(height: AppSpacing.md),
+                SizedBox(
+                  width: double.infinity,
+                  child: FButton(
+                    key: const Key('session-form-done'),
+                    onPress: () => Navigator.pop(context),
+                    child: const Text('Done'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   /// 'Muscle • 10 × 20 kg · 8 × 22.5 kg' for logged sets, else the plan line.
   static String _setsLine(Exercise exercise, bool metric) {
