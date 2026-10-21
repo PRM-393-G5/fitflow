@@ -15,6 +15,12 @@ class SetEntry {
   SetEntry withForm(FormResult? form) =>
       SetEntry(amount: amount, weightKg: weightKg, form: form);
 
+  SetEntry copyWith({int? amount, double? weightKg}) => SetEntry(
+    amount: amount ?? this.amount,
+    weightKg: weightKg ?? this.weightKg,
+    form: form,
+  );
+
   Map<String, Object> toJson() => {
     'amount': amount,
     'weightKg': weightKg,

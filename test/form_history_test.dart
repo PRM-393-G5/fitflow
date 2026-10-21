@@ -217,6 +217,20 @@ void main() {
       expect(find.text('Form quality'), findsNothing);
     });
 
+    testWidgets('sets with nothing judged are not shown as 0%', (tester) async {
+      final session = formSession(1, [
+        const FormResult(exercise: 'squat'),
+        squatForm(3, 4),
+      ]);
+      await pumpPage(
+        tester,
+        SessionDetailPage(session: session),
+        sessions: [session],
+      );
+      expect(find.textContaining('Form: 3/4 clean reps'), findsOneWidget);
+      expect(find.textContaining('0%'), findsNothing);
+    });
+
     testWidgets('a session reopens the per-rep review of its sets', (
       tester,
     ) async {

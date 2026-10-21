@@ -69,7 +69,7 @@ class FormTrend {
     if (qualities.length >= 2 * _compared) {
       final recent = qualities.sublist(qualities.length - _compared);
       final before = qualities.sublist(
-        (qualities.length - 2 * _compared).clamp(0, qualities.length),
+        qualities.length - 2 * _compared,
         qualities.length - _compared,
       );
       final change = _mean(recent) - _mean(before);

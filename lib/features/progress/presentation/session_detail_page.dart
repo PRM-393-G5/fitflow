@@ -131,22 +131,25 @@ class SessionDetailPage extends StatelessWidget {
   }
 
   static bool _hasForm(Exercise exercise) =>
-      exercise.performedSets.any((set) => set.form != null);
+      exercise.performedSets.any((set) => set.form?.quality != null);
 
   /// 'Form: 4/5 clean reps' over the camera-judged sets, or null.
   static String? _formLine(Exercise exercise) {
-    final forms = [for (final set in exercise.performedSets) ?set.form];
+    // Only sets with something judged: an empty verdict says nothing.
+    final forms = [
+      for (final set in exercise.performedSets)
+        if (set.form case final form? when form.quality != null) form,
+    ];
     if (forms.isEmpty) return null;
     if (forms.length == 1) return 'Form: ${formSummaryLabel(forms.single)}';
-    final reps = [for (final form in forms) ...form.reps];
-    if (reps.isNotEmpty && forms.every((form) => form.hold == null)) {
+    if (forms.every((form) => form.hold == null)) {
+      final reps = [for (final form in forms) ...form.reps];
       final clean = reps.where((rep) => rep.clean).length;
       return 'Form: $clean/${reps.length} clean reps over ${forms.length} sets';
     }
-    final qualities = [for (final form in forms) ?form.quality];
-    final mean = qualities.isEmpty
-        ? 0
-        : qualities.reduce((a, b) => a + b) / qualities.length;
+    final mean =
+        forms.map((form) => form.quality!).reduce((a, b) => a + b) /
+        forms.length;
     return 'Form: ${(mean * 100).round()}% good over ${forms.length} sets';
   }
 
@@ -168,7 +171,7 @@ class SessionDetailPage extends StatelessWidget {
                       ?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 for (final (index, set) in exercise.performedSets.indexed)
-                  if (set.form case final form?) ...[
+                  if (set.form case final form? when form.quality != null) ...[
                     const SizedBox(height: AppSpacing.md),
                     Text(
                       'Set ${index + 1} · ${formSummaryLabel(form)}',

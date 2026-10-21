@@ -21,7 +21,8 @@ import 'set_input.dart';
 import 'weight_units.dart';
 
 /// Opens the camera form check for one set; resolves to the counted reps
-/// (or hold seconds), or null when nothing was counted.
+/// (or hold seconds) with the camera's form verdict, or null when nothing
+/// was counted.
 typedef FormCheckLauncher = Future<FormSetOutcome?> Function(
   BuildContext context,
   FormExercise exercise,
@@ -118,6 +119,14 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   @override
   void initState() {
     super.initState();
+    // Any edit away from the camera's count overrides it: the verdict no
+    // longer describes the set, even if the user types the number back.
+    _amountCtrl.addListener(() {
+      final pending = _pendingForm;
+      if (pending != null && _amountCtrl.text != '${pending.amount}') {
+        _pendingForm = null;
+      }
+    });
     _startedAt = widget.clock();
     _hints = {
       for (final (index, exercise) in _exercises.indexed)

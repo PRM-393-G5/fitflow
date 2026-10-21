@@ -240,6 +240,23 @@ void main() {
     expect(sets.first.form, isNull);
   });
 
+  testWidgets('editing away from the camera count and back drops it', (
+    tester,
+  ) async {
+    final controller = await pumpWorkout(
+      tester,
+      exercise('Bodyweight Squat', reps: 10),
+      launch: (_, _) async => (amount: 14, form: verdict),
+    );
+    await tester.tap(find.byKey(const Key('form-check-set')));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('set-amount')), '12');
+    await tester.enterText(find.byKey(const Key('set-amount')), '14');
+    final sets = await finish(tester, controller);
+    expect(sets.first.amount, 14);
+    expect(sets.first.form, isNull);
+  });
+
   testWidgets('a camera verdict is dropped when the count is edited', (
     tester,
   ) async {
