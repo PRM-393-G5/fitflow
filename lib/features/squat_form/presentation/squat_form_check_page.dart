@@ -14,13 +14,16 @@ import '../../../data/openai_service.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../../domain/workout_stats.dart';
+import '../../../domain/models/form_result.dart';
 import '../domain/adaptive_inference_scheduler.dart';
 import '../domain/form_feedback.dart';
+import '../domain/form_record.dart';
 import '../domain/plank_analyzer.dart';
 import '../domain/pose_frame.dart';
 import '../domain/pushup_analyzer.dart';
 import '../domain/shoulder_press_analyzer.dart';
 import '../domain/squat_analyzer.dart';
+import 'form_review_view.dart';
 import 'form_voice.dart';
 import 'pose_overlay.dart';
 import 'pose_render_model.dart';
@@ -40,21 +43,29 @@ class SquatFormCheckPage extends StatefulWidget {
 
   /// Set mode: opened from an active workout to count one set of this
   /// exercise. The exercise can't be switched, nothing is saved as a
-  /// session, and the page pops with the counted reps (or hold seconds),
-  /// or null when nothing was counted.
+  /// session, and the page pops with a [FormSetOutcome] (the counted reps
+  /// or hold seconds, and the form verdict to log with the set), or null
+  /// when nothing was counted.
   final FormExercise? forSet;
 
   @override
   State<SquatFormCheckPage> createState() => _SquatFormCheckPageState();
 }
 
+/// What set mode hands back to the workout.
+typedef FormSetOutcome = ({int amount, FormResult? form});
+
 /// What one exercise produced, captured in a single step so the saved
 /// count always matches the reviewed reps.
-typedef _FormResult = ({
+typedef _SetSnapshot = ({
   FormExercise exercise,
   int amount,
   List<RepRecord> records,
   HoldSummary? hold,
+
+  /// The verdict shown in the review and saved with the set; null when too
+  /// little was judged to review (no reps, or a hold under 3 s).
+  FormResult? form,
   DateTime? startedAt,
 });
 
@@ -435,13 +446,19 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     if (mounted) setState(() => _switchingCamera = false);
   }
 
-  _FormResult _snapshot() {
+  _SetSnapshot _snapshot() {
     final analyzer = _analyzer;
+    final records = List.of(analyzer.repRecords);
+    final hold = analyzer is PlankAnalyzer ? analyzer.summary : null;
+    final judged = records.isNotEmpty || (hold?.trackedMs ?? 0) >= 3000;
     return (
       exercise: _exercise,
       amount: analyzer.repetitions,
-      records: List.of(analyzer.repRecords),
-      hold: analyzer is PlankAnalyzer ? analyzer.summary : null,
+      records: records,
+      hold: hold,
+      form: judged
+          ? formResultOf(_exercise, records: records, hold: hold)
+          : null,
       startedAt: _startedAt,
     );
   }
@@ -453,7 +470,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
   }
 
   /// Persists [result] as a one-set session; empty results are dropped.
-  Future<void> _saveSession(_FormResult result) async {
+  Future<void> _saveSession(_SetSnapshot result) async {
     final started = result.startedAt;
     if (started == null || result.amount == 0) return;
     final completed = DateTime.now();
@@ -483,7 +500,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
             sets: 1,
             reps: timed ? 0 : result.amount,
             durationSeconds: timed ? result.amount : 0,
-            performedSets: [SetEntry(amount: result.amount)],
+            performedSets: [SetEntry(amount: result.amount, form: result.form)],
           ),
         ],
       ),
@@ -539,17 +556,19 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     });
     var saved = false;
     var amount = 0;
+    FormResult? form;
     try {
       _analyzer.pauseTiming();
       final result = _snapshot();
       _voice.stop();
-      if (result.records.isNotEmpty || (result.hold?.trackedMs ?? 0) >= 3000) {
+      if (result.form case final reviewed?) {
         await showFSheet<void>(
           context: context,
           side: .btt,
           mainAxisMaxRatio: .infinity,
           builder: (_) => _FormReviewSheet(
             exercise: result.exercise,
+            result: reviewed,
             records: result.records,
             hold: result.hold,
           ),
@@ -559,6 +578,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
       // In set mode the workout logs the count; no session of its own.
       if (widget.forSet == null) await _saveSession(result);
       amount = result.amount;
+      form = result.form;
       saved = true;
     } catch (error) {
       if (!mounted) return;
@@ -578,8 +598,11 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
       }
     }
     if (saved && mounted) {
-      Navigator.of(context)
-          .pop(widget.forSet != null && amount > 0 ? amount : null);
+      Navigator.of(context).pop<FormSetOutcome>(
+        widget.forSet != null && amount > 0
+            ? (amount: amount, form: form)
+            : null,
+      );
     }
   }
 
@@ -1096,33 +1119,22 @@ class _SetupGuide extends StatelessWidget {
   }
 }
 
-String _faultLabel(String code) => switch (code) {
-  'shallowDepth' => 'Shallow depth',
-  'kneeValgus' => 'Knees caved in',
-  'forwardLean' => 'Leaning forward',
-  'heelsUp' => 'Heels lifted',
-  'asymmetry' => 'Uneven sides',
-  'fastEccentric' => 'Dropped too fast',
-  'hipSag' => 'Hips sagging',
-  'hipPike' => 'Hips too high',
-  'noLockout' => 'Arms not locked out',
-  'unevenArms' => 'Uneven arms',
-  'partialRange' => 'Partial range',
-  _ => code,
-};
-
-String _seconds(int ms) => '${(ms / 1000).round()}s';
-
-/// Post-set review: per-rep telemetry (or a plank's hold breakdown) plus
-/// an optional AI coach verdict (gpt-6-luna on the same telemetry).
+/// Post-set review: per-rep verdicts (or a plank's hold breakdown) plus an
+/// optional AI coach verdict (gpt-6-luna on the same telemetry).
 class _FormReviewSheet extends StatefulWidget {
   const _FormReviewSheet({
     required this.exercise,
+    required this.result,
     required this.records,
     this.hold,
   });
 
   final FormExercise exercise;
+
+  /// What is shown, and saved with the set.
+  final FormResult result;
+
+  /// The analyzer's own telemetry, for the AI coach prompt.
   final List<RepRecord> records;
   final HoldSummary? hold;
 
@@ -1171,60 +1183,8 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
     }
   }
 
-  Widget _faults(Iterable<String> labels) => Wrap(
-    spacing: 6,
-    runSpacing: 4,
-    children: [
-      for (final label in labels)
-        FBadge(variant: .destructive, child: Text(label)),
-    ],
-  );
-
-  List<Widget> _holdBody(BuildContext context, HoldSummary hold) => [
-    Text(
-      '${_seconds(hold.goodMs)} in good form',
-      style: Theme.of(context).textTheme.titleSmall,
-    ),
-    const SizedBox(height: AppSpacing.xs),
-    if (hold.sagMs < 1000 && hold.pikeMs < 1000)
-      Text('Clean hold', style: Theme.of(context).textTheme.bodySmall)
-    else
-      _faults([
-        if (hold.sagMs >= 1000)
-          '${_faultLabel('hipSag')} · ${_seconds(hold.sagMs)}',
-        if (hold.pikeMs >= 1000)
-          '${_faultLabel('hipPike')} · ${_seconds(hold.pikeMs)}',
-      ]),
-    const SizedBox(height: AppSpacing.sm),
-  ];
-
-  Widget _rep(BuildContext context, RepRecord rep) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            [
-              'Rep ${rep.number}',
-              if (rep.minKneeAngle case final angle?) '${angle.round()}° depth',
-              if (rep.descentMs > 0) '↓${rep.descentMs}ms ↑${rep.ascentMs}ms',
-            ].join(' · '),
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          if (rep.faults.isEmpty)
-            Text('Clean rep', style: Theme.of(context).textTheme.bodySmall)
-          else
-            _faults(rep.faults.map(_faultLabel)),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final hold = widget.hold;
-    final clean = widget.records.where((rep) => rep.faults.isEmpty).length;
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.only(
@@ -1245,18 +1205,11 @@ class _FormReviewSheetState extends State<_FormReviewSheet> {
                           ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  Text(
-                    hold != null
-                        ? '${_seconds(hold.goodMs)}/${_seconds(hold.trackedMs)} good'
-                        : '$clean/${widget.records.length} clean reps',
-                  ),
+                  Text(formSummaryLabel(widget.result)),
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
-              if (hold != null)
-                ..._holdBody(context, hold)
-              else
-                ...widget.records.map((rep) => _rep(context, rep)),
+              FormReviewView(result: widget.result),
               if (OpenAiService.configured) ...[
                 const SizedBox(height: AppSpacing.sm),
                 if (_summary == null)
