@@ -65,7 +65,8 @@ class FormTrend {
   static FormTrend _trend(String exercise, List<FormResult> forms) {
     final qualities = [for (final form in forms) form.quality!];
     FormTrendDirection? direction;
-    if (qualities.length > _compared) {
+    // Three against three: fewer would let one outlier set the direction.
+    if (qualities.length >= 2 * _compared) {
       final recent = qualities.sublist(qualities.length - _compared);
       final before = qualities.sublist(
         (qualities.length - 2 * _compared).clamp(0, qualities.length),

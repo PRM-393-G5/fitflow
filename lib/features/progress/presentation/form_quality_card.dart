@@ -22,6 +22,7 @@ class FormQualityCard extends StatelessWidget {
           prefix: const Icon(FLucideIcons.scanEye),
           title: Text(
             FormExercise.values.asNameMap()[trend.exercise]?.label ??
+                // A newer exercise this version doesn't know yet.
                 trend.exercise,
           ),
           subtitle: Text(

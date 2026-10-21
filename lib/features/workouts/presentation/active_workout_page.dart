@@ -332,6 +332,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     final entry = _readEntry();
     if (entry == null || !await _loadConfirmed(entry.weightKg)) return;
     if (!mounted) return;
+    // A timer hold is a new hold the camera never saw.
+    _pendingForm = null;
     setState(() {
       _holdTarget = entry.amount;
       _holdWeightKg = entry.weightKg;
@@ -376,14 +378,17 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       _amountCtrl.text = '$amount';
       _amountError = null;
     });
-    if (outcome.form case final form?) {
-      _pendingForm = (
+    // This run replaces any earlier one; a verdict only goes with the
+    // count it describes, so a clamped count carries none.
+    _pendingForm = switch (outcome.form) {
+      final form? when amount == outcome.amount => (
         exercise: _exerciseIndex,
         set: _setIndex,
         amount: amount,
         form: form,
-      );
-    }
+      ),
+      _ => null,
+    };
     showFToast(
       context: context,
       title: Text(
@@ -411,6 +416,16 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       _exerciseIndex = exercise;
       _setIndex = set;
       _prefill(removed);
+      // Re-logging the same count keeps the camera's verdict.
+      _pendingForm = switch (removed.form) {
+        final form? => (
+          exercise: exercise,
+          set: set,
+          amount: removed.amount,
+          form: form,
+        ),
+        null => null,
+      };
     });
   }
 

@@ -57,7 +57,7 @@ typedef FormSetOutcome = ({int amount, FormResult? form});
 
 /// What one exercise produced, captured in a single step so the saved
 /// count always matches the reviewed reps.
-typedef _FormResult = ({
+typedef _SetSnapshot = ({
   FormExercise exercise,
   int amount,
   List<RepRecord> records,
@@ -446,7 +446,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     if (mounted) setState(() => _switchingCamera = false);
   }
 
-  _FormResult _snapshot() {
+  _SetSnapshot _snapshot() {
     final analyzer = _analyzer;
     final records = List.of(analyzer.repRecords);
     final hold = analyzer is PlankAnalyzer ? analyzer.summary : null;
@@ -470,7 +470,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
   }
 
   /// Persists [result] as a one-set session; empty results are dropped.
-  Future<void> _saveSession(_FormResult result) async {
+  Future<void> _saveSession(_SetSnapshot result) async {
     final started = result.startedAt;
     if (started == null || result.amount == 0) return;
     final completed = DateTime.now();

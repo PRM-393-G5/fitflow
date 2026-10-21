@@ -9,6 +9,7 @@ import 'package:prm/domain/models/form_result.dart';
 import 'package:prm/domain/models/workout.dart';
 import 'package:prm/features/squat_form/domain/squat_analyzer.dart';
 import 'package:prm/features/workouts/presentation/active_workout_page.dart';
+import 'package:prm/features/workouts/presentation/set_input.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Exercise exercise(String name, {int reps = 10, int seconds = 0}) => Exercise(
@@ -172,6 +173,71 @@ void main() {
     // The camera's verdict is saved with the set it counted, only.
     expect(sets.first.form?.reps, hasLength(2));
     expect(sets.last.form, isNull);
+  });
+
+  Future<List<SetEntry>> finish(
+    WidgetTester tester,
+    AppController controller,
+  ) async {
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('skip-rest')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Finish').last);
+    await tester.pumpAndSettle();
+    return controller.sessions.single.exercises.single.performedSets;
+  }
+
+  testWidgets('a later camera run without a verdict replaces the earlier', (
+    tester,
+  ) async {
+    var runs = 0;
+    final controller = await pumpWorkout(
+      tester,
+      exercise('Bodyweight Squat', reps: 10),
+      launch: (_, _) async => (amount: 14, form: runs++ == 0 ? verdict : null),
+    );
+    for (var i = 0; i < 2; i++) {
+      await tester.tap(find.byKey(const Key('form-check-set')));
+      await tester.pump();
+    }
+    final sets = await finish(tester, controller);
+    expect(sets.first.amount, 14);
+    expect(sets.first.form, isNull);
+  });
+
+  testWidgets('undo and re-log keeps the camera verdict', (tester) async {
+    final controller = await pumpWorkout(
+      tester,
+      exercise('Bodyweight Squat', reps: 10),
+      launch: (_, _) async => (amount: 14, form: verdict),
+    );
+    await tester.tap(find.byKey(const Key('form-check-set')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('undo-set')));
+    await tester.pump();
+    final sets = await finish(tester, controller);
+    expect(sets.first.amount, 14);
+    expect(sets.first.form?.reps, hasLength(2));
+  });
+
+  testWidgets('a count over the set limit is clamped without its verdict', (
+    tester,
+  ) async {
+    final controller = await pumpWorkout(
+      tester,
+      exercise('Bodyweight Squat', reps: 10),
+      launch: (_, _) async => (amount: SetInput.maxReps + 5, form: verdict),
+    );
+    await tester.tap(find.byKey(const Key('form-check-set')));
+    await tester.pump();
+    final sets = await finish(tester, controller);
+    expect(sets.first.amount, SetInput.maxReps);
+    expect(sets.first.form, isNull);
   });
 
   testWidgets('a camera verdict is dropped when the count is edited', (

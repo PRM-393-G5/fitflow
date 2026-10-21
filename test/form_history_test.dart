@@ -63,7 +63,7 @@ void main() {
       const form = FormResult(
         exercise: 'squat',
         reps: [
-          FormRep(number: 1, faults: [], descentMs: 900, ascentMs: 700),
+          FormRep(number: 1, faults: [], firstHalfMs: 900, secondHalfMs: 700),
           FormRep(number: 2, faults: ['heelsUp'], minKneeAngle: 82),
         ],
       );
@@ -72,10 +72,19 @@ void main() {
         jsonDecode(jsonEncode(set.toJson())) as Map<String, dynamic>,
       );
       expect(back.form!.reps, hasLength(2));
-      expect(back.form!.reps.first.descentMs, 900);
+      expect(back.form!.reps.first.firstHalfMs, 900);
       expect(back.form!.reps.last.faults, ['heelsUp']);
       expect(back.form!.reps.last.minKneeAngle, 82);
       expect(back.form!.quality, .5);
+    });
+
+    test('a malformed verdict is dropped, not the whole set', () {
+      final set = SetEntry.fromJson({
+        'amount': 8,
+        'form': {'reps': 'not a list'},
+      });
+      expect(set.amount, 8);
+      expect(set.form, isNull);
     });
 
     test('sets saved before forms existed still load', () {

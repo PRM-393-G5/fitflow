@@ -3,8 +3,8 @@ class FormRep {
   const FormRep({
     required this.number,
     required this.faults,
-    this.descentMs = 0,
-    this.ascentMs = 0,
+    this.firstHalfMs = 0,
+    this.secondHalfMs = 0,
     this.minKneeAngle,
   });
 
@@ -13,10 +13,10 @@ class FormRep {
   /// Fault codes (see `faultTips`); empty for a clean rep.
   final List<String> faults;
 
-  /// First and second half of the rep: down then up for a squat or
-  /// push-up, up then down for a press. 0 when not timed.
-  final int descentMs;
-  final int ascentMs;
+  /// The rep's first and second half, in the order it moves: down then up
+  /// for a squat or push-up, up then down for a press. 0 when not timed.
+  final int firstHalfMs;
+  final int secondHalfMs;
 
   /// Deepest knee angle, squats only.
   final double? minKneeAngle;
@@ -26,16 +26,16 @@ class FormRep {
   Map<String, Object> toJson() => {
     'number': number,
     'faults': faults,
-    'descentMs': descentMs,
-    'ascentMs': ascentMs,
+    'firstHalfMs': firstHalfMs,
+    'secondHalfMs': secondHalfMs,
     'minKneeAngle': ?minKneeAngle,
   };
 
   factory FormRep.fromJson(Map<String, dynamic> json) => FormRep(
-    number: json['number'] as int,
+    number: (json['number'] as num).toInt(),
     faults: [for (final fault in json['faults'] as List? ?? const []) '$fault'],
-    descentMs: json['descentMs'] as int? ?? 0,
-    ascentMs: json['ascentMs'] as int? ?? 0,
+    firstHalfMs: (json['firstHalfMs'] as num?)?.toInt() ?? 0,
+    secondHalfMs: (json['secondHalfMs'] as num?)?.toInt() ?? 0,
     minKneeAngle: (json['minKneeAngle'] as num?)?.toDouble(),
   );
 }
@@ -62,10 +62,10 @@ class FormHold {
   };
 
   factory FormHold.fromJson(Map<String, dynamic> json) => FormHold(
-    trackedMs: json['trackedMs'] as int,
-    goodMs: json['goodMs'] as int,
-    sagMs: json['sagMs'] as int? ?? 0,
-    pikeMs: json['pikeMs'] as int? ?? 0,
+    trackedMs: (json['trackedMs'] as num).toInt(),
+    goodMs: (json['goodMs'] as num).toInt(),
+    sagMs: (json['sagMs'] as num?)?.toInt() ?? 0,
+    pikeMs: (json['pikeMs'] as num?)?.toInt() ?? 0,
   );
 }
 
@@ -108,6 +108,18 @@ class FormResult {
     'reps': [for (final rep in reps) rep.toJson()],
     'hold': ?hold?.toJson(),
   };
+
+  /// [json] as a result, or null when it's missing or malformed: the
+  /// verdict is extra, and a bad one (synced as free-form JSON) must not
+  /// lose the whole session it sits in.
+  static FormResult? tryParse(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    try {
+      return FormResult.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
 
   factory FormResult.fromJson(Map<String, dynamic> json) => FormResult(
     exercise: json['exercise'] as String,

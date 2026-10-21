@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/models/form_result.dart';
+import '../domain/form_record.dart';
+import '../domain/squat_analyzer.dart';
 
 String formFaultLabel(String code) => switch (code) {
   'shallowDepth' => 'Shallow depth',
@@ -52,7 +54,7 @@ class FormReviewView extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     final hold = result.hold;
     // A press goes up first: its first half is the press, not a descent.
-    final upFirst = result.exercise == 'shoulderPress';
+    final upFirst = formExerciseOf(result) == FormExercise.shoulderPress;
     if (hold != null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,10 +87,10 @@ class FormReviewView extends StatelessWidget {
                     'Rep ${rep.number}',
                     if (rep.minKneeAngle case final angle?)
                       '${angle.round()}° depth',
-                    if (rep.descentMs > 0)
+                    if (rep.firstHalfMs > 0)
                       upFirst
-                          ? '↑${rep.descentMs}ms ↓${rep.ascentMs}ms'
-                          : '↓${rep.descentMs}ms ↑${rep.ascentMs}ms',
+                          ? '↑${rep.firstHalfMs}ms ↓${rep.secondHalfMs}ms'
+                          : '↓${rep.firstHalfMs}ms ↑${rep.secondHalfMs}ms',
                   ].join(' · '),
                   style: text.titleSmall,
                 ),

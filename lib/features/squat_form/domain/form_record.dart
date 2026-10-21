@@ -15,8 +15,8 @@ FormResult formResultOf(
       FormRep(
         number: record.number,
         faults: List.of(record.faults),
-        descentMs: record.descentMs,
-        ascentMs: record.ascentMs,
+        firstHalfMs: record.descentMs,
+        secondHalfMs: record.ascentMs,
         minKneeAngle: record.minKneeAngle,
       ),
   ],

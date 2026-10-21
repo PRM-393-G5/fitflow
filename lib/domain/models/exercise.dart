@@ -24,9 +24,7 @@ class SetEntry {
   factory SetEntry.fromJson(Map<String, dynamic> json) => SetEntry(
     amount: json['amount'] as int,
     weightKg: (json['weightKg'] as num?)?.toDouble() ?? 0,
-    form: json['form'] == null
-        ? null
-        : FormResult.fromJson(json['form'] as Map<String, dynamic>),
+    form: FormResult.tryParse(json['form']),
   );
 }
 
