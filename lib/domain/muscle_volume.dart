@@ -8,22 +8,29 @@ enum Muscle {
   deltoids('Shoulders'),
   biceps('Biceps'),
   triceps('Triceps'),
-  forearms('Forearms'),
-  trapezius('Traps'),
+  forearms('Forearms', major: false),
+  trapezius('Traps', major: false),
   upperBack('Lats & upper back'),
-  lowerBack('Lower back'),
-  abs('Abs'),
-  obliques('Obliques'),
+  lowerBack('Lower back', major: false),
+  abs('Abs', major: false),
+  obliques('Obliques', major: false),
   glutes('Glutes'),
   quadriceps('Quads'),
   hamstrings('Hamstrings'),
-  adductors('Adductors'),
+  adductors('Adductors', major: false),
   calves('Calves');
 
-  const Muscle(this.label);
+  const Muscle(this.label, {this.major = true});
 
   final String label;
+
+  /// Whether it gets a weekly set target. The others mostly grow from
+  /// compound lifts, so a direct-set goal for them would mislead.
+  final bool major;
 }
+
+/// A weekly set target.
+typedef SetRange = ({int min, int max});
 
 /// Sets an exercise gives each muscle: 1 for a muscle it mainly trains,
 /// 0.5 for one that only assists.
@@ -220,35 +227,50 @@ const _groups = <String, MuscleWeights>{
 /// One exercise's share of a muscle's weekly sets.
 typedef MuscleContribution = ({String exercise, double sets, bool primary});
 
-/// A muscle's sets this week and last, and which exercises gave them.
+/// A muscle's sets this week, how far it had got at the same point last
+/// week, and which exercises gave them.
 class MuscleWeek {
   const MuscleWeek({
     required this.sets,
     required this.previous,
     required this.exercises,
+    this.target,
   });
 
   final double sets;
+
+  /// Sets from last Monday up to this moment a week ago, so an unfinished
+  /// week is compared fairly.
   final double previous;
 
   /// Most sets first.
   final List<MuscleContribution> exercises;
 
-  double get change => sets - previous;
-  VolumeLevel get level => MuscleVolume.level(sets);
+  /// Null for muscles without a target ([Muscle.major] is false).
+  final SetRange? target;
 
-  /// Sets still needed to reach [MuscleVolume.targetMin]; 0 once there.
-  double get missing =>
-      sets >= MuscleVolume.targetMin ? 0 : MuscleVolume.targetMin - sets;
+  double get change => sets - previous;
+  VolumeLevel get level => MuscleVolume.levelOf(sets, target);
+
+  /// Sets still needed to reach the target; 0 once there or untargeted.
+  double get missing {
+    final min = target?.min;
+    return min == null || sets >= min ? 0 : min - sets;
+  }
 }
 
-/// How a muscle's weekly sets compare to the usual hypertrophy range.
-enum VolumeLevel { none, low, optimal, high }
+/// How a muscle's weekly sets compare to its target. [indirect]: trained,
+/// but the muscle has no target.
+enum VolumeLevel { none, low, optimal, high, indirect }
 
 abstract final class MuscleVolume {
-  /// Weekly hard sets per muscle commonly recommended for growth.
-  static const targetMin = 10;
-  static const targetMax = 20;
+  /// Weekly hard sets per muscle commonly recommended for growth, by
+  /// training level: newer lifters grow on less.
+  static SetRange targetFor(String? trainingLevel) => switch (trainingLevel) {
+    'Beginner' => (min: 6, max: 12),
+    'Advanced' => (min: 12, max: 22),
+    _ => (min: 10, max: 20),
+  };
 
   /// The muscles [exercise] trains, from its name, else from its muscle
   /// group. Empty for full body, cardio and mobility work.
@@ -266,20 +288,27 @@ abstract final class MuscleVolume {
   static Map<Muscle, MuscleWeek> weekly(
     Iterable<WorkoutSession> sessions, {
     required DateTime now,
+    String? trainingLevel,
   }) {
-    final lastWeek = DateTime(
+    // Calendar construction (not Duration) keeps this DST-safe.
+    final weekAgo = DateTime(
       now.year,
       now.month,
       now.day - 7,
       now.hour,
       now.minute,
+      now.second,
     );
     final current = _sessionContributions(
       WorkoutStats.thisWeek(sessions, now: now),
     );
     final previous = _sessionContributions(
-      WorkoutStats.thisWeek(sessions, now: lastWeek),
+      WorkoutStats.thisWeek(
+        sessions,
+        now: weekAgo,
+      ).where((session) => !session.completedAt.isAfter(weekAgo)),
     );
+    final target = targetFor(trainingLevel);
     return {
       for (final muscle in Muscle.values)
         muscle: MuscleWeek(
@@ -287,6 +316,7 @@ abstract final class MuscleVolume {
           previous: _total(previous[muscle]),
           exercises: [...?current[muscle]]
             ..sort((a, b) => b.sets.compareTo(a.sets)),
+          target: muscle.major ? target : null,
         ),
     };
   }
@@ -352,11 +382,13 @@ abstract final class MuscleVolume {
   static double _total(List<MuscleContribution>? rows) =>
       rows?.fold<double>(0, (sum, row) => sum + row.sets) ?? 0;
 
-  static VolumeLevel level(double sets) => sets <= 0
+  static VolumeLevel levelOf(double sets, SetRange? target) => sets <= 0
       ? VolumeLevel.none
-      : sets < targetMin
+      : target == null
+      ? VolumeLevel.indirect
+      : sets < target.min
       ? VolumeLevel.low
-      : sets <= targetMax
+      : sets <= target.max
       ? VolumeLevel.optimal
       : VolumeLevel.high;
 

@@ -87,15 +87,18 @@ void main() {
     });
   });
 
-  test('sums logged sets this week and compares with last week', () {
+  test('sums logged sets this week, compared with this time last week', () {
     final weeks = MuscleVolume.weekly([
       session(DateTime(2026, 10, 19, 9), [
         exercise('Bench Press', logged: 4),
         exercise('Push-up', logged: 2),
       ]),
       session(DateTime(2026, 10, 21, 9), [exercise('Bench Press', logged: 2)]),
-      // Last week (Sunday before) and two weeks ago.
-      session(DateTime(2026, 10, 18, 9), [exercise('Bench Press', logged: 5)]),
+      // Last Tuesday counts; last Sunday is later in the week than now,
+      // so it doesn't.
+      session(DateTime(2026, 10, 13, 9), [exercise('Bench Press', logged: 5)]),
+      session(DateTime(2026, 10, 18, 9), [exercise('Bench Press', logged: 7)]),
+      // Two weeks ago.
       session(DateTime(2026, 10, 8, 9), [exercise('Bench Press', logged: 9)]),
     ], now: now);
 
@@ -161,12 +164,32 @@ void main() {
     expect(MuscleVolume.planned([exercise('Burpees')]), isEmpty);
   });
 
-  test('levels follow the 10-20 weekly sets range', () {
-    expect(MuscleVolume.level(0), VolumeLevel.none);
-    expect(MuscleVolume.level(9.5), VolumeLevel.low);
-    expect(MuscleVolume.level(10), VolumeLevel.optimal);
-    expect(MuscleVolume.level(20), VolumeLevel.optimal);
-    expect(MuscleVolume.level(20.5), VolumeLevel.high);
+  test('targets follow the training level; minor muscles have none', () {
+    final beginner = MuscleVolume.weekly(
+      [
+        session(DateTime(2026, 10, 20, 9), [
+          exercise('Bench Press', logged: 7),
+          exercise('Wrist Curl', logged: 3),
+        ]),
+      ],
+      now: now,
+      trainingLevel: 'Beginner',
+    );
+    expect(beginner[Muscle.chest]!.target, (min: 6, max: 12));
+    expect(beginner[Muscle.chest]!.level, VolumeLevel.optimal);
+    expect(beginner[Muscle.forearms]!.target, isNull);
+    expect(beginner[Muscle.forearms]!.level, VolumeLevel.indirect);
+    expect(beginner[Muscle.forearms]!.missing, 0);
+    expect(beginner[Muscle.abs]!.level, VolumeLevel.none);
+    expect(MuscleVolume.targetFor(null), (min: 10, max: 20));
+    expect(MuscleVolume.targetFor('Advanced'), (min: 12, max: 22));
+
+    const range = (min: 10, max: 20);
+    expect(MuscleVolume.levelOf(0, range), VolumeLevel.none);
+    expect(MuscleVolume.levelOf(9.5, range), VolumeLevel.low);
+    expect(MuscleVolume.levelOf(10, range), VolumeLevel.optimal);
+    expect(MuscleVolume.levelOf(20, range), VolumeLevel.optimal);
+    expect(MuscleVolume.levelOf(20.5, range), VolumeLevel.high);
     expect(MuscleVolume.format(12), '12');
     expect(MuscleVolume.format(7.5), '7.5');
     expect(MuscleVolume.sets(1), '1 set');

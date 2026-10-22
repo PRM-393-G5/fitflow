@@ -7,12 +7,16 @@ import '../../../core/widgets/muscle_body_map.dart';
 import '../../../domain/muscle_volume.dart';
 
 /// This week's sets per muscle, painted on a front and back body outline,
-/// with each muscle's count and change from last week listed underneath.
-/// Tapping a muscle (on the body or in the list) shows what trained it.
+/// with each muscle's count and change from the same point last week
+/// listed underneath. Tapping a muscle (on the body or in the list) shows
+/// what trained it.
 class MuscleMapCard extends StatelessWidget {
-  const MuscleMapCard({required this.weeks, super.key});
+  const MuscleMapCard({required this.weeks, required this.target, super.key});
 
   final Map<Muscle, MuscleWeek> weeks;
+
+  /// The weekly target of major muscles, for the legend.
+  final SetRange target;
 
   MuscleWeek _week(Muscle muscle) =>
       weeks[muscle] ?? const MuscleWeek(sets: 0, previous: 0, exercises: []);
@@ -23,8 +27,7 @@ class MuscleMapCard extends StatelessWidget {
     final labelStyle = Theme.of(context).textTheme.labelSmall
         ?.copyWith(color: colors.mutedForeground);
     final fills = {
-      for (final muscle in Muscle.values)
-        muscle: _fill(colors, _week(muscle).sets),
+      for (final muscle in Muscle.values) muscle: _fill(colors, _week(muscle)),
     };
     final summary = [
       for (final muscle in Muscle.values)
@@ -42,7 +45,7 @@ class MuscleMapCard extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Tap a muscle for details · change vs last week',
+          'Tap a muscle for details · change vs this time last week',
           textAlign: TextAlign.center,
           style: labelStyle,
         ),
@@ -68,9 +71,13 @@ class MuscleMapCard extends StatelessWidget {
           children: [
             for (final (label, color) in [
               ('None', muscleMapUntrained(colors)),
-              ('<${MuscleVolume.targetMin}', _low),
-              ('${MuscleVolume.targetMin}–${MuscleVolume.targetMax}', _optimal),
-              ('>${MuscleVolume.targetMax}', _high),
+              ('<${target.min}', _low),
+              ('${target.min}–${target.max}', _optimal),
+              ('>${target.max}', _high),
+              (
+                'No target',
+                muscleMapSolid(colors, colors.primary.withValues(alpha: .7)),
+              ),
             ])
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -90,18 +97,21 @@ class MuscleMapCard extends StatelessWidget {
 
 Future<void> _showDetail(BuildContext context, Muscle muscle, MuscleWeek week) {
   const format = MuscleVolume.format;
+  final target = week.target;
   final advice = switch (week.level) {
+    _ when target == null =>
+      'Usually trained indirectly by compound lifts, so it has no set '
+          'target.',
     VolumeLevel.none =>
-      'Not trained yet this week. Aim for '
-          '${MuscleVolume.targetMin}–${MuscleVolume.targetMax} sets.',
+      'Not trained yet this week. Aim for ${target.min}–${target.max} '
+          'sets.',
     VolumeLevel.low =>
-      '${format(week.missing)} more ${week.missing == 1 ? 'set' : 'sets'} to reach '
-          '${MuscleVolume.targetMin} this week.',
+      '${format(week.missing)} more ${week.missing == 1 ? 'set' : 'sets'} '
+          'to reach ${target.min} this week.',
     VolumeLevel.optimal =>
-      'In the ${MuscleVolume.targetMin}–${MuscleVolume.targetMax} '
-          'sets range. Nice work.',
-    VolumeLevel.high =>
-      'Above ${MuscleVolume.targetMax} sets. Make sure it recovers.',
+      'In the ${target.min}–${target.max} sets range. Nice work.',
+    VolumeLevel.high => 'Above ${target.max} sets. Make sure it recovers.',
+    VolumeLevel.indirect => '',
   };
   return showAppDialog<void>(
     context: context,
@@ -113,7 +123,7 @@ Future<void> _showDetail(BuildContext context, Muscle muscle, MuscleWeek week) {
       children: [
         Text(
           '${MuscleVolume.sets(week.sets)} this week · '
-          '${format(week.previous)} last week',
+          '${format(week.previous)} by this time last week',
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: AppSpacing.xs),
@@ -160,15 +170,20 @@ const _optimal = Color(0xFF22A06B);
 const _high = Color(0xFFD9534F);
 
 /// Under target fades in as sets build up, so 8 sets reads closer to the
-/// goal than 2.
-Color _fill(FColors colors, double sets) => switch (MuscleVolume.level(sets)) {
+/// goal than 2. Untargeted muscles fade in up to 6 sets, and stay lighter
+/// than the targeted ones so those lead the eye.
+Color _fill(FColors colors, MuscleWeek week) => switch (week.level) {
   VolumeLevel.none => muscleMapUntrained(colors),
   VolumeLevel.low => muscleMapSolid(
     colors,
-    _low.withValues(alpha: 0.35 + 0.65 * sets / MuscleVolume.targetMin),
+    _low.withValues(alpha: 0.35 + 0.65 * week.sets / week.target!.min),
   ),
   VolumeLevel.optimal => _optimal,
   VolumeLevel.high => _high,
+  VolumeLevel.indirect => muscleMapSolid(
+    colors,
+    colors.primary.withValues(alpha: 0.25 + 0.45 * (week.sets / 6).clamp(0, 1)),
+  ),
 };
 
 class _MuscleChip extends StatelessWidget {

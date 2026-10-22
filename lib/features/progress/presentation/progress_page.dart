@@ -97,7 +97,12 @@ class ProgressPage extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           AppCard(
             child: MuscleMapCard(
-              weeks: MuscleVolume.weekly(sessions, now: clock.now()),
+              weeks: MuscleVolume.weekly(
+                sessions,
+                now: clock.now(),
+                trainingLevel: controller.level,
+              ),
+              target: MuscleVolume.targetFor(controller.level),
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
