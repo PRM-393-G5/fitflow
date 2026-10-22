@@ -432,6 +432,90 @@ void main() {
     expect(controller.schedule, isEmpty);
   });
 
+  testWidgets('details highlight the muscles a plan trains', (tester) async {
+    const upper = Workout(
+      id: 'upper',
+      name: 'Upper',
+      duration: Duration(minutes: 30),
+      level: 'Beginner',
+      category: 'Strength',
+      description: '',
+      exercises: [
+        Exercise(
+          id: 'bench',
+          name: 'Bench Press',
+          muscleGroup: 'Chest',
+          sets: 4,
+          reps: 8,
+        ),
+        Exercise(
+          id: 'ohp',
+          name: 'Overhead Press',
+          muscleGroup: 'Shoulders',
+          sets: 3,
+          reps: 8,
+        ),
+      ],
+    );
+    final controller = await makeController(saved: [upper]);
+    await launch(
+      tester,
+      controller,
+      () => const WorkoutDetailPage(workout: upper),
+    );
+
+    expect(find.text('Muscles worked'), findsOneWidget);
+    expect(
+      find.text('Main: Chest, Shoulders', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.text('Assisting: Triceps', findRichText: true), findsOneWidget);
+
+    final front = find.byKey(const Key('muscle-map-front'));
+    final box = tester.getRect(front);
+    // Upper chest, just off the midline.
+    await tester.tapAt(
+      Offset(box.center.dx - box.width * .07, box.top + box.height * .23),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('workout-muscle-detail-chest')),
+      findsOneWidget,
+    );
+    expect(find.text('4 sets in this workout'), findsOneWidget);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('details skip the muscle map for mobility plans', (tester) async {
+    const mobility = Workout(
+      id: 'mob',
+      name: 'Mobility',
+      duration: Duration(minutes: 10),
+      level: 'Beginner',
+      category: 'Mobility',
+      description: '',
+      exercises: [
+        Exercise(
+          id: 'cat',
+          name: 'Cat-Cow',
+          muscleGroup: 'Spine',
+          sets: 2,
+          durationSeconds: 30,
+        ),
+      ],
+    );
+    final controller = await makeController(saved: [mobility]);
+    await launch(
+      tester,
+      controller,
+      () => const WorkoutDetailPage(workout: mobility),
+    );
+
+    expect(find.text('Muscles worked'), findsNothing);
+    expect(find.byKey(const Key('workout-muscles')), findsNothing);
+  });
+
   testWidgets('templates have no edit/delete actions', (tester) async {
     final controller = await makeController(saved: [plan(id: 't1')]);
     await launch(

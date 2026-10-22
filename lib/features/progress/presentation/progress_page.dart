@@ -13,6 +13,7 @@ import '../../../core/widgets/section_header.dart';
 import '../../../domain/form_trend.dart';
 import '../../../domain/models/body_weight_entry.dart';
 import '../../../domain/models/workout_session.dart';
+import '../../../domain/muscle_volume.dart';
 import '../../../domain/personal_records.dart';
 import '../../../domain/workout_stats.dart';
 import '../../achievements/presentation/achievements_page.dart';
@@ -22,6 +23,7 @@ import 'session_detail_page.dart';
 import 'share_summary_dialog.dart';
 import '../../../core/widgets/app_card.dart';
 import 'form_quality_card.dart';
+import 'muscle_map_card.dart';
 
 class ProgressPage extends StatelessWidget {
   const ProgressPage({super.key});
@@ -88,6 +90,19 @@ class ProgressPage extends StatelessWidget {
               streakWeeks: streak.current,
               goal: controller.weeklyGoal,
               metric: metric,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          const SectionHeader(title: 'Muscles this week'),
+          const SizedBox(height: AppSpacing.sm),
+          AppCard(
+            child: MuscleMapCard(
+              weeks: MuscleVolume.weekly(
+                sessions,
+                now: clock.now(),
+                trainingLevel: controller.level,
+              ),
+              target: MuscleVolume.targetFor(controller.level),
             ),
           ),
           const SizedBox(height: AppSpacing.lg),

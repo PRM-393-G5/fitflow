@@ -66,6 +66,13 @@ void main() {
 
     await tester.tap(find.text('Full Body Foundation'));
     await tester.pumpAndSettle();
+    // The muscle map sits above the exercise list.
+    expect(find.text('Muscles worked'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Bodyweight Squat'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(find.text('Bodyweight Squat'), findsOneWidget);
 
     await tester.scrollUntilVisible(

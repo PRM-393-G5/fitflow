@@ -9,10 +9,12 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
+import '../../../domain/muscle_volume.dart';
 import '../../squat_form/presentation/squat_form_check_page.dart';
 import 'active_workout_page.dart';
 import 'weight_units.dart';
 import 'workout_builder_page.dart';
+import 'workout_muscles_card.dart';
 
 const _weekdayNames = [
   'Monday',
@@ -226,6 +228,15 @@ class WorkoutDetailPage extends StatelessWidget {
                 ],
               ),
             ),
+          ],
+          if (MuscleVolume.planned(current.exercises).isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              'Muscles worked',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            WorkoutMusclesCard(exercises: current.exercises),
           ],
           const SizedBox(height: AppSpacing.lg),
           Text('Exercises', style: Theme.of(context).textTheme.titleLarge),

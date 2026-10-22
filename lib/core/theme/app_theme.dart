@@ -39,29 +39,41 @@ abstract final class AppTheme {
   static FThemeData _build({required FColors colors, String? debugLabel}) {
     final typography = FTypography.inherit(colors: colors, touch: true);
     final borderRadius = const FBorderRadius().scale(1.4);
+    final style = FStyle(
+      formFieldStyle: .inherit(
+        colors: colors,
+        typography: typography,
+        touch: true,
+      ),
+      focusedOutlineStyle: FFocusedOutlineStyle(
+        color: colors.primary,
+        borderRadius: borderRadius.md,
+      ),
+      iconStyle: IconThemeData(
+        color: colors.foreground,
+        size: typography.body.lg.fontSize,
+      ),
+      sizes: FSizes.inherit(touch: true),
+      tappableStyle: FTappableStyle(),
+      borderRadius: borderRadius,
+      // Headers line up with page content, which is inset by md.
+      pagePadding: const EdgeInsets.symmetric(
+        vertical: AppSpacing.sm,
+        horizontal: AppSpacing.md,
+      ),
+    );
     return FThemeData(
       debugLabel: debugLabel,
       touch: true,
       colors: colors,
       typography: typography,
-      style: FStyle(
-        formFieldStyle: .inherit(
-          colors: colors,
-          typography: typography,
-          touch: true,
-        ),
-        focusedOutlineStyle: FFocusedOutlineStyle(
-          color: colors.primary,
-          borderRadius: borderRadius.md,
-        ),
-        iconStyle: IconThemeData(
-          color: colors.foreground,
-          size: typography.body.lg.fontSize,
-        ),
-        sizes: FSizes.inherit(touch: true),
-        tappableStyle: FTappableStyle(),
-        borderRadius: borderRadius,
-      ),
+      style: style,
+      // Pages pad their own content (like the tabs do); the scaffold's
+      // extra padding doubled it on every pushed page.
+      scaffoldStyle: FScaffoldStyle.inherit(
+        colors: colors,
+        style: style,
+      ).copyWith(childPadding: const .value(EdgeInsets.zero)),
     );
   }
 }

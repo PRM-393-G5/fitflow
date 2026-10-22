@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app/app_controller.dart';
 import 'app/workout_app.dart';
+import 'core/widgets/muscle_body_map.dart';
 import 'data/api/api_client.dart';
 import 'data/api/api_config.dart';
 import 'data/api/token_store.dart';
@@ -16,6 +17,7 @@ import 'data/sync_outbox.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerMuscleMapLicense();
   await dotenv.load(isOptional: true);
   ReminderService? reminders;
   try {
