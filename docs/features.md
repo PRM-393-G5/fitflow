@@ -36,6 +36,7 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 | Dashboard | Tổng sessions, phút tập, volume (không tính form check) | ✅ |
 | Activity heatmap | 12 tuần kiểu GitHub | ✅ |
 | Weekly chart | Bar chart phút tập theo thứ | ✅ |
+| Muscle map | Hình giải phẫu mặt trước/sau, 15 nhóm cơ (ngực, vai, biceps, triceps, cẳng tay, cơ thang, xô/lưng trên, lưng dưới, bụng, liên sườn, mông, đùi trước, đùi sau, cơ khép, bắp chân). Cơ được đoán từ tên bài (Bench → ngực + ½ triceps/vai, RDL → đùi sau + mông…), không khớp thì theo nhóm cơ của bài; cơ phụ tính ½ set. Màu: xám chưa tập, cam dưới 10, xanh 10–20, đỏ trên 20 set/tuần. Mỗi cơ có +/− so với tuần trước; chạm vào cơ để xem các bài đã tập và còn thiếu bao nhiêu set. Không tính form check, mobility/Full body/Cardio không tô | ✅ |
 | Streak theo tuần | Số tuần liên tiếp đạt mục tiêu tuần (mặc định 3 buổi, tuần bắt đầu thứ 2), giống Hevy; ngày nghỉ không làm đứt chuỗi, tuần đang dở chưa đạt không làm đứt chuỗi | ✅ |
 | Personal records | Session volume/dài nhất; PR từng bài — bài có tạ: tạ nặng nhất + 1RM ước tính (Epley, số rep tính tối đa 10) + set tạo ra 1RM đó; thêm rep ở một mức tạ đã từng tập (hoặc nặng hơn) cũng là PR; bài không tạ: nhiều rep nhất; bài giữ: hold lâu nhất. Tạ so với dung sai 0.05 kg nên đổi kg/lb không tạo PR giả; danh sách xếp theo PR gần nhất | ✅ |
 | Achievements | 12 badges theo số buổi tập/phút tập/volume/streak tuần (2, 4, 12 tuần liên tiếp đạt weekly goal), hiện tiến độ badge chưa mở | ✅ |

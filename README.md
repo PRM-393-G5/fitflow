@@ -62,6 +62,7 @@ For a distributable Android release, configure a production application ID and r
 - Progressive-overload hints per exercise: double progression with the 2-for-2 rule, load steps rounded to real plates/dumbbells, deloads after three misses, lighter restarts after a break
 - Local workout history and progress summaries
 - Activity heatmap, weekly minutes chart, and personal records
+- Muscle map: front/back anatomy colored by this week's sets for 15 muscles (from exercise names, helpers count half) against the 10–20 sets/week range, change vs last week, tap a muscle for the exercises behind it (body art from [react-native-body-highlighter](https://github.com/HichamELBSI/react-native-body-highlighter), MIT)
 - Weekly streak (consecutive weeks reaching the weekly goal; rest days never break it) and achievements derived from it, volume, and session counts; camera form checks are not counted as workouts
 - Custom workout builder for user-created plans
 - AI workout generator that builds a plan from a text prompt (OpenAI, needs `OPENAI_API_KEY` via `--dart-define`)

@@ -509,4 +509,64 @@ void main() {
     await pumpWeights([(10, 72.5), (0, 72.46)]);
     expect(await detail(), contains('±0 kg since'));
   });
+
+  testWidgets('muscle map counts sets per muscle and opens details', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    Exercise lift(String name, String group, int sets) => Exercise(
+      id: name,
+      name: name,
+      muscleGroup: group,
+      sets: sets,
+      reps: 10,
+      performedSets: [
+        for (var i = 0; i < sets; i++) const SetEntry(amount: 10),
+      ],
+    );
+    await pumpPage(
+      tester,
+      const FScaffold(child: ProgressPage()),
+      sessions: [
+        WorkoutSession(
+          id: 'push',
+          workoutId: 'w1',
+          workoutName: 'Push',
+          startedAt: now.subtract(const Duration(minutes: 40)),
+          completedAt: now,
+          completedSets: 15,
+          volumeKg: 0,
+          exercises: [
+            lift('Bench Press', 'Chest', 12),
+            lift('Lateral Raise', 'Shoulders', 3),
+          ],
+        ),
+      ],
+    );
+
+    expect(find.text('Muscles this week'), findsOneWidget);
+    expect(find.byKey(const Key('muscle-map-front')), findsOneWidget);
+    expect(find.byKey(const Key('muscle-map-back')), findsOneWidget);
+    expect(find.text('Chest 12'), findsOneWidget);
+    // 3 lateral raises + half of 12 bench sets.
+    expect(find.text('Shoulders 9'), findsOneWidget);
+    expect(find.text('Triceps 6'), findsOneWidget);
+    expect(find.text('Quads 0'), findsOneWidget);
+
+    final chip = find.byKey(const Key('muscle-deltoids'));
+    await tester.scrollUntilVisible(
+      chip,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('muscle-detail-deltoids')), findsOneWidget);
+    expect(find.text('9 sets this week · 0 last week'), findsOneWidget);
+    expect(find.text('1 more sets to reach 10 this week.'), findsOneWidget);
+    expect(find.text('Bench Press (assists)'), findsOneWidget);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('muscle-detail-deltoids')), findsNothing);
+  });
 }
