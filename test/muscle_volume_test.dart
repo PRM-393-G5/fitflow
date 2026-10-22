@@ -144,6 +144,23 @@ void main() {
     expect(weeks[Muscle.calves]!.sets, 0);
   });
 
+  test('a plan counts its planned sets, main movers first', () {
+    final planned = MuscleVolume.planned([
+      exercise('Bench Press', sets: 4),
+      exercise('Overhead Press', sets: 3),
+      exercise('Cat-Cow', sets: 2),
+    ]);
+
+    expect(planned.keys, {Muscle.chest, Muscle.deltoids, Muscle.triceps});
+    expect(MuscleVolume.isPrimary(planned[Muscle.chest]!), isTrue);
+    expect(MuscleVolume.isPrimary(planned[Muscle.triceps]!), isFalse);
+    expect(planned[Muscle.deltoids], [
+      (exercise: 'Overhead Press', sets: 3.0, primary: true),
+      (exercise: 'Bench Press', sets: 2.0, primary: false),
+    ]);
+    expect(MuscleVolume.planned([exercise('Burpees')]), isEmpty);
+  });
+
   test('levels follow the 10-20 weekly sets range', () {
     expect(MuscleVolume.level(0), VolumeLevel.none);
     expect(MuscleVolume.level(9.5), VolumeLevel.low);

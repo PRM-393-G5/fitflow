@@ -5,7 +5,7 @@
 // Generated; do not edit by hand. SVG path data in a 724 × 1448 view box
 // per side (the back view is offset by 724 on x).
 
-part of 'muscle_map_card.dart';
+part of 'muscle_body_map.dart';
 
 /// Shipped with the app through [LicenseRegistry].
 const _bodyArtLicense = '''

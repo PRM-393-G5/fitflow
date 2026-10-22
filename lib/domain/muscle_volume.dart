@@ -274,8 +274,10 @@ abstract final class MuscleVolume {
       now.hour,
       now.minute,
     );
-    final current = _contributions(WorkoutStats.thisWeek(sessions, now: now));
-    final previous = _contributions(
+    final current = _sessionContributions(
+      WorkoutStats.thisWeek(sessions, now: now),
+    );
+    final previous = _sessionContributions(
       WorkoutStats.thisWeek(sessions, now: lastWeek),
     );
     return {
@@ -289,31 +291,56 @@ abstract final class MuscleVolume {
     };
   }
 
-  static Map<Muscle, List<MuscleContribution>> _contributions(
+  /// The muscles a workout plan trains, with each exercise's planned sets
+  /// (helpers at half), main movers first. Muscles it doesn't reach are
+  /// absent.
+  static Map<Muscle, List<MuscleContribution>> planned(
+    Iterable<Exercise> exercises,
+  ) {
+    final rows = _contributions([
+      for (final exercise in exercises) (exercise, exercise.sets),
+    ]);
+    for (final list in rows.values) {
+      list.sort((a, b) => b.sets.compareTo(a.sets));
+    }
+    return rows;
+  }
+
+  /// Whether a muscle is mainly trained by any of [rows], rather than only
+  /// helping.
+  static bool isPrimary(List<MuscleContribution> rows) =>
+      rows.any((row) => row.primary);
+
+  static Map<Muscle, List<MuscleContribution>> _sessionContributions(
     Iterable<WorkoutSession> sessions,
+  ) => _contributions([
+    for (final session in sessions)
+      // Sessions from before per-set logging only kept the plan; in newer
+      // ones an exercise without logged sets was not done.
+      if (session.exercises.every((item) => item.performedSets.isEmpty))
+        for (final exercise in session.exercises) (exercise, exercise.sets)
+      else
+        for (final exercise in session.exercises)
+          (exercise, exercise.performedSets.length),
+  ]);
+
+  static Map<Muscle, List<MuscleContribution>> _contributions(
+    Iterable<(Exercise, int)> done,
   ) {
     // Keyed by exercise name, so the same lift on two days is one row.
     final byMuscle = <Muscle, Map<String, MuscleContribution>>{};
-    for (final session in sessions) {
-      // Sessions from before per-set logging only kept the plan; in newer
-      // ones an exercise without logged sets was not done.
-      final legacy = session.exercises.every(
-        (exercise) => exercise.performedSets.isEmpty,
-      );
-      for (final exercise in session.exercises) {
-        final sets = legacy ? exercise.sets : exercise.performedSets.length;
-        if (sets == 0) continue;
-        for (final MapEntry(key: muscle, value: weight) in weightsOf(
-          exercise,
-        ).entries) {
-          final rows = byMuscle[muscle] ??= {};
-          final row = rows[exercise.name];
-          rows[exercise.name] = (
-            exercise: exercise.name,
-            sets: (row?.sets ?? 0) + sets * weight,
-            primary: weight >= _primary,
-          );
-        }
+    for (final (exercise, sets) in done) {
+      if (sets == 0) continue;
+      for (final MapEntry(key: muscle, value: weight) in weightsOf(
+        exercise,
+      ).entries) {
+        final rows = byMuscle[muscle] ??= {};
+        final row = rows[exercise.name];
+        rows[exercise.name] = (
+          exercise: exercise.name,
+          sets: (row?.sets ?? 0) + sets * weight,
+          primary: weight >= _primary,
+        );
       }
     }
     return {
