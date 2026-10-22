@@ -13,9 +13,11 @@ import 'data/local_workout_repository.dart';
 import 'data/reminder_service.dart';
 import 'data/remote_workout_repository.dart';
 import 'data/sync_outbox.dart';
+import 'features/progress/presentation/muscle_map_card.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerMuscleMapLicense();
   await dotenv.load(isOptional: true);
   ReminderService? reminders;
   try {

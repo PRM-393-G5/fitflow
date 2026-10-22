@@ -63,6 +63,12 @@ void main() {
       expect(weights('Upright Row').keys, contains(Muscle.trapezius));
     });
 
+    test('presses, hip extensions and cardio rowers', () {
+      expect(weights('Incline Dumbbell Press').keys.first, Muscle.chest);
+      expect(weights('Hip Extension').keys.first, Muscle.glutes);
+      expect(weights('Rowing Machine', 'Cardio'), isEmpty);
+    });
+
     test('keywords match word starts only', () {
       // "row" inside "narrow" is not a row.
       expect(weights('Narrow-grip Bench Press').keys.first, Muscle.chest);
@@ -113,9 +119,9 @@ void main() {
       session(DateTime(2026, 10, 20, 9), [
         // Planned 5, only 2 done.
         exercise('Calf Raise', sets: 5, logged: 2),
-        // Recorded before per-set logging.
-        exercise('Plank', sets: 4),
       ]),
+      // Recorded before per-set logging.
+      session(DateTime(2026, 10, 20, 8), [exercise('Plank', sets: 4)]),
       session(DateTime(2026, 10, 20, 10), [
         exercise('Squat', logged: 3),
       ], workoutId: WorkoutStats.formCheckId),
@@ -126,6 +132,18 @@ void main() {
     expect(weeks[Muscle.quadriceps]!.sets, 0);
   });
 
+  test('in a logged session, an exercise without sets was not done', () {
+    final weeks = MuscleVolume.weekly([
+      session(DateTime(2026, 10, 20, 9), [
+        exercise('Bench Press', logged: 3),
+        exercise('Calf Raise', sets: 4),
+      ]),
+    ], now: now);
+
+    expect(weeks[Muscle.chest]!.sets, 3);
+    expect(weeks[Muscle.calves]!.sets, 0);
+  });
+
   test('levels follow the 10-20 weekly sets range', () {
     expect(MuscleVolume.level(0), VolumeLevel.none);
     expect(MuscleVolume.level(9.5), VolumeLevel.low);
@@ -134,5 +152,7 @@ void main() {
     expect(MuscleVolume.level(20.5), VolumeLevel.high);
     expect(MuscleVolume.format(12), '12');
     expect(MuscleVolume.format(7.5), '7.5');
+    expect(MuscleVolume.sets(1), '1 set');
+    expect(MuscleVolume.sets(.5), '0.5 sets');
   });
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:forui/forui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_drawing/path_drawing.dart';
@@ -7,6 +8,15 @@ import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/muscle_volume.dart';
 
 part 'muscle_map_paths.dart';
+
+/// Credits the body art on the app's license page; call once at startup.
+void registerMuscleMapLicense() => LicenseRegistry.addLicense(
+  () => Stream.value(
+    const LicenseEntryWithLineBreaks([
+      'react-native-body-highlighter',
+    ], _bodyArtLicense),
+  ),
+);
 
 /// This week's sets per muscle, painted on a front and back body outline,
 /// with each muscle's count and change from last week listed underneath.
@@ -32,7 +42,7 @@ class MuscleMapCard extends StatelessWidget {
     };
     final summary = [
       for (final muscle in Muscle.values)
-        '${muscle.label} ${MuscleVolume.format(_week(muscle).sets)} sets',
+        '${muscle.label} ${MuscleVolume.sets(_week(muscle).sets)}',
     ].join(', ');
     void open(Muscle muscle) => _showDetail(context, muscle, _week(muscle));
 
@@ -139,7 +149,7 @@ Future<void> _showDetail(BuildContext context, Muscle muscle, MuscleWeek week) {
       'Not trained yet this week. Aim for '
           '${MuscleVolume.targetMin}–${MuscleVolume.targetMax} sets.',
     VolumeLevel.low =>
-      '${format(week.missing)} more sets to reach '
+      '${format(week.missing)} more ${week.missing == 1 ? 'set' : 'sets'} to reach '
           '${MuscleVolume.targetMin} this week.',
     VolumeLevel.optimal =>
       'In the ${MuscleVolume.targetMin}–${MuscleVolume.targetMax} '
@@ -156,7 +166,7 @@ Future<void> _showDetail(BuildContext context, Muscle muscle, MuscleWeek week) {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '${format(week.sets)} sets this week · '
+          '${MuscleVolume.sets(week.sets)} this week · '
           '${format(week.previous)} last week',
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
@@ -174,7 +184,7 @@ Future<void> _showDetail(BuildContext context, Muscle muscle, MuscleWeek week) {
                       row.primary ? row.exercise : '${row.exercise} (assists)',
                     ),
                   ),
-                  Text('${format(row.sets)} sets'),
+                  Text(MuscleVolume.sets(row.sets)),
                 ],
               ),
             ),

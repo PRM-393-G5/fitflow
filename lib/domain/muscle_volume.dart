@@ -53,6 +53,9 @@ final _rules = [
     'cat cow',
     "child's pose",
     'foam roll',
+    // Cardio machines, not a back row.
+    'rowing machine',
+    'rower',
   ], const {}),
   _rule(
     ['romanian', 'rdl', 'stiff-leg', 'stiff leg', 'good morning'],
@@ -87,7 +90,14 @@ final _rules = [
     },
   ),
   _rule(
-    ['hip thrust', 'glute bridge', 'bridge', 'glute', 'abduct'],
+    [
+      'hip thrust',
+      'hip extension',
+      'glute bridge',
+      'bridge',
+      'glute',
+      'abduct',
+    ],
     {Muscle.glutes: _primary, Muscle.hamstrings: _secondary},
   ),
   _rule(['adduct'], {Muscle.adductors: _primary}),
@@ -145,6 +155,9 @@ final _rules = [
       'pushup',
       'push up',
       'chest press',
+      'incline',
+      'decline',
+      'dumbbell press',
       'fly',
       'flye',
       'butterfly',
@@ -282,11 +295,14 @@ abstract final class MuscleVolume {
     // Keyed by exercise name, so the same lift on two days is one row.
     final byMuscle = <Muscle, Map<String, MuscleContribution>>{};
     for (final session in sessions) {
+      // Sessions from before per-set logging only kept the plan; in newer
+      // ones an exercise without logged sets was not done.
+      final legacy = session.exercises.every(
+        (exercise) => exercise.performedSets.isEmpty,
+      );
       for (final exercise in session.exercises) {
-        // Sessions from before per-set logging only kept the plan.
-        final sets = exercise.performedSets.isNotEmpty
-            ? exercise.performedSets.length
-            : exercise.sets;
+        final sets = legacy ? exercise.sets : exercise.performedSets.length;
+        if (sets == 0) continue;
         for (final MapEntry(key: muscle, value: weight) in weightsOf(
           exercise,
         ).entries) {
@@ -316,6 +332,10 @@ abstract final class MuscleVolume {
       : sets <= targetMax
       ? VolumeLevel.optimal
       : VolumeLevel.high;
+
+  /// "1 set", "7.5 sets".
+  static String sets(double sets) =>
+      '${format(sets)} ${sets == 1 ? 'set' : 'sets'}';
 
   /// "12", "7.5": sets are counted in halves.
   static String format(double sets) => sets == sets.roundToDouble()

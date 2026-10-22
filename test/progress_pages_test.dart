@@ -563,7 +563,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('muscle-detail-deltoids')), findsOneWidget);
     expect(find.text('9 sets this week · 0 last week'), findsOneWidget);
-    expect(find.text('1 more sets to reach 10 this week.'), findsOneWidget);
+    expect(find.text('1 more set to reach 10 this week.'), findsOneWidget);
     expect(find.text('Bench Press (assists)'), findsOneWidget);
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
