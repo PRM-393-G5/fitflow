@@ -144,7 +144,7 @@ class HomePage extends StatelessWidget {
                 prefix: const Icon(FLucideIcons.accessibility),
                 title: const Text('AI Form Check'),
                 subtitle: const Text(
-                  'Squat · Push-up · Plank — real-time analysis',
+                  'Squat · Push-up · Press · Curl · Dip — real-time',
                 ),
                 suffix: const Icon(FLucideIcons.chevronRight),
                 onPress: () => Navigator.of(context).push(
