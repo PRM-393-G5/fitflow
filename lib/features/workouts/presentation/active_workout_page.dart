@@ -431,6 +431,21 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     );
   }
 
+  int _plannedTarget(int index) {
+    final exercise = _exercises[index];
+    if (index == _exerciseIndex) {
+      final typed = SetInput.amount(
+        _amountCtrl.text,
+        timed: exercise.isTimed,
+      ).value;
+      if (typed != null) return typed;
+    }
+    final logged = _entries[index];
+    if (logged != null && logged.isNotEmpty) return logged.last.amount;
+    return _hints[index]?.amount ??
+        (exercise.isTimed ? exercise.durationSeconds : exercise.reps);
+  }
+
   /// The sets the camera can run back to back from here: the rest of this
   /// exercise, then each following one it can count, up to the first it
   /// can't (logged by hand as usual).
@@ -441,9 +456,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       if (exercise.sets == 0) continue;
       final kind = FormExercise.match(exercise.name, timed: exercise.isTimed);
       if (kind == null) break;
-      final target = exercise.isTimed
-          ? exercise.durationSeconds
-          : exercise.reps;
+      final target = _plannedTarget(index);
       for (
         var set = index == _exerciseIndex ? _setIndex : 0;
         set < exercise.sets;
@@ -464,10 +477,15 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     return plan;
   }
 
-  /// Runs [plan] on the camera without a tap, then logs each set it
+  /// Runs the camera sets from here without a tap, then logs each set it
   /// finished with the weight the workout would have suggested for it.
-  Future<void> _handsFree(List<PlannedSet> plan) async {
+  Future<void> _handsFree() async {
     if (_done || _resting || _holding || _saving || _dialogOpen) return;
+    final first = _readEntry();
+    if (first == null || !await _loadConfirmed(first.weightKg)) return;
+    if (!mounted) return;
+    final plan = _handsFreePlan();
+    if (plan.length < 2) return;
     final launch =
         widget.launchHandsFree ??
         (context, plan) => Navigator.of(context).push<List<FormSetOutcome>>(
@@ -1036,7 +1054,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         FButton(
           key: const Key('hands-free'),
           variant: .outline,
-          onPress: () => _handsFree(plan),
+          onPress: _handsFree,
           prefix: const Icon(FLucideIcons.hand),
           child: Text('Hands-free · ${plan.length} sets'),
         ),
