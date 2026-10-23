@@ -43,7 +43,7 @@ void main() {
     expect(session.onFrame(frame(2), s(1)).setEnded, isFalse);
     final end = session.onFrame(frame(3), s(2));
     expect(end.setEnded, isTrue);
-    expect(end.say, 'Xong set 1. Nghỉ 30 giây.');
+    expect(end.say, 'Set 1 done. Rest 30 seconds.');
     expect(session.stage, HandsFreeStage.resting);
     expect(session.counts, [3]);
     expect(session.restLeft(s(2)), 30);
@@ -55,11 +55,11 @@ void main() {
   test('the rest calls the last 10 seconds, then starts the next set', () {
     final session = HandsFreeSession([curl1, curl2])..onFrame(frame(3), s(0));
     expect(session.tick(s(15)).say, isNull);
-    expect(session.tick(s(21)).say, 'Còn 10 giây. Chuẩn bị set 2.');
+    expect(session.tick(s(21)).say, '10 seconds left. Get ready for set 2.');
     expect(session.tick(s(22)).say, isNull);
     final next = session.tick(s(30));
     expect(next.nextSet, isTrue);
-    expect(next.say, 'Set 2, bắt đầu.');
+    expect(next.say, 'Set 2, go.');
     expect(session.stage, HandsFreeStage.active);
     expect(session.current, curl2);
   });
@@ -69,15 +69,12 @@ void main() {
     session.onFrame(frame(3), s(0));
     final next = session.skipRest();
     expect(next.nextSet, isTrue);
-    expect(next.say, 'Bài tiếp theo: Bench Dip, 10 rep. Bắt đầu.');
+    expect(next.say, 'Next exercise: Bench Dip, 10 reps. Go.');
     // The dip has no rest: its end starts the next set at once.
     final end = session.onFrame(frame(10), s(5));
     expect(end.setEnded, isTrue);
     expect(end.nextSet, isTrue);
-    expect(
-      end.say,
-      'Xong set 1. Bài tiếp theo: Dumbbell Curl, 3 rep. Bắt đầu.',
-    );
+    expect(end.say, 'Set 1 done. Next exercise: Dumbbell Curl, 3 reps. Go.');
     expect(session.current, curl1);
   });
 
@@ -113,7 +110,7 @@ void main() {
     final session = HandsFreeSession([curl2]);
     final end = session.onFrame(frame(3), s(3));
     expect(end.finished, isTrue);
-    expect(end.say, 'Xong set 2. Hoàn thành!');
+    expect(end.say, 'Set 2 done. All done!');
     expect(session.stage, HandsFreeStage.done);
   });
 
@@ -151,7 +148,7 @@ void main() {
     expect(resting.tick(s(35)), same(HandsFreeStep.none));
     resting.resume(s(40));
     expect(resting.restLeft(s(40)), 20);
-    expect(resting.tick(s(50)).say, 'Còn 10 giây. Chuẩn bị set 2.');
+    expect(resting.tick(s(50)).say, '10 seconds left. Get ready for set 2.');
     expect(resting.tick(s(60)).nextSet, isTrue);
   });
 }

@@ -108,7 +108,7 @@ void main() {
         for (var i = 0; i < 3; i++) {
           expect(
             analyzer.analyze(standing()).cue,
-            isNot('Giữ gối theo hướng mũi chân'),
+            isNot('Keep your knees over your toes'),
           );
         }
         // Lower the hips so the knee angle reads as a bend.
@@ -130,9 +130,9 @@ void main() {
         return result;
       }
 
-      expect(bend(.08).cue, 'Giữ gối theo hướng mũi chân');
+      expect(bend(.08).cue, 'Keep your knees over your toes');
       final out = bend(-.08);
-      expect(out.cue, isNot('Giữ gối theo hướng mũi chân'));
+      expect(out.cue, isNot('Keep your knees over your toes'));
       expect(out.score, isNot(lessThan(80)));
     });
 
@@ -141,7 +141,7 @@ void main() {
         ...pose(.7, .65),
         SquatJoint.rightHip: const SquatPoint(.41, .45),
       });
-      expect(result.cue, isNot('Giữ gối theo hướng mũi chân'));
+      expect(result.cue, isNot('Keep your knees over your toes'));
     });
   });
 
@@ -181,18 +181,18 @@ void main() {
 
     test('one knee caving alone is caught', () {
       // .07 = half the hip width on one leg; the other stays straight.
-      expect(bentCue(.07, 0), 'Giữ gối theo hướng mũi chân');
+      expect(bentCue(.07, 0), 'Keep your knees over your toes');
     });
 
     test('one knee caving is caught even with the other pushed out', () {
       // Limit is .3 of the .14 hip width: left caves 1.2x, right is out .3x.
-      expect(bentCue(.05, -.0126), 'Giữ gối theo hướng mũi chân');
+      expect(bentCue(.05, -.0126), 'Keep your knees over your toes');
     });
 
     test('both knees shifting the same way on screen is not valgus', () {
       // A forward knee travel seen at an angle: one leg reads in, the other
       // out by the same amount.
-      expect(bentCue(.07, -.07), isNot('Giữ gối theo hướng mũi chân'));
+      expect(bentCue(.07, -.07), isNot('Keep your knees over your toes'));
     });
   });
 
@@ -229,7 +229,7 @@ void main() {
       SquatJoint.leftShoulder: const SquatPoint(.5, .2, confidence: .2),
     });
     expect(result.bodyVisible, isFalse);
-    expect(result.cue, 'Lùi ra để thấy toàn thân');
+    expect(result.cue, 'Step back so your whole body is in view');
   });
 
   // Side view with both legs; [rightKneeX] lets one leg differ.
@@ -287,13 +287,13 @@ void main() {
     feed(twoLegs(.4, .7), 3);
     expect(
       feed(twoLegs(.62, .7, rightKneeX: .45), 4).cue,
-      'Dồn đều lực hai chân',
+      'Spread your weight evenly',
     );
     final lost = {
       ...twoLegs(.62, .7),
       SquatJoint.rightKnee: const SquatPoint(.62, .7, confidence: .2),
     };
-    expect(feed(lost, 1).cue, isNot('Dồn đều lực hai chân'));
+    expect(feed(lost, 1).cue, isNot('Spread your weight evenly'));
   });
 
   test('counts a rep when the body shrinks at the bottom and drops out', () {
@@ -352,7 +352,7 @@ void main() {
     for (var i = 0; i < 4; i++) {
       final result = analyzer.analyze(twoLegs(.62, .7)); // already at depth
       expect(result.phase, SquatPhase.findingBody);
-      expect(result.cue, 'Đứng thẳng để bắt đầu');
+      expect(result.cue, 'Stand tall to start');
     }
     for (var i = 0; i < 3; i++) {
       analyzer.analyze(twoLegs(.4, .7));
@@ -431,8 +431,8 @@ void main() {
     feed(pose(.4), 3);
     final bottom = feed(pose(.58), 3); // ~102 deg: counts, not deep
     expect(bottom.phase, SquatPhase.bottom);
-    expect(bottom.cue, 'Xuống thêm một chút');
-    expect(bottom.phaseLabel, 'Chưa đủ sâu');
+    expect(bottom.cue, 'A little deeper');
+    expect(bottom.phaseLabel, 'Not deep enough');
     feed(pose(.4), 3);
     expect(analyzer.repetitions, 1);
     expect(analyzer.repRecords.single.faults, contains('shallowDepth'));

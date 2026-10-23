@@ -6,25 +6,31 @@ void main() {
   group('CueStabilizer', () {
     test('holds a cue before a non-urgent change', () {
       final cue = CueStabilizer(holdUs: 900000);
-      expect(cue.update('Giữ nhịp đều', CueTone.info, 0), isTrue);
-      expect(cue.update('Đẩy lên', CueTone.good, 300000), isFalse);
-      expect(cue.cue, 'Giữ nhịp đều');
-      expect(cue.update('Đẩy lên', CueTone.good, 900000), isTrue);
-      expect(cue.cue, 'Đẩy lên');
+      expect(cue.update('Keep a steady pace', CueTone.info, 0), isTrue);
+      expect(cue.update('Push up', CueTone.good, 300000), isFalse);
+      expect(cue.cue, 'Keep a steady pace');
+      expect(cue.update('Push up', CueTone.good, 900000), isTrue);
+      expect(cue.cue, 'Push up');
     });
 
     test('a warning replaces a calm cue at once', () {
       final cue = CueStabilizer();
-      cue.update('Giữ nhịp đều', CueTone.info, 0);
-      expect(cue.update('Giữ gót chân chạm sàn', CueTone.warn, 10000), isTrue);
+      cue.update('Keep a steady pace', CueTone.info, 0);
+      expect(
+        cue.update('Keep your heels on the floor', CueTone.warn, 10000),
+        isTrue,
+      );
       expect(cue.tone, CueTone.warn);
     });
 
     test('one warning does not flicker into another', () {
       final cue = CueStabilizer();
-      cue.update('Giữ thân ổn định', CueTone.warn, 0);
-      expect(cue.update('Dồn đều lực hai chân', CueTone.warn, 100000), isFalse);
-      expect(cue.cue, 'Giữ thân ổn định');
+      cue.update('Keep your torso steady', CueTone.warn, 0);
+      expect(
+        cue.update('Spread your weight evenly', CueTone.warn, 100000),
+        isFalse,
+      );
+      expect(cue.cue, 'Keep your torso steady');
     });
   });
 
@@ -32,7 +38,7 @@ void main() {
     SquatAnalysis analysis({
       required bool visible,
       SquatPhase phase = SquatPhase.descending,
-      String cue = 'Hạ ngực thấp hơn',
+      String cue = 'Lower your chest more',
     }) => SquatAnalysis(
       phase: phase,
       repetitions: 2,
@@ -46,10 +52,13 @@ void main() {
       feedback.update(analysis(visible: true), 0);
       // 8 lost frames at 8 fps: a full second, still mid-rep.
       for (var frame = 1; frame <= 8; frame++) {
-        final lost = analysis(visible: false, cue: 'Lùi ra để thấy cánh tay');
+        final lost = analysis(
+          visible: false,
+          cue: 'Step back so your arms are in view',
+        );
         expect(feedback.update(lost, frame * 125000).changed, isFalse);
       }
-      expect(feedback.cue.cue, 'Hạ ngực thấp hơn');
+      expect(feedback.cue.cue, 'Lower your chest more');
     });
 
     test('a warning fixed while still held on screen is not said', () {
@@ -63,13 +72,15 @@ void main() {
         bodyVisible: true,
       );
       // The count is said; the warning half a second later must wait.
-      feedback.update(at('Rep chuẩn!', CueTone.good), 0);
+      feedback.update(at('Great rep!', CueTone.good), 0);
       expect(
-        feedback.update(at('Đừng để hông xệ', CueTone.warn), 500000).say,
+        feedback
+            .update(at('Keep your hips from sagging', CueTone.warn), 500000)
+            .say,
         isNull,
       );
       // Fixed at once, but the stabilizer still shows the warning.
-      final good = at('Tốt lắm, giữ nguyên', CueTone.good);
+      final good = at('Great, hold it', CueTone.good);
       for (final us in [1600000, 1700000]) {
         expect(feedback.update(good, us).say, isNull);
       }
@@ -81,10 +92,10 @@ void main() {
       final gone = analysis(
         visible: false,
         phase: SquatPhase.findingBody,
-        cue: 'Lùi ra để thấy cánh tay',
+        cue: 'Step back so your arms are in view',
       );
       expect(feedback.update(gone, 1200000).changed, isTrue);
-      expect(feedback.cue.cue, 'Lùi ra để thấy cánh tay');
+      expect(feedback.cue.cue, 'Step back so your arms are in view');
     });
   });
 
@@ -93,7 +104,7 @@ void main() {
       FormVoiceCoach coach, {
       int count = 0,
       bool timed = false,
-      String cue = 'Giữ nhịp đều',
+      String cue = 'Keep a steady pace',
       CueTone tone = CueTone.info,
       String? tip,
       required int atMs,
@@ -113,19 +124,19 @@ void main() {
         say(
           coach,
           count: 2,
-          cue: 'Rep sau: xuống sâu hơn',
-          tip: 'xuống sâu hơn',
+          cue: 'Next rep: go deeper',
+          tip: 'go deeper',
           atMs: 3000,
         ),
-        '2. xuống sâu hơn',
+        '2. go deeper',
       );
     });
 
     test('a next-rep tip is not repeated while resting at the top', () {
       final coach = FormVoiceCoach();
       expect(
-        say(coach, count: 1, tip: 'giữ gót chạm sàn', atMs: 0),
-        '1. giữ gót chạm sàn',
+        say(coach, count: 1, tip: 'keep your heels down', atMs: 0),
+        '1. keep your heels down',
       );
       // Tips are info-toned (see betweenRepsCue), so never re-said alone.
       final tip = betweenRepsCue(
@@ -154,22 +165,27 @@ void main() {
 
     test('a real warning while resting after a faulty rep is said', () {
       final coach = FormVoiceCoach();
-      say(coach, count: 1, tip: 'siết bụng, giữ hông thẳng', atMs: 0);
+      say(
+        coach,
+        count: 1,
+        tip: 'brace your core, keep your hips level',
+        atMs: 0,
+      );
       expect(
         say(
           coach,
           count: 1,
-          cue: 'Đừng để hông xệ',
+          cue: 'Keep your hips from sagging',
           tone: CueTone.warn,
           atMs: 2000,
         ),
-        'Đừng để hông xệ',
+        'Keep your hips from sagging',
       );
     });
 
     test('says a warning once, then waits before repeating it', () {
       final coach = FormVoiceCoach();
-      const warn = 'Giữ gót chân chạm sàn';
+      const warn = 'Keep your heels on the floor';
       expect(say(coach, cue: warn, tone: CueTone.warn, atMs: 0), warn);
       expect(say(coach, cue: warn, tone: CueTone.warn, atMs: 2000), isNull);
       expect(say(coach, cue: warn, tone: CueTone.warn, atMs: 6500), warn);
@@ -178,11 +194,16 @@ void main() {
     test('never talks over itself except for a count', () {
       final coach = FormVoiceCoach();
       expect(
-        say(coach, cue: 'Giữ thân ổn định', tone: CueTone.warn, atMs: 0),
+        say(coach, cue: 'Keep your torso steady', tone: CueTone.warn, atMs: 0),
         isNotNull,
       );
       expect(
-        say(coach, cue: 'Dồn đều lực hai chân', tone: CueTone.warn, atMs: 500),
+        say(
+          coach,
+          cue: 'Spread your weight evenly',
+          tone: CueTone.warn,
+          atMs: 500,
+        ),
         isNull,
       );
       expect(say(coach, count: 1, atMs: 600), '1');
@@ -191,10 +212,10 @@ void main() {
     test('stays quiet for calm and praising cues', () {
       final coach = FormVoiceCoach();
       expect(
-        say(coach, cue: 'Rep chuẩn!', tone: CueTone.good, atMs: 0),
+        say(coach, cue: 'Great rep!', tone: CueTone.good, atMs: 0),
         isNull,
       );
-      expect(say(coach, cue: 'Giữ nhịp đều', atMs: 2000), isNull);
+      expect(say(coach, cue: 'Keep a steady pace', atMs: 2000), isNull);
     });
 
     test('announces a hold start and every 10 seconds', () {
@@ -203,7 +224,7 @@ void main() {
         for (var second = 1; second <= 25; second++)
           say(coach, count: second, timed: true, atMs: second * 1000),
       ].nonNulls;
-      expect(said, ['Bắt đầu tính giờ', '10 giây', '20 giây']);
+      expect(said, ['Timer started', '10 seconds', '20 seconds']);
     });
   });
 

@@ -83,9 +83,9 @@ Future<void> launchPage(
             child: FButton(
               key: const Key('launch'),
               mainAxisSize: .min,
-              onPress: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute<void>(builder: (_) => page())),
+              onPress: () =>
+                  Navigator.of(context)
+                      .push(MaterialPageRoute<void>(builder: (_) => page())),
               child: const Text('Launch'),
             ),
           ),
@@ -194,10 +194,8 @@ void main() {
       await launchPage(
         tester,
         controller,
-        () => ActiveWorkoutPage(
-          workout: twoExercisePlan,
-          controller: controller,
-        ),
+        () =>
+            ActiveWorkoutPage(workout: twoExercisePlan, controller: controller),
       );
 
       await tester.tap(find.byKey(const Key('complete-set')));
@@ -251,29 +249,32 @@ void main() {
       expect(find.byKey(const Key('resume-workout-card')), findsNothing);
     });
 
-    test('ActiveWorkoutDraft.fromJson reconciles mismatched log and entries', () {
-      final json = {
-        'workout': twoExercisePlan.toJson(),
-        'startedAt': DateTime(2026, 10, 23, 9, 0).toIso8601String(),
-        'exerciseIndex': 0,
-        'setIndex': 0,
-        'done': false,
-        'entries': {
-          '0': [
-            const SetEntry(amount: 8, weightKg: 60).toJson(),
-            const SetEntry(amount: 8, weightKg: 60).toJson(),
+    test(
+      'ActiveWorkoutDraft.fromJson reconciles mismatched log and entries',
+      () {
+        final json = {
+          'workout': twoExercisePlan.toJson(),
+          'startedAt': DateTime(2026, 10, 23, 9, 0).toIso8601String(),
+          'exerciseIndex': 0,
+          'setIndex': 0,
+          'done': false,
+          'entries': {
+            '0': [
+              const SetEntry(amount: 8, weightKg: 60).toJson(),
+              const SetEntry(amount: 8, weightKg: 60).toJson(),
+            ],
+          },
+          // Corrupted log referencing non-existent exercise 1 and only 1 set of exercise 0.
+          'log': [
+            [1, 0],
+            [0, 5],
           ],
-        },
-        // Corrupted log referencing non-existent exercise 1 and only 1 set of exercise 0.
-        'log': [
-          [1, 0],
-          [0, 5],
-        ],
-      };
-      final draft = ActiveWorkoutDraft.fromJson(json);
-      expect(draft.completedSets, 2);
-      expect(draft.log, const [(0, 0), (0, 1)]);
-    });
+        };
+        final draft = ActiveWorkoutDraft.fromJson(json);
+        expect(draft.completedSets, 2);
+        expect(draft.log, const [(0, 0), (0, 1)]);
+      },
+    );
   });
 
   group('mid-workout flexibility (switch, skip, add set)', () {
@@ -332,10 +333,8 @@ void main() {
       await launchPage(
         tester,
         controller,
-        () => ActiveWorkoutPage(
-          workout: twoExercisePlan,
-          controller: controller,
-        ),
+        () =>
+            ActiveWorkoutPage(workout: twoExercisePlan, controller: controller),
       );
 
       // Skip Barbell Back Squat completely.
@@ -383,10 +382,7 @@ void main() {
       await launchPage(
         tester,
         controller,
-        () => ActiveWorkoutPage(
-          workout: singleSetPlan,
-          controller: controller,
-        ),
+        () => ActiveWorkoutPage(workout: singleSetPlan, controller: controller),
       );
 
       // Add a 2nd set while on Set 1.
@@ -457,10 +453,7 @@ void main() {
             controller: controller,
             launchHandsFree: (_, plan) async {
               capturedPlan = plan;
-              return const [
-                (amount: 8, form: null),
-                (amount: 10, form: null),
-              ];
+              return const [(amount: 8, form: null), (amount: 10, form: null)];
             },
           ),
         );
@@ -476,10 +469,10 @@ void main() {
         await tester.tap(find.byKey(const Key('hands-free')));
         await tester.pumpAndSettle();
 
-        expect(
-          capturedPlan?.map((item) => item.name).toList(),
-          const ['Push-up', 'Bodyweight Squat'],
-        );
+        expect(capturedPlan?.map((item) => item.name).toList(), const [
+          'Push-up',
+          'Bodyweight Squat',
+        ]);
         await tester.tap(find.text('Finish').last);
         await tester.pumpAndSettle();
         expect(controller.sessions.single.completedSets, 2);
@@ -489,43 +482,50 @@ void main() {
   });
 
   group('exercise catalog & builder autocomplete', () {
-    test('catalog matches queries, muscle groups, camera support and custom lifts', () {
-      final legs = ExerciseCatalog.suggestions(muscleGroup: 'Legs');
-      expect(legs, isNotEmpty);
-      expect(legs.every((item) => item.muscleGroup == 'Legs'), isTrue);
-      // Camera-supported squats rank first.
-      expect(legs.first.hasCameraCheck, isTrue);
+    test(
+      'catalog matches queries, muscle groups, camera support and custom lifts',
+      () {
+        final legs = ExerciseCatalog.suggestions(muscleGroup: 'Legs');
+        expect(legs, isNotEmpty);
+        expect(legs.every((item) => item.muscleGroup == 'Legs'), isTrue);
+        // Camera-supported squats rank first.
+        expect(legs.first.hasCameraCheck, isTrue);
 
-      final bench = ExerciseCatalog.suggestions(query: 'bench');
-      expect(
-        bench.map((item) => item.name),
-        containsAll(['Barbell Bench Press', 'Dumbbell Bench Press', 'Bench Dip']),
-      );
+        final bench = ExerciseCatalog.suggestions(query: 'bench');
+        expect(
+          bench.map((item) => item.name),
+          containsAll([
+            'Barbell Bench Press',
+            'Dumbbell Bench Press',
+            'Bench Dip',
+          ]),
+        );
 
-      // User's custom exercises are included in suggestions.
-      const customWorkout = Workout(
-        id: 'custom-1',
-        name: 'Custom',
-        duration: Duration(minutes: 10),
-        level: 'Beginner',
-        category: 'Strength',
-        description: '',
-        exercises: [
-          Exercise(
-            id: 'c1',
-            name: 'Zercher Squat',
-            muscleGroup: 'Legs',
-            sets: 3,
-            reps: 8,
-          ),
-        ],
-      );
-      final zercher = ExerciseCatalog.suggestions(
-        query: 'zercher',
-        workouts: [customWorkout],
-      );
-      expect(zercher.single.name, 'Zercher Squat');
-    });
+        // User's custom exercises are included in suggestions.
+        const customWorkout = Workout(
+          id: 'custom-1',
+          name: 'Custom',
+          duration: Duration(minutes: 10),
+          level: 'Beginner',
+          category: 'Strength',
+          description: '',
+          exercises: [
+            Exercise(
+              id: 'c1',
+              name: 'Zercher Squat',
+              muscleGroup: 'Legs',
+              sets: 3,
+              reps: 8,
+            ),
+          ],
+        );
+        final zercher = ExerciseCatalog.suggestions(
+          query: 'zercher',
+          workouts: [customWorkout],
+        );
+        expect(zercher.single.name, 'Zercher Squat');
+      },
+    );
 
     testWidgets(
       'tapping a suggestion in WorkoutBuilderPage fills name, muscle group and mode',

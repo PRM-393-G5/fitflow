@@ -146,4 +146,78 @@ void main() {
     expect(find.textContaining('eaten today'), findsOneWidget);
     expect(preferences.getString('food_log_v1'), contains('Phở bò'));
   });
+
+  testWidgets('filters plans by muscle group', (tester) async {
+    Workout plan(String id, String name, String exercise) => Workout(
+      id: id,
+      name: name,
+      duration: const Duration(minutes: 30),
+      level: 'Beginner',
+      category: 'Strength',
+      description: '',
+      exercises: [
+        Exercise(
+          id: '$id-1',
+          name: exercise,
+          muscleGroup: '',
+          sets: 3,
+          reps: 10,
+        ),
+      ],
+    );
+    SharedPreferences.setMockInitialValues({
+      'onboarding_v1': '{"done":true}',
+      'workouts_v1': jsonEncode([
+        plan('legs', 'Leg Day', 'Goblet Squat').toJson(),
+        plan('arms', 'Arm Day', 'Biceps Curl').toJson(),
+      ]),
+    });
+    final preferences = await SharedPreferences.getInstance();
+    final controller = AppController(
+      LocalWorkoutRepository(preferences, templates: const []),
+      preferences,
+    );
+    await controller.load();
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          theme: AppTheme.light.toApproximateMaterialTheme(),
+          builder: (context, child) => FTheme(
+            data: AppTheme.light,
+            child: FToaster(child: child!),
+          ),
+          home: const AppShell(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Workouts'));
+    await tester.pumpAndSettle();
+    expect(find.text('Leg Day'), findsOneWidget);
+    expect(find.text('Arm Day'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('open-workout-filters')));
+    await tester.pumpAndSettle();
+    expect(find.text('Show 2 plans'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('filter-Arms')));
+    await tester.pumpAndSettle();
+    expect(find.text('Show 1 plan'), findsOneWidget);
+    // Nothing is an advanced arms plan: the button says so.
+    await tester.tap(find.byKey(const Key('filter-Advanced')));
+    await tester.pumpAndSettle();
+    expect(find.text('No plans match'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('filter-Advanced')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('apply-workout-filters')));
+    await tester.pumpAndSettle();
+    expect(find.text('Leg Day'), findsNothing);
+    expect(find.text('Arm Day'), findsOneWidget);
+    expect(find.text('1 of 2 plans • Arms'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('clear-workout-filters')));
+    await tester.pumpAndSettle();
+    expect(find.text('Leg Day'), findsOneWidget);
+  });
 }

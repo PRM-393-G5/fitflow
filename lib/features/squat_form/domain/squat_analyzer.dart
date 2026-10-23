@@ -74,11 +74,11 @@ class SquatAnalysis {
   String get phaseLabel =>
       label ??
       switch (phase) {
-        SquatPhase.findingBody => 'Đang tìm tư thế',
-        SquatPhase.standing => 'Sẵn sàng',
-        SquatPhase.descending => 'Đang xuống',
-        SquatPhase.bottom => 'Đủ sâu',
-        SquatPhase.ascending => 'Đang lên',
+        SquatPhase.findingBody => 'Finding you',
+        SquatPhase.standing => 'Ready',
+        SquatPhase.descending => 'Going down',
+        SquatPhase.bottom => 'Depth reached',
+        SquatPhase.ascending => 'Coming up',
       };
 }
 
@@ -222,33 +222,33 @@ class RepRecord {
   };
 }
 
-/// Short coaching fix for each fault code, phrased to follow "Rep sau:".
+/// Short coaching fix for each fault code, phrased to follow "Next rep:".
 const faultTips = {
-  'shallowDepth': 'xuống sâu hơn',
-  'kneeValgus': 'đẩy gối ra theo mũi chân',
-  'forwardLean': 'giữ ngực thẳng',
-  'heelsUp': 'giữ gót chạm sàn',
-  'asymmetry': 'dồn đều lực hai chân',
-  'fastEccentric': 'hạ người chậm hơn',
-  'hipSag': 'siết bụng, giữ hông thẳng',
-  'hipPike': 'hạ hông xuống thẳng hàng',
-  'noLockout': 'đẩy thẳng tay lên hết',
-  'unevenArms': 'đẩy đều hai tay',
-  'partialRange': 'hạ khuỷu xuống ngang vai',
-  'elbowDrift': 'giữ khuỷu tay sát người',
-  'noFullExtension': 'duỗi thẳng tay hết ở dưới',
-  'elbowFlare': 'khép khuỷu tay lại',
+  'shallowDepth': 'go deeper',
+  'kneeValgus': 'push your knees out over your toes',
+  'forwardLean': 'keep your chest up',
+  'heelsUp': 'keep your heels down',
+  'asymmetry': 'spread your weight evenly',
+  'fastEccentric': 'lower more slowly',
+  'hipSag': 'brace your core, keep your hips level',
+  'hipPike': 'lower your hips into line',
+  'noLockout': 'press to full lockout',
+  'unevenArms': 'press both arms evenly',
+  'partialRange': 'lower your elbows to shoulder height',
+  'elbowDrift': 'keep your elbows at your sides',
+  'noFullExtension': 'straighten your arms fully at the bottom',
+  'elbowFlare': 'keep your elbows in',
 };
 
 /// The between-reps cue after [last]: praise for a clean rep, otherwise
 /// the fix for its first fault.
 ({String cue, CueTone tone, String? tip}) betweenRepsCue(RepRecord last) {
   final fault = last.faults.firstOrNull;
-  if (fault == null) return (cue: 'Rep chuẩn!', tone: CueTone.good, tip: null);
+  if (fault == null) return (cue: 'Great rep!', tone: CueTone.good, tip: null);
   final tip = faultTips[fault] ?? fault;
   // Info, not warn: the tip is said once with the count, and must not hold
   // off a real warning on the next rep (see CueStabilizer).
-  return (cue: 'Rep sau: $tip', tone: CueTone.info, tip: tip);
+  return (cue: 'Next rep: $tip', tone: CueTone.info, tip: tip);
 }
 
 abstract interface class RepAnalyzer {
@@ -348,7 +348,7 @@ class SquatAnalyzer implements RepAnalyzer {
   int get repetitions => _repetitions;
   SquatPhase get phase => _phase;
   @override
-  String get countLabel => 'SỐ REP';
+  String get countLabel => 'REPS';
   @override
   List<RepRecord> get repRecords => _repRecords;
 
@@ -399,7 +399,7 @@ class SquatAnalyzer implements RepAnalyzer {
         phase: _phase,
         repetitions: _repetitions,
         score: 0,
-        cue: 'Lùi ra để thấy toàn thân',
+        cue: 'Step back so your whole body is in view',
         bodyVisible: false,
       );
     }
@@ -527,29 +527,29 @@ class SquatAnalyzer implements RepAnalyzer {
     // One cue at a time, most important first: injury risk, then camera
     // setup, then technique, then encouragement.
     final (cue, tone) = caving
-        ? ('Giữ gối theo hướng mũi chân', CueTone.warn)
+        ? ('Keep your knees over your toes', CueTone.warn)
         : _phase == SquatPhase.findingBody
-        ? ('Đứng thẳng để bắt đầu', CueTone.info)
+        ? ('Stand tall to start', CueTone.info)
         : !stableTrunk
-        ? ('Giữ thân ổn định', CueTone.warn)
+        ? ('Keep your torso steady', CueTone.warn)
         : heelsUp
-        ? ('Giữ gót chân chạm sàn', CueTone.warn)
+        ? ('Keep your heels on the floor', CueTone.warn)
         : uneven
-        ? ('Dồn đều lực hai chân', CueTone.warn)
+        ? ('Spread your weight evenly', CueTone.warn)
         : facingCamera
-        ? ('Xoay nghiêng người về phía camera', CueTone.warn)
+        ? ('Turn side-on to the camera', CueTone.warn)
         : fastRep
-        ? ('Hạ người chậm hơn', CueTone.warn)
+        ? ('Lower more slowly', CueTone.warn)
         : _phase == SquatPhase.descending ||
               (_phase == SquatPhase.bottom && !repDeep)
-        ? ('Xuống thêm một chút', CueTone.info)
+        ? ('A little deeper', CueTone.info)
         : _phase == SquatPhase.bottom
-        ? ('Độ sâu tốt, đứng lên', CueTone.good)
+        ? ('Good depth, stand up', CueTone.good)
         : between != null
         ? (between.cue, between.tone)
         : _phase == SquatPhase.standing
-        ? ('Sẵn sàng, bắt đầu squat', CueTone.info)
-        : ('Giữ nhịp đều', CueTone.info);
+        ? ('Ready, start squatting', CueTone.info)
+        : ('Keep a steady pace', CueTone.info);
 
     return SquatAnalysis(
       phase: _phase,
@@ -581,7 +581,7 @@ class SquatAnalyzer implements RepAnalyzer {
       kneeAngle: _knee,
       hipAngle: _hip,
       trunkAngle: _trunk,
-      label: _phase == SquatPhase.bottom && !repDeep ? 'Chưa đủ sâu' : null,
+      label: _phase == SquatPhase.bottom && !repDeep ? 'Not deep enough' : null,
     );
   }
 

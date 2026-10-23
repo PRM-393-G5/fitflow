@@ -156,7 +156,9 @@ class HandsFreeSession {
   /// Advances the rest countdown.
   HandsFreeStep tick(int nowUs) {
     final ends = _restEndsUs;
-    if (_stage != HandsFreeStage.resting || ends == null || _pausedAtUs != null) {
+    if (_stage != HandsFreeStage.resting ||
+        ends == null ||
+        _pausedAtUs != null) {
       return HandsFreeStep.none;
     }
     if (nowUs >= ends) return _startNext();
@@ -164,7 +166,7 @@ class HandsFreeSession {
         current.restSeconds >= _warnRestSeconds &&
         ends - nowUs <= 10000000) {
       _warned = true;
-      return HandsFreeStep(say: 'Còn 10 giây. ${_nextIntro()}');
+      return HandsFreeStep(say: '10 seconds left. ${_nextIntro()}');
     }
     return HandsFreeStep.none;
   }
@@ -175,11 +177,11 @@ class HandsFreeSession {
 
   HandsFreeStep _endSet(int nowUs) {
     counts.add(_lastCount);
-    final done = 'Xong set ${current.setNumber}';
+    final done = 'Set ${current.setNumber} done';
     if (upcoming == null) {
       _stage = HandsFreeStage.done;
       return HandsFreeStep(
-        say: '$done. Hoàn thành!',
+        say: '$done. All done!',
         setEnded: true,
         finished: true,
       );
@@ -196,7 +198,7 @@ class HandsFreeSession {
     _stage = HandsFreeStage.resting;
     _restEndsUs = nowUs + rest * 1000000;
     _warned = false;
-    return HandsFreeStep(say: '$done. Nghỉ $rest giây.', setEnded: true);
+    return HandsFreeStep(say: '$done. Rest $rest seconds.', setEnded: true);
   }
 
   HandsFreeStep _startNext() {
@@ -210,11 +212,15 @@ class HandsFreeSession {
     _lastCount = 0;
     _lastProgressUs = null;
     final set = current;
-    final unit = set.timed ? 'giây' : 'rep';
+    final unit = set.timed
+        ? 'seconds'
+        : set.target == 1
+        ? 'rep'
+        : 'reps';
     return HandsFreeStep(
       say: changed
-          ? 'Bài tiếp theo: ${set.name}, ${set.target} $unit. Bắt đầu.'
-          : 'Set ${set.setNumber}, bắt đầu.',
+          ? 'Next exercise: ${set.name}, ${set.target} $unit. Go.'
+          : 'Set ${set.setNumber}, go.',
       nextSet: true,
     );
   }
@@ -224,7 +230,7 @@ class HandsFreeSession {
     final next = upcoming;
     if (next == null) return '';
     return next.exercise != current.exercise || next.name != current.name
-        ? 'Tiếp theo: ${next.name}.'
-        : 'Chuẩn bị set ${next.setNumber}.';
+        ? 'Next up: ${next.name}.'
+        : 'Get ready for set ${next.setNumber}.';
   }
 }

@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_sheet.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout_session.dart';
@@ -158,38 +159,41 @@ class SessionDetailPage extends StatelessWidget {
         context: context,
         side: .btt,
         mainAxisMaxRatio: .infinity,
-        builder: (context) => SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${exercise.name} — form review',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                for (final (index, set) in exercise.performedSets.indexed)
-                  if (set.form case final form? when form.quality != null) ...[
-                    const SizedBox(height: AppSpacing.md),
-                    Text(
-                      'Set ${index + 1} · ${formSummaryLabel(form)}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    FormReviewView(result: form),
-                  ],
-                const SizedBox(height: AppSpacing.md),
-                SizedBox(
-                  width: double.infinity,
-                  child: FButton(
-                    key: const Key('session-form-done'),
-                    onPress: () => Navigator.pop(context),
-                    child: const Text('Done'),
+        builder: (context) => AppSheet(
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${exercise.name} — form review',
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
-                ),
-              ],
+                  for (final (index, set) in exercise.performedSets.indexed)
+                    if (set.form case final form?
+                        when form.quality != null) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        'Set ${index + 1} · ${formSummaryLabel(form)}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      FormReviewView(result: form),
+                    ],
+                  const SizedBox(height: AppSpacing.md),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FButton(
+                      key: const Key('session-form-done'),
+                      onPress: () => Navigator.pop(context),
+                      child: const Text('Done'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
