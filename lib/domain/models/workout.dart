@@ -21,6 +21,16 @@ class Workout {
 
   int get totalSets => exercises.fold(0, (sum, item) => sum + item.sets);
 
+  Workout copyWith({List<Exercise>? exercises}) => Workout(
+    id: id,
+    name: name,
+    exercises: exercises ?? this.exercises,
+    duration: duration,
+    level: level,
+    category: category,
+    description: description,
+  );
+
   Map<String, Object> toJson() => {
     'id': id,
     'name': name,

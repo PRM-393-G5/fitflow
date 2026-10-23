@@ -9,6 +9,7 @@ import '../../../app/app_controller.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/load_math.dart';
+import '../../../domain/models/active_workout_draft.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/form_result.dart';
 import '../../../domain/models/workout.dart';
@@ -40,6 +41,7 @@ class ActiveWorkoutPage extends StatefulWidget {
   const ActiveWorkoutPage({
     required this.workout,
     required this.controller,
+    this.initialDraft,
     this.clock = DateTime.now,
     this.launchFormCheck,
     this.launchHandsFree,
@@ -48,6 +50,10 @@ class ActiveWorkoutPage extends StatefulWidget {
 
   final Workout workout;
   final AppController controller;
+
+  /// Optional in-progress draft to restore; if omitted, a matching draft
+  /// on [controller.activeDraft] for [workout.id] is restored automatically.
+  final ActiveWorkoutDraft? initialDraft;
 
   /// Time source for the session and timers; tests inject a fake clock.
   final DateTime Function() clock;
@@ -65,12 +71,14 @@ class ActiveWorkoutPage extends StatefulWidget {
 class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   static const _maxReps = SetInput.maxReps;
   static const _maxSeconds = SetInput.maxSeconds;
+  static const _maxSets = 20;
 
   late final DateTime _startedAt;
+  late List<Exercise> _exercises;
   int _exerciseIndex = 0;
   int _setIndex = 0;
 
-  /// Every planned set is logged; only Finish (or Undo) remains.
+  /// Every planned set is logged; only Finish (or Undo / Add set) remains.
   bool _done = false;
 
   /// The camera's verdict for the set it just counted, logged with that
@@ -80,6 +88,9 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
 
   /// Logged (exercise, set) positions in order, for "Undo last set".
   final _log = <(int, int)>[];
+
+  /// Exercises skipped by the user during this workout (e.g. machine busy).
+  final _skipped = <int>{};
 
   // Timers keep end times rather than counting ticks, so they stay correct
   // when the app is backgrounded and ticks are suspended.
@@ -112,15 +123,38 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   final _amountCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
 
-  List<Exercise> get _exercises => widget.workout.exercises;
   Exercise get _exercise => _exercises[_exerciseIndex];
-  int get _totalSets =>
-      _exercises.fold(0, (sum, item) => sum + (item.sets > 0 ? item.sets : 0));
+  int _loggedSetsFor(int index) => _entries[index]?.length ?? 0;
+
+  int get _totalSets {
+    var total = 0;
+    for (final (index, item) in _exercises.indexed) {
+      if (_skipped.contains(index)) {
+        total += _loggedSetsFor(index);
+      } else if (item.sets > 0) {
+        total += item.sets;
+      }
+    }
+    return total;
+  }
+
   int get _completedSets => _log.length;
   double get _progress => _totalSets == 0 ? 0 : _completedSets / _totalSets;
   bool get _metric => widget.controller.useMetric;
   bool get _resting => _restEndsAt != null;
   bool get _holding => _holdEndsAt != null;
+
+  bool get _canSkipExercise {
+    if (_completedSets > 0) return true;
+    for (var i = 0; i < _exercises.length; i++) {
+      if (i != _exerciseIndex &&
+          !_skipped.contains(i) &&
+          _loggedSetsFor(i) < _exercises[i].sets) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   int _secondsUntil(DateTime? end) {
     if (end == null) return 0;
@@ -139,7 +173,41 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         _pendingForm = null;
       }
     });
-    _startedAt = widget.clock();
+    final storedDraft = widget.controller.activeDraft;
+    final draft = widget.initialDraft ??
+        (storedDraft != null && storedDraft.workout.id == widget.workout.id
+            ? storedDraft
+            : null);
+
+    if (draft != null && draft.workout.exercises.isNotEmpty) {
+      _exercises = List.of(draft.workout.exercises);
+      _startedAt = draft.startedAt;
+      _exerciseIndex = draft.exerciseIndex.clamp(0, _exercises.length - 1);
+      _setIndex = draft.setIndex;
+      _done = draft.done;
+      for (final MapEntry(:key, :value) in draft.entries.entries) {
+        if (key >= 0 && key < _exercises.length && value.isNotEmpty) {
+          _entries[key] = List.of(value);
+        }
+      }
+      _log.addAll(draft.log);
+      _skipped.addAll(draft.skippedExercises);
+      final next = _nextPosition();
+      if (next == null) {
+        _done = true;
+      } else if (!_done) {
+        _exerciseIndex = next.$1;
+        _setIndex = next.$2;
+      }
+    } else {
+      _exercises = List.of(widget.workout.exercises);
+      _startedAt = widget.clock();
+      final first = _exercises.indexWhere((item) => item.sets > 0);
+      if (first >= 0) {
+        _exerciseIndex = first;
+      }
+    }
+
     _hints = {
       for (final (index, exercise) in _exercises.indexed)
         index: ?Progression.forExercise(
@@ -160,11 +228,59 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
           timed: exercise.isTimed,
         ),
     };
-    final first = _exercises.indexWhere((item) => item.sets > 0);
-    if (first >= 0) {
-      _exerciseIndex = first;
+    if (_exercises.isNotEmpty) {
       _prefill();
     }
+    if (draft?.restEndsAt case final restEndsAt?
+        when !_done && _secondsUntil(restEndsAt) > 0) {
+      _restEndsAt = restEndsAt;
+      _startTicker();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ActiveWorkoutPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.workout != widget.workout) {
+      _exercises = List.of(widget.workout.exercises);
+      _exerciseIndex = 0;
+      _setIndex = 0;
+      _done = false;
+      _entries.clear();
+      _log.clear();
+      _skipped.clear();
+      if (_exercises.isNotEmpty) _prefill();
+    }
+  }
+
+  void _persistDraft() {
+    final hasExtraSets = _exercises.length == widget.workout.exercises.length &&
+        [
+          for (var i = 0; i < _exercises.length; i++)
+            _exercises[i].sets != widget.workout.exercises[i].sets,
+        ].any((changed) => changed);
+    if (_log.isEmpty && _skipped.isEmpty && !hasExtraSets) {
+      unawaited(widget.controller.clearActiveDraft());
+      return;
+    }
+    unawaited(
+      widget.controller.saveActiveDraft(
+        ActiveWorkoutDraft(
+          workout: widget.workout.copyWith(exercises: List.of(_exercises)),
+          startedAt: _startedAt,
+          exerciseIndex: _exerciseIndex,
+          setIndex: _setIndex,
+          done: _done,
+          entries: {
+            for (final MapEntry(:key, :value) in _entries.entries)
+              if (value.isNotEmpty) key: List.of(value),
+          },
+          log: List.of(_log),
+          skippedExercises: Set.of(_skipped),
+          restEndsAt: _restEndsAt,
+        ),
+      ),
+    );
   }
 
   @override
@@ -214,11 +330,132 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   }
 
   (int, int)? _nextPosition() {
-    if (_setIndex + 1 < _exercise.sets) return (_exerciseIndex, _setIndex + 1);
-    for (var index = _exerciseIndex + 1; index < _exercises.length; index++) {
-      if (_exercises[index].sets > 0) return (index, 0);
+    final currentLogged = _loggedSetsFor(_exerciseIndex);
+    if (!_skipped.contains(_exerciseIndex) && currentLogged < _exercise.sets) {
+      return (_exerciseIndex, currentLogged);
+    }
+    for (var offset = 1; offset < _exercises.length; offset++) {
+      final index = (_exerciseIndex + offset) % _exercises.length;
+      if (_skipped.contains(index)) continue;
+      final logged = _loggedSetsFor(index);
+      if (logged < _exercises[index].sets) return (index, logged);
     }
     return null;
+  }
+
+  void _addSet() {
+    if (_exercise.sets >= _maxSets || _saving || _dialogOpen) return;
+    _ticker?.cancel();
+    _pendingForm = null;
+    setState(() {
+      _restEndsAt = null;
+      _holdEndsAt = null;
+      _skipped.remove(_exerciseIndex);
+      _exercises[_exerciseIndex] = _exercise.copyWith(sets: _exercise.sets + 1);
+      _setIndex = _loggedSetsFor(_exerciseIndex);
+      _done = false;
+      _prefill();
+    });
+    _persistDraft();
+  }
+
+  void _skipExercise() {
+    if (!_canSkipExercise || _saving || _dialogOpen) return;
+    _ticker?.cancel();
+    _pendingForm = null;
+    setState(() {
+      _restEndsAt = null;
+      _holdEndsAt = null;
+      _skipped.add(_exerciseIndex);
+      final next = _nextPosition();
+      if (next == null) {
+        _done = true;
+      } else {
+        _done = false;
+        _exerciseIndex = next.$1;
+        _setIndex = next.$2;
+        _prefill();
+      }
+    });
+    _persistDraft();
+    if (_done && _completedSets > 0) _finish();
+  }
+
+  void _switchExercise(int index) {
+    if (index < 0 || index >= _exercises.length || _saving || _dialogOpen) {
+      return;
+    }
+    _ticker?.cancel();
+    _pendingForm = null;
+    setState(() {
+      _restEndsAt = null;
+      _holdEndsAt = null;
+      _skipped.remove(index);
+      final logged = _loggedSetsFor(index);
+      if (logged >= _exercises[index].sets &&
+          _exercises[index].sets < _maxSets) {
+        _exercises[index] = _exercises[index].copyWith(
+          sets: _exercises[index].sets + 1,
+        );
+      }
+      _exerciseIndex = index;
+      _setIndex = _loggedSetsFor(index).clamp(0, _exercises[index].sets - 1);
+      _done = _loggedSetsFor(index) >= _exercises[index].sets;
+      _prefill();
+    });
+    _persistDraft();
+  }
+
+  Future<void> _pickExercise() async {
+    if (_exercises.length < 2 || _saving || _dialogOpen) return;
+    final colors = context.theme.colors;
+    final chosen = await _whilePaused(
+      () => showAppDialog<int>(
+        context: context,
+        title: 'Switch exercise',
+        body: FTileGroup(
+          children: [
+            for (final (index, item) in _exercises.indexed)
+              FTile(
+                key: Key('pick-exercise-$index'),
+                title: Text(item.name),
+                subtitle: Text(_exerciseStatusLabel(index)),
+                suffix: index == _exerciseIndex && !_done
+                    ? Icon(FLucideIcons.play, color: colors.primary)
+                    : _loggedSetsFor(index) >= item.sets &&
+                          !_skipped.contains(index)
+                    ? Icon(FLucideIcons.check, color: colors.primary)
+                    : null,
+                onPress: () => Navigator.pop(context, index),
+              ),
+          ],
+        ),
+        actions: [
+          FButton(
+            variant: .ghost,
+            onPress: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+    if (chosen != null && mounted) _switchExercise(chosen);
+  }
+
+  String _exerciseStatusLabel(int index) {
+    final item = _exercises[index];
+    final logged = _loggedSetsFor(index);
+    if (_skipped.contains(index)) {
+      return logged > 0
+          ? 'Skipped ($logged/${item.sets} sets done) • Tap to resume'
+          : 'Skipped • Tap to resume';
+    }
+    if (logged >= item.sets) {
+      return item.sets < _maxSets
+          ? 'Done ($logged/${item.sets} sets) • Tap to add set'
+          : 'Done ($logged/${item.sets} sets)';
+    }
+    return '$logged of ${item.sets} sets • ${item.muscleGroup}';
   }
 
   Future<void> _completeSet() async {
@@ -304,12 +541,19 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         _prefill();
       }
     });
-    if (finishing) return;
+    if (finishing) {
+      _persistDraft();
+      return;
+    }
     if (_done) {
+      _persistDraft();
       _finish();
     } else if (rest > 0) {
       _restEndsAt = widget.clock().add(Duration(seconds: rest));
+      _persistDraft();
       _startTicker();
+    } else {
+      _persistDraft();
     }
   }
 
@@ -346,6 +590,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   void _skipRest() {
     _ticker?.cancel();
     setState(() => _restEndsAt = null);
+    _persistDraft();
   }
 
   Future<void> _startHold() async {
@@ -447,21 +692,20 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   }
 
   /// The sets the camera can run back to back from here: the rest of this
-  /// exercise, then each following one it can count, up to the first it
-  /// can't (logged by hand as usual).
+  /// exercise, then each following unfinished one it can count (wrapping
+  /// around when the user switched order), up to the first it can't.
   List<PlannedSet> _handsFreePlan() {
     final plan = <PlannedSet>[];
-    for (var index = _exerciseIndex; index < _exercises.length; index++) {
+    for (var offset = 0; offset < _exercises.length; offset++) {
+      final index = (_exerciseIndex + offset) % _exercises.length;
+      if (_skipped.contains(index)) continue;
       final exercise = _exercises[index];
-      if (exercise.sets == 0) continue;
+      final startSet = offset == 0 ? _setIndex : _loggedSetsFor(index);
+      if (startSet >= exercise.sets) continue;
       final kind = FormExercise.match(exercise.name, timed: exercise.isTimed);
       if (kind == null) break;
       final target = _plannedTarget(index);
-      for (
-        var set = index == _exerciseIndex ? _setIndex : 0;
-        set < exercise.sets;
-        set++
-      ) {
+      for (var set = startSet; set < exercise.sets; set++) {
         plan.add(
           PlannedSet(
             exercise: kind,
@@ -547,6 +791,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     setState(() {
       final (exercise, set) = _log.removeLast();
       final removed = _entries[exercise]!.removeLast();
+      _skipped.remove(exercise);
       _restEndsAt = null;
       _holdEndsAt = null;
       _done = false;
@@ -564,6 +809,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         null => null,
       };
     });
+    _persistDraft();
   }
 
   /// Runs [show] with the rest/hold countdown frozen, so it can't advance
@@ -596,7 +842,10 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         'No sets are completed yet, so there is nothing to save.',
         'Discard workout',
       );
-      if (discard && mounted) Navigator.pop(context);
+      if (discard) {
+        await widget.controller.clearActiveDraft();
+        if (mounted) Navigator.pop(context);
+      }
       return;
     }
     final confirmed = await _confirm(
@@ -689,7 +938,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   Future<void> _cancel() async {
     if (_dialogOpen || _saving) return;
     if (_completedSets == 0) {
-      Navigator.pop(context);
+      await widget.controller.clearActiveDraft();
+      if (mounted) Navigator.pop(context);
       return;
     }
     final confirmed = await _confirm(
@@ -697,7 +947,10 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       'This active workout will not be saved.',
       'Cancel workout',
     );
-    if (confirmed && mounted) Navigator.pop(context);
+    if (confirmed) {
+      await widget.controller.clearActiveDraft();
+      if (mounted) Navigator.pop(context);
+    }
   }
 
   String _clock(int seconds) => seconds < 60
@@ -873,6 +1126,26 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       prefix: const Icon(FLucideIcons.flag),
       child: const Text('Finish workout'),
     ),
+    if (_exercise.sets < _maxSets) ...[
+      const SizedBox(height: AppSpacing.sm),
+      FButton(
+        key: const Key('add-set'),
+        variant: .outline,
+        onPress: _saving ? null : _addSet,
+        prefix: const Icon(FLucideIcons.plus),
+        child: Text('Add set to ${_exercise.name}'),
+      ),
+    ],
+    if (_exercises.length > 1) ...[
+      const SizedBox(height: AppSpacing.sm),
+      FButton(
+        key: const Key('switch-exercise'),
+        variant: .ghost,
+        onPress: _saving ? null : _pickExercise,
+        prefix: const Icon(FLucideIcons.listOrdered),
+        child: const Text('Switch exercise'),
+      ),
+    ],
   ];
 
   String _weightLabel(double kg) =>
@@ -972,10 +1245,23 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   ];
 
   List<Widget> _buildSet(BuildContext context) => [
-    Text(
-      'Exercise ${_exerciseIndex + 1} of ${_exercises.length}',
-      textAlign: TextAlign.center,
-    ),
+    if (_exercises.length > 1)
+      Center(
+        child: FButton(
+          key: const Key('switch-exercise'),
+          variant: .ghost,
+          size: .sm,
+          mainAxisSize: .min,
+          onPress: _saving ? null : _pickExercise,
+          suffix: const Icon(FLucideIcons.chevronDown, size: 16),
+          child: Text('Exercise ${_exerciseIndex + 1} of ${_exercises.length}'),
+        ),
+      )
+    else
+      Text(
+        'Exercise ${_exerciseIndex + 1} of ${_exercises.length}',
+        textAlign: TextAlign.center,
+      ),
     const SizedBox(height: AppSpacing.sm),
     Text(
       _exercise.name,
@@ -1058,6 +1344,36 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
           prefix: const Icon(FLucideIcons.hand),
           child: Text('Hands-free · ${plan.length} sets'),
         ),
+    ],
+    if (_exercise.sets < _maxSets || _canSkipExercise) ...[
+      const SizedBox(height: AppSpacing.sm),
+      Wrap(
+        alignment: WrapAlignment.center,
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.xs,
+        children: [
+          if (_exercise.sets < _maxSets)
+            FButton(
+              key: const Key('add-set'),
+              variant: .ghost,
+              size: .sm,
+              mainAxisSize: .min,
+              onPress: _saving ? null : _addSet,
+              prefix: const Icon(FLucideIcons.plus, size: 16),
+              child: const Text('Add set'),
+            ),
+          if (_canSkipExercise)
+            FButton(
+              key: const Key('skip-exercise'),
+              variant: .ghost,
+              size: .sm,
+              mainAxisSize: .min,
+              onPress: _saving ? null : _skipExercise,
+              prefix: const Icon(FLucideIcons.skipForward, size: 16),
+              child: const Text('Skip exercise'),
+            ),
+        ],
+      ),
     ],
   ];
 }
