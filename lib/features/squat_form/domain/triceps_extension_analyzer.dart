@@ -57,23 +57,23 @@ class TricepsExtensionAnalyzer extends ArmRepAnalyzer {
 
   @override
   ArmCues get cues => const ArmCues(
-    start: 'Đưa tạ thẳng lên trên đầu để bắt đầu',
-    ready: 'Sẵn sàng, hạ tạ ra sau đầu',
-    go: 'Hạ tạ ra sau đầu',
-    far: 'Tốt, duỗi tay lên',
-    back: 'Duỗi thẳng tay lên',
-    short: 'Hạ tạ sâu hơn ra sau đầu',
-    incomplete: 'Duỗi thẳng tay hết trên đầu',
-    faults: {'elbowFlare': 'Khép khuỷu tay lại'},
+    start: 'Hold the weight straight overhead to start',
+    ready: 'Ready, lower it behind your head',
+    go: 'Lower it behind your head',
+    far: 'Good, extend up',
+    back: 'Straighten your arms up',
+    short: 'Lower it deeper behind your head',
+    incomplete: 'Lock out fully overhead',
+    faults: {'elbowFlare': 'Keep your elbows in'},
   );
 
   @override
   String? phaseLabel(SquatPhase phase) => switch (phase) {
     SquatPhase.findingBody => null,
-    SquatPhase.standing => 'Tay thẳng',
-    SquatPhase.descending => 'Đang hạ',
-    SquatPhase.bottom => 'Sau đầu',
-    SquatPhase.ascending => 'Đang duỗi',
+    SquatPhase.standing => 'Arms straight',
+    SquatPhase.descending => 'Lowering',
+    SquatPhase.bottom => 'Behind head',
+    SquatPhase.ascending => 'Extending',
   };
 
   @override
@@ -120,8 +120,8 @@ class TricepsExtensionAnalyzer extends ArmRepAnalyzer {
     if (lead == null) {
       return ArmFrame.missed(
         armsSeen
-            ? 'Đưa khuỷu tay lên cạnh đầu'
-            : 'Lùi ra để thấy hai tay và đầu',
+            ? 'Raise your elbows beside your head'
+            : 'Step back so your arms and head are in view',
       );
     }
     return ArmFrame.seen(

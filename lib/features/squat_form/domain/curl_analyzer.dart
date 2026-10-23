@@ -55,23 +55,23 @@ class CurlAnalyzer extends ArmRepAnalyzer {
 
   @override
   ArmCues get cues => const ArmCues(
-    start: 'Đứng thẳng, buông tay để bắt đầu',
-    ready: 'Sẵn sàng, cuộn tạ lên',
-    go: 'Cuộn lên',
-    far: 'Tốt, hạ tạ từ từ',
-    back: 'Hạ xuống, duỗi thẳng tay',
-    short: 'Cuộn tạ lên cao hết',
-    incomplete: 'Duỗi thẳng tay hết ở dưới',
-    faults: {'elbowDrift': 'Giữ khuỷu tay sát người'},
+    start: 'Stand tall, arms down to start',
+    ready: 'Ready, curl up',
+    go: 'Curl up',
+    far: 'Good, lower slowly',
+    back: 'Lower and straighten your arms',
+    short: 'Curl all the way up',
+    incomplete: 'Straighten your arms fully at the bottom',
+    faults: {'elbowDrift': 'Keep your elbows at your sides'},
   );
 
   @override
   String? phaseLabel(SquatPhase phase) => switch (phase) {
     SquatPhase.findingBody => null,
-    SquatPhase.standing => 'Tay duỗi',
-    SquatPhase.descending => 'Đang cuộn',
-    SquatPhase.bottom => 'Đỉnh',
-    SquatPhase.ascending => 'Đang hạ',
+    SquatPhase.standing => 'Arms down',
+    SquatPhase.descending => 'Curling',
+    SquatPhase.bottom => 'Top',
+    SquatPhase.ascending => 'Lowering',
   };
 
   @override
@@ -107,7 +107,9 @@ class CurlAnalyzer extends ArmRepAnalyzer {
         lead = (arm: arm, progress: progress, drift: drift);
       }
     }
-    if (lead == null) return const ArmFrame.missed('Lùi ra để thấy hai tay');
+    if (lead == null) {
+      return const ArmFrame.missed('Step back so both arms are in view');
+    }
     return ArmFrame.seen(
       lead.progress,
       fault: lead.drift ? 'elbowDrift' : null,

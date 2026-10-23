@@ -150,7 +150,7 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
   @override
   int get repetitions => _repetitions;
   @override
-  String get countLabel => 'SỐ REP';
+  String get countLabel => 'REPS';
   @override
   List<RepRecord> get repRecords => _repRecords;
 
@@ -277,7 +277,7 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
         phase: _phase,
         repetitions: _repetitions,
         score: 0,
-        cue: sideOn ? 'Quay mặt về phía camera' : 'Lùi ra để thấy hai tay',
+        cue: sideOn ? 'Face the camera' : 'Step back so both arms are in view',
         // Side-on reps never count: worth saying, not just showing.
         tone: sideOn ? CueTone.warn : CueTone.info,
         bodyVisible: false,
@@ -379,29 +379,29 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
         ? betweenRepsCue(last)
         : null;
     final (cue, tone) = unevenLive
-        ? ('Đẩy đều hai tay', CueTone.warn)
+        ? ('Press both arms evenly', CueTone.warn)
         : shortLower
-        ? ('Hạ khuỷu xuống ngang vai', CueTone.warn)
+        ? ('Lower your elbows to shoulder height', CueTone.warn)
         : _phase == SquatPhase.findingBody
-        ? ('Đưa tay lên ngang vai để bắt đầu', CueTone.info)
+        ? ('Bring your hands to shoulder height to start', CueTone.info)
         : bentOverhead
         // Guidance at the top; the miss itself is said with the count.
-        ? ('Đẩy thẳng tay lên hết', CueTone.info)
+        ? ('Press all the way up', CueTone.info)
         : _phase == SquatPhase.descending
-        ? ('Đẩy lên', CueTone.info)
+        ? ('Press up', CueTone.info)
         : _phase == SquatPhase.bottom
-        ? ('Tốt, hạ xuống từ từ', CueTone.good)
+        ? ('Good, lower slowly', CueTone.good)
         : _phase == SquatPhase.ascending
-        ? ('Hạ xuống ngang vai', CueTone.info)
+        ? ('Lower to shoulder height', CueTone.info)
         : _notFromRack
-        ? ('Gập khuỷu, đưa tay ngang vai rồi đẩy', CueTone.warn)
+        ? ('Bend your elbows, hands to shoulders, then press', CueTone.warn)
         : _shortPress
-        ? ('Đẩy tay lên cao hết cỡ', CueTone.warn)
+        ? ('Press as high as you can', CueTone.warn)
         : between != null
         ? (between.cue, between.tone)
         : lift < 0
-        ? ('Đưa tay lên ngang vai để bắt đầu', CueTone.info)
-        : ('Sẵn sàng, đẩy tay lên', CueTone.info);
+        ? ('Bring your hands to shoulder height to start', CueTone.info)
+        : ('Ready, press up', CueTone.info);
 
     return SquatAnalysis(
       phase: _phase,
@@ -431,10 +431,10 @@ class ShoulderPressAnalyzer implements RepAnalyzer {
   /// Press wording for the phase; [lift] null when the arms aren't seen.
   String? _label(double? lift) => switch (_phase) {
     SquatPhase.findingBody => null,
-    SquatPhase.standing => (lift ?? 0) < 0 ? 'Tay buông' : 'Ở vai',
-    SquatPhase.descending => 'Đang đẩy',
-    SquatPhase.bottom => 'Trên đầu',
-    SquatPhase.ascending => 'Đang hạ',
+    SquatPhase.standing => (lift ?? 0) < 0 ? 'Arms down' : 'At shoulders',
+    SquatPhase.descending => 'Pressing',
+    SquatPhase.bottom => 'Overhead',
+    SquatPhase.ascending => 'Lowering',
   };
 
   double _smooth(double? previous, double value, double alpha) =>
