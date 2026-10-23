@@ -195,4 +195,41 @@ void main() {
     expect(MuscleVolume.sets(1), '1 set');
     expect(MuscleVolume.sets(.5), '0.5 sets');
   });
+
+  test('muscle groups come from the muscles a plan mainly trains', () {
+    const press = Exercise(
+      id: 'bench',
+      name: 'Dumbbell Bench Press',
+      muscleGroup: 'Chest',
+      sets: 3,
+      reps: 8,
+    );
+    // Triceps and shoulders only assist a press: not an arms plan.
+    expect(MuscleGroup.trainedBy([press]), {MuscleGroup.chest});
+    expect(
+      MuscleGroup.trainedBy([
+        press,
+        const Exercise(
+          id: 'curl',
+          name: 'Biceps Curl',
+          muscleGroup: 'Arms',
+          sets: 3,
+          reps: 12,
+        ),
+      ]),
+      {MuscleGroup.chest, MuscleGroup.arms},
+    );
+    expect(
+      MuscleGroup.trainedBy([
+        const Exercise(
+          id: 'stretch',
+          name: 'Hamstring Stretch',
+          muscleGroup: 'Legs',
+          sets: 1,
+          reps: 1,
+        ),
+      ]),
+      isEmpty,
+    );
+  });
 }

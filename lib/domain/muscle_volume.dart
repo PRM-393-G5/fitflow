@@ -29,6 +29,42 @@ enum Muscle {
   final bool major;
 }
 
+/// The body parts people browse plans by, each a set of [Muscle]s.
+enum MuscleGroup {
+  chest('Chest', {Muscle.chest}),
+  back('Back', {Muscle.upperBack, Muscle.lowerBack, Muscle.trapezius}),
+  shoulders('Shoulders', {Muscle.deltoids}),
+  arms('Arms', {Muscle.biceps, Muscle.triceps, Muscle.forearms}),
+  core('Core', {Muscle.abs, Muscle.obliques}),
+  legs('Legs', {
+    Muscle.quadriceps,
+    Muscle.hamstrings,
+    Muscle.glutes,
+    Muscle.adductors,
+    Muscle.calves,
+  });
+
+  const MuscleGroup(this.label, this.muscles);
+
+  final String label;
+  final Set<Muscle> muscles;
+
+  /// Groups some exercise mainly trains. Helpers don't count, so a bench
+  /// press plan is a chest plan, not also an arms one.
+  static Set<MuscleGroup> trainedBy(Iterable<Exercise> exercises) {
+    final main = {
+      for (final MapEntry(key: muscle, value: rows) in MuscleVolume.planned(
+        exercises,
+      ).entries)
+        if (MuscleVolume.isPrimary(rows)) muscle,
+    };
+    return {
+      for (final group in values)
+        if (group.muscles.any(main.contains)) group,
+    };
+  }
+}
+
 /// A weekly set target.
 typedef SetRange = ({int min, int max});
 
