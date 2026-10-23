@@ -27,7 +27,12 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 | Plank | Đo thời gian giữ đúng form (hold seconds), độ lệch hông chuẩn hoá theo chiều dài thân, phải chống tay/khuỷu (nằm sấp không tính) | ✅ |
 | Chấm điểm + cues | Form score 0–100, gợi ý sửa tư thế realtime; pause, đổi camera | ✅ |
 | Lưu kết quả | Kết quả form check lưu vào session history (hiện trong lịch sử, không tính là buổi tập: không cộng vào số buổi, phút tập, mục tiêu tuần, streak, huy hiệu) | ✅ |
-| Thêm bài tập | Lunge, pull-up, overhead press (analyzer mới, tái dùng pipeline) | 📋 |
+| Shoulder press | Đứng quay mặt camera, đếm từ vai lên thẳng tay; lỗi: không khoá tay, lệch tay, hạ không đủ | ✅ |
+| Biceps curl | Dumbbell/Hammer/Barbell curl, quay mặt hoặc nghiêng; đếm theo độ cao cổ tay so với khuỷu, curl xen kẽ tính từng tay; lỗi: khuỷu đưa ra trước (đánh đà), không duỗi thẳng tay ở dưới; cuộn nửa chừng không tính + nhắc | ✅ |
+| Triceps extension | Overhead/French, quay mặt camera, khuỷu cao cạnh đầu (một hoặc hai tay); lỗi: khuỷu xoè, không duỗi thẳng ở trên; hạ nông không tính + nhắc | ✅ |
+| Dip | Bench/chair/bar dip, nghiêng người về phía camera; đếm theo góc khuỷu; lỗi: không duỗi thẳng ở trên; xuống nông không tính + nhắc; quay mặt vào camera thì nhắc quay nghiêng | ✅ |
+| Đếm trong buổi tập | Nút "Count with camera" ở bài có analyzer: camera đếm xong tự ghi set (kèm verdict) và bắt đầu nghỉ; Undo để sửa nếu đếm sai | ✅ |
+| Thêm bài tập | Lunge, pull-up, row (analyzer mới, tái dùng pipeline) | 📋 |
 
 ## 3. Theo dõi tiến độ (Progress & Motivation)
 

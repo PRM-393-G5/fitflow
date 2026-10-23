@@ -1,8 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prm/features/squat_form/domain/curl_analyzer.dart';
+import 'package:prm/features/squat_form/domain/dip_analyzer.dart';
 import 'package:prm/features/squat_form/domain/plank_analyzer.dart';
 import 'package:prm/features/squat_form/domain/pushup_analyzer.dart';
 import 'package:prm/features/squat_form/domain/shoulder_press_analyzer.dart';
 import 'package:prm/features/squat_form/domain/squat_analyzer.dart';
+import 'package:prm/features/squat_form/domain/triceps_extension_analyzer.dart';
 
 import 'support/form_simulator.dart';
 
@@ -768,6 +771,242 @@ void main() {
         isTrue,
       );
       expect(run.records.every((r) => r.minKneeAngle == null), isTrue);
+    });
+  });
+
+  group('arm exercises', () {
+    /// Phone at chest height, 2 m away, framing the upper body.
+    SimCamera chest({double azimuth = 0, double pitch = 0}) => SimCamera(
+      azimuthDeg: azimuth,
+      pitchDeg: pitch,
+      scale: .6,
+      floorY: 1.35,
+      distanceM: 2,
+    );
+
+    /// Side-on to someone dipping off a bench.
+    const bench = SimCamera(
+      azimuthDeg: 90,
+      scale: .55,
+      floorY: 1.0,
+      distanceM: 2.5,
+    );
+
+    List<List<SimFrame>> sets(
+      Movement movement,
+      SimCamera camera, {
+      SimNoise noise = const SimNoise(),
+    }) => [
+      for (var seed = 1; seed <= _seeds; seed++)
+        simulate(movement, camera: camera, noise: noise, seed: seed),
+    ];
+
+    Set<String> warnings(RepAnalyzer analyzer, List<SimFrame> frames) => {
+      for (final (cue, tone) in shownCues(analyzer, frames))
+        if (tone == CueTone.warn) cue,
+    };
+
+    /// Counted, clean, 100 throughout, and only the count said aloud.
+    void expectClean(
+      Movement movement,
+      RepAnalyzer Function() analyzer,
+      List<SimCamera> cameras, {
+      int reps = 5,
+      List<SimNoise> noises = const [SimNoise()],
+    }) {
+      for (final camera in cameras) {
+        for (final noise in noises) {
+          for (final frames in sets(movement, camera, noise: noise)) {
+            final run = replay(analyzer(), frames);
+            expect(run.count, reps);
+            expect(run.faults, isEmpty);
+            expect(run.minScore, 100);
+            expect(spoken(analyzer(), frames), [
+              for (var rep = 1; rep <= reps; rep++) '$rep',
+            ]);
+            expect(warnings(analyzer(), frames), isEmpty);
+          }
+        }
+      }
+    }
+
+    const robustNoise = [
+      SimNoise(),
+      SimNoise(sigma: .008),
+      SimNoise(fps: 10),
+      SimNoise(outlierRate: .08, dropoutRate: .05),
+    ];
+
+    group('curl', () {
+      test('good curls count from the front, at an angle and side-on', () {
+        expectClean(CurlMovement(), CurlAnalyzer.new, [
+          chest(),
+          chest(azimuth: 35),
+          chest(azimuth: 90),
+          chest(pitch: 30),
+          const SimCamera(azimuthDeg: 0, scale: .4, floorY: .95),
+        ], noises: robustNoise);
+      });
+
+      test('alternating arms count each curl', () {
+        expectClean(CurlMovement(alternate: true, reps: 6), CurlAnalyzer.new, [
+          chest(),
+        ], reps: 6);
+      });
+
+      test('swinging the elbows forward is called out', () {
+        for (final camera in [chest(), chest(azimuth: 90)]) {
+          final runs = _runs(
+            CurlMovement(driftDeg: 50),
+            CurlAnalyzer.new,
+            camera: camera,
+          );
+          expect(runs.every((run) => run.count == 5), isTrue);
+          expect(_faultRate(runs, 'elbowDrift'), 1);
+          expect(
+            runs.every(
+              (run) => run.warnings.contains('Giữ khuỷu tay sát người'),
+            ),
+            isTrue,
+          );
+        }
+      });
+
+      test('half curls never count, and say why', () {
+        for (final frames in sets(CurlMovement(topElbowDeg: 90), chest())) {
+          final run = replay(CurlAnalyzer(), frames);
+          expect(run.count, 0);
+          expect(warnings(CurlAnalyzer(), frames), {'Cuộn tạ lên cao hết'});
+        }
+      });
+
+      test('curling again before straightening the arms is partial', () {
+        final runs = _runs(
+          CurlMovement(restElbowDeg: 135),
+          CurlAnalyzer.new,
+          camera: chest(),
+        );
+        expect(runs.every((run) => run.count == 5), isTrue);
+        // The first curl starts from hanging arms.
+        expect(_faultRate(runs, 'noFullExtension'), closeTo(.8, .01));
+        expect(
+          runs.every(
+            (run) => run.warnings.contains('Duỗi thẳng tay hết ở dưới'),
+          ),
+          isTrue,
+        );
+      });
+
+      test('curls go up first in the coach telemetry', () {
+        final run = replay(
+          CurlAnalyzer(),
+          simulate(CurlMovement(), camera: chest()),
+        );
+        final prompt = AiFormReviewPrompt.user(
+          exercise: FormExercise.curl.label,
+          reps: run.records,
+        );
+        expect(prompt, contains('curlUpMs'));
+        expect(prompt, isNot(contains('descentMs')));
+      });
+    });
+
+    group('triceps extension', () {
+      test('good reps count from the front and at an angle', () {
+        expectClean(TricepsExtensionMovement(), TricepsExtensionAnalyzer.new, [
+          chest(),
+          chest(azimuth: 35),
+          chest(pitch: 30),
+          const SimCamera(
+            azimuthDeg: 0,
+            scale: .6,
+            floorY: 1.6,
+            distanceM: 2,
+            aimHeightM: 1.4,
+          ),
+        ], noises: robustNoise);
+      });
+
+      test('flared elbows are called out facing the camera', () {
+        final runs = _runs(
+          TricepsExtensionMovement(flareDeg: 40),
+          TricepsExtensionAnalyzer.new,
+          camera: chest(),
+        );
+        expect(runs.every((run) => run.count == 5), isTrue);
+        expect(_faultRate(runs, 'elbowFlare'), 1);
+        expect(
+          runs.every((run) => run.warnings.contains('Khép khuỷu tay lại')),
+          isTrue,
+        );
+      });
+
+      test('a shallow lowering never counts, and says why', () {
+        for (final frames in sets(
+          TricepsExtensionMovement(bottomElbowDeg: 125),
+          chest(),
+        )) {
+          expect(replay(TricepsExtensionAnalyzer(), frames).count, 0);
+          expect(warnings(TricepsExtensionAnalyzer(), frames), {
+            'Hạ tạ sâu hơn ra sau đầu',
+          });
+        }
+      });
+
+      test('not locking out overhead between reps is caught', () {
+        final runs = _runs(
+          TricepsExtensionMovement(topElbowDeg: 145),
+          TricepsExtensionAnalyzer.new,
+          camera: chest(),
+        );
+        expect(runs.every((run) => run.count == 5), isTrue);
+        expect(_faultRate(runs, 'noLockout'), closeTo(.8, .01));
+      });
+    });
+
+    group('dip', () {
+      test('good dips count side-on and turned a little', () {
+        expectClean(DipMovement(), DipAnalyzer.new, [
+          bench,
+          const SimCamera(
+            azimuthDeg: 70,
+            scale: .55,
+            floorY: 1.0,
+            distanceM: 2.5,
+          ),
+        ], noises: robustNoise);
+      });
+
+      test('facing the camera is told to turn side-on, never counts', () {
+        for (final frames in sets(
+          DipMovement(),
+          const SimCamera(azimuthDeg: 0, scale: .55, floorY: 1.0),
+        )) {
+          expect(replay(DipAnalyzer(), frames).count, 0);
+          expect(warnings(DipAnalyzer(), frames), {
+            'Quay nghiêng người về phía camera',
+          });
+        }
+      });
+
+      test('shallow dips never count, and say why', () {
+        for (final frames in sets(DipMovement(bottomElbowDeg: 125), bench)) {
+          expect(replay(DipAnalyzer(), frames).count, 0);
+          expect(warnings(DipAnalyzer(), frames), {
+            'Xuống sâu hơn, khuỷu tay vuông góc',
+          });
+        }
+      });
+
+      test('not locking out at the top still counts each dip, flagged', () {
+        final runs = _runs(
+          DipMovement(topElbowDeg: 158),
+          DipAnalyzer.new,
+          camera: bench,
+        );
+        expect(runs.every((run) => run.count == 5), isTrue);
+        expect(_faultRate(runs, 'noLockout'), closeTo(.8, .01));
+      });
     });
   });
 }

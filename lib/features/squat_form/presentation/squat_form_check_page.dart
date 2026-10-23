@@ -22,6 +22,9 @@ import '../domain/plank_analyzer.dart';
 import '../domain/pose_frame.dart';
 import '../domain/pushup_analyzer.dart';
 import '../domain/shoulder_press_analyzer.dart';
+import '../domain/curl_analyzer.dart';
+import '../domain/dip_analyzer.dart';
+import '../domain/triceps_extension_analyzer.dart';
 import '../domain/squat_analyzer.dart';
 import 'form_review_view.dart';
 import 'form_voice.dart';
@@ -81,6 +84,9 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     FormExercise.pushup => PushupAnalyzer(),
     FormExercise.plank => PlankAnalyzer(),
     FormExercise.shoulderPress => ShoulderPressAnalyzer(),
+    FormExercise.curl => CurlAnalyzer(),
+    FormExercise.tricepsExtension => TricepsExtensionAnalyzer(),
+    FormExercise.dip => DipAnalyzer(),
   };
   final _detector = PoseDetector(
     options: PoseDetectorOptions(
@@ -496,6 +502,9 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
               FormExercise.pushup => 'Chest',
               FormExercise.plank => 'Core',
               FormExercise.shoulderPress => 'Shoulders',
+              FormExercise.curl ||
+              FormExercise.tricepsExtension ||
+              FormExercise.dip => 'Arms',
             },
             sets: 1,
             reps: timed ? 0 : result.amount,
@@ -1054,6 +1063,27 @@ class _SetupGuide extends StatelessWidget {
         ),
         (FLucideIcons.personStanding, 'Đứng quay mặt về phía camera'),
         (FLucideIcons.scanEye, 'Thấy từ thắt lưng lên, cả khi giơ tay cao'),
+      ],
+      FormExercise.curl => const [
+        (FLucideIcons.smartphone, 'Đặt điện thoại ngang ngực, cách 2 m'),
+        (
+          FLucideIcons.personStanding,
+          'Đứng quay mặt hoặc nghiêng về phía camera',
+        ),
+        (FLucideIcons.scanEye, 'Thấy từ đầu gối lên, cả hai tay'),
+      ],
+      FormExercise.tricepsExtension => const [
+        (
+          FLucideIcons.smartphone,
+          'Đặt điện thoại ngang ngực trở lên, cách 2 m',
+        ),
+        (FLucideIcons.personStanding, 'Đứng quay mặt về phía camera'),
+        (FLucideIcons.scanEye, 'Thấy từ thắt lưng lên, cả khi giơ tay cao'),
+      ],
+      FormExercise.dip => const [
+        (FLucideIcons.smartphone, 'Đặt điện thoại ngang ghế, cách 2–3 m'),
+        (FLucideIcons.personStanding, 'Ngồi nghiêng người về phía camera'),
+        (FLucideIcons.scanEye, 'Thấy rõ tay, vai và hông'),
       ],
     };
     return DecoratedBox(

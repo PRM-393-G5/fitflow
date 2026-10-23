@@ -66,6 +66,42 @@ void main() {
     }
   });
 
+  test('matches the arm exercises of an arm day', () {
+    for (final (name, exercise) in [
+      ('Dumbbell Curl', FormExercise.curl),
+      ('Hammer Curl', FormExercise.curl),
+      ('Barbell Biceps Curls', FormExercise.curl),
+      ('Overhead Triceps Extension', FormExercise.tricepsExtension),
+      ('Dumbbell Overhead Tricep Extension', FormExercise.tricepsExtension),
+      ('French Press', FormExercise.tricepsExtension),
+      ('Bench Dip', FormExercise.dip),
+      ('Chair dips', FormExercise.dip),
+      ('Dips', FormExercise.dip),
+    ]) {
+      expect(FormExercise.match(name, timed: false), exercise, reason: name);
+    }
+    // Still the press, not a triceps extension.
+    expect(
+      FormExercise.match('Overhead Press', timed: false),
+      FormExercise.shoulderPress,
+    );
+    for (final name in [
+      'Leg Curl',
+      'Lying Hamstring Curl',
+      'Nordic Curl',
+      'Wrist Curl',
+      'Preacher Curl',
+      'Concentration Curl',
+      'Incline Dumbbell Curl',
+      'Skull Crusher',
+      'Lying Triceps Extension',
+      'Triceps Pushdown',
+      'Leg Extension',
+    ]) {
+      expect(FormExercise.match(name, timed: false), isNull, reason: name);
+    }
+  });
+
   test('leaves out variants and kinds the analyzers cannot judge', () {
     expect(FormExercise.match('Bulgarian Split Squat', timed: false), isNull);
     expect(FormExercise.match('Side Plank', timed: true), isNull);
@@ -132,9 +168,7 @@ void main() {
       .controller
       .text;
 
-  testWidgets('camera count fills the set, which the user then logs', (
-    tester,
-  ) async {
+  testWidgets('a camera count logs the set with its verdict', (tester) async {
     FormExercise? opened;
     final controller = await pumpWorkout(
       tester,
@@ -150,37 +184,36 @@ void main() {
     await tester.pump();
 
     expect(opened, FormExercise.squat);
-    expect(amountText(tester), '14');
+    // No "Complete set" tap: the counted set is logged and rest starts.
+    expect(find.text('1 of 2 sets'), findsOneWidget);
     expect(
-      find.text('Counted 14 reps — complete the set to save it.'),
+      find.text('Logged 14 reps from the camera. Undo to fix it.'),
       findsOneWidget,
     );
-    // Counting alone does not log a set.
-    expect(find.text('0 of 2 sets'), findsOneWidget);
+    expect(find.byKey(const Key('skip-rest')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('complete-set')));
-    await tester.pump();
     await tester.tap(find.byKey(const Key('skip-rest')));
     await tester.pump();
+    // The next set is prefilled from the one just logged.
+    expect(amountText(tester), '14');
     await tester.tap(find.byKey(const Key('complete-set')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Finish').last);
     await tester.pumpAndSettle();
 
-    final saved = controller.sessions.single;
-    final sets = saved.exercises.single.performedSets;
+    final sets = controller.sessions.single.exercises.single.performedSets;
     expect(sets.first.amount, 14);
     // The camera's verdict is saved with the set it counted, only.
     expect(sets.first.form?.reps, hasLength(2));
     expect(sets.last.form, isNull);
   });
 
-  Future<List<SetEntry>> finish(
+  /// Skips the rest after the camera-logged first set, logs the second by
+  /// hand and finishes.
+  Future<List<SetEntry>> finishAfterCamera(
     WidgetTester tester,
     AppController controller,
   ) async {
-    await tester.tap(find.byKey(const Key('complete-set')));
-    await tester.pump();
     await tester.tap(find.byKey(const Key('skip-rest')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('complete-set')));
@@ -190,23 +223,25 @@ void main() {
     return controller.sessions.single.exercises.single.performedSets;
   }
 
-  testWidgets('a later camera run without a verdict replaces the earlier', (
-    tester,
-  ) async {
-    var runs = 0;
-    final controller = await pumpWorkout(
-      tester,
-      exercise('Bodyweight Squat', reps: 10),
-      launch: (_, _) async => (amount: 14, form: runs++ == 0 ? verdict : null),
-    );
-    for (var i = 0; i < 2; i++) {
-      await tester.tap(find.byKey(const Key('form-check-set')));
-      await tester.pump();
-    }
-    final sets = await finish(tester, controller);
-    expect(sets.first.amount, 14);
-    expect(sets.first.form, isNull);
-  });
+  /// Undoes the camera-logged set, so its count is back in the field.
+  Future<void> undoCameraSet(WidgetTester tester) async {
+    await tester.tap(find.byKey(const Key('form-check-set')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('undo-set')));
+    await tester.pump();
+    expect(amountText(tester), '14');
+  }
+
+  Future<void> completeAndFinish(WidgetTester tester) async {
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('skip-rest')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('complete-set')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Finish').last);
+    await tester.pumpAndSettle();
+  }
 
   testWidgets('undo and re-log keeps the camera verdict', (tester) async {
     final controller = await pumpWorkout(
@@ -214,13 +249,9 @@ void main() {
       exercise('Bodyweight Squat', reps: 10),
       launch: (_, _) async => (amount: 14, form: verdict),
     );
-    await tester.tap(find.byKey(const Key('form-check-set')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('complete-set')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('undo-set')));
-    await tester.pump();
-    final sets = await finish(tester, controller);
+    await undoCameraSet(tester);
+    await completeAndFinish(tester);
+    final sets = controller.sessions.single.exercises.single.performedSets;
     expect(sets.first.amount, 14);
     expect(sets.first.form?.reps, hasLength(2));
   });
@@ -235,7 +266,7 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('form-check-set')));
     await tester.pump();
-    final sets = await finish(tester, controller);
+    final sets = await finishAfterCamera(tester, controller);
     expect(sets.first.amount, SetInput.maxReps);
     expect(sets.first.form, isNull);
   });
@@ -248,16 +279,16 @@ void main() {
       exercise('Bodyweight Squat', reps: 10),
       launch: (_, _) async => (amount: 14, form: verdict),
     );
-    await tester.tap(find.byKey(const Key('form-check-set')));
-    await tester.pump();
+    await undoCameraSet(tester);
     await tester.enterText(find.byKey(const Key('set-amount')), '12');
     await tester.enterText(find.byKey(const Key('set-amount')), '14');
-    final sets = await finish(tester, controller);
+    await completeAndFinish(tester);
+    final sets = controller.sessions.single.exercises.single.performedSets;
     expect(sets.first.amount, 14);
     expect(sets.first.form, isNull);
   });
 
-  testWidgets('a camera verdict is dropped when the count is edited', (
+  testWidgets('a camera verdict is dropped when the count is fixed', (
     tester,
   ) async {
     final controller = await pumpWorkout(
@@ -265,21 +296,34 @@ void main() {
       exercise('Bodyweight Squat', reps: 10),
       launch: (_, _) async => (amount: 14, form: verdict),
     );
-    await tester.tap(find.byKey(const Key('form-check-set')));
-    await tester.pump();
+    await undoCameraSet(tester);
     await tester.enterText(find.byKey(const Key('set-amount')), '12');
-    await tester.tap(find.byKey(const Key('complete-set')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('skip-rest')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('complete-set')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Finish').last);
-    await tester.pumpAndSettle();
+    await completeAndFinish(tester);
 
     final sets = controller.sessions.single.exercises.single.performedSets;
     expect(sets.first.amount, 12);
     expect(sets.first.form, isNull);
+  });
+
+  testWidgets('an invalid weight leaves the count to log by hand', (
+    tester,
+  ) async {
+    await pumpWorkout(
+      tester,
+      exercise('Dumbbell Curl'),
+      launch: (_, _) async => (amount: 11, form: null),
+    );
+    await tester.enterText(find.byKey(const Key('set-weight')), 'abc');
+    await tester.tap(find.byKey(const Key('form-check-set')));
+    await tester.pump();
+
+    expect(find.text('0 of 2 sets'), findsOneWidget);
+    expect(amountText(tester), '11');
+    expect(
+      find.text('Counted 11 reps — complete the set to save it.'),
+      findsOneWidget,
+    );
+    await tester.pumpAndSettle();
   });
 
   testWidgets('nothing counted keeps the prefilled amount', (tester) async {
@@ -307,8 +351,35 @@ void main() {
     await tester.tap(find.byKey(const Key('form-check-set')));
     await tester.pump();
 
-    expect(amountText(tester), '42');
+    expect(find.text('1 of 2 sets'), findsOneWidget);
+    expect(
+      find.text('Logged a 42s hold from the camera. Undo to fix it.'),
+      findsOneWidget,
+    );
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('arm-day exercises get the camera too', (tester) async {
+    for (final (name, expected) in [
+      ('Dumbbell Curl', FormExercise.curl),
+      ('Overhead Triceps Extension', FormExercise.tricepsExtension),
+      ('Bench Dip', FormExercise.dip),
+    ]) {
+      FormExercise? opened;
+      await pumpWorkout(
+        tester,
+        exercise(name),
+        launch: (_, launched) async {
+          opened = launched;
+          return null;
+        },
+      );
+      expect(find.text('Count with camera'), findsOneWidget, reason: name);
+      await tester.tap(find.byKey(const Key('form-check-set')));
+      await tester.pump();
+      expect(opened, expected, reason: name);
+      await tester.pumpAndSettle();
+    }
   });
 
   testWidgets('exercises without an analyzer show no camera button', (

@@ -583,6 +583,236 @@ class StraightArmRaiseMovement implements Movement {
   }
 }
 
+/// Hips, knees and ankles of someone standing upright, shoulders at
+/// [shoulderY].
+void _standingLegs(Pose3 pose, double shoulderY) {
+  for (final side in const [1, -1]) {
+    final left = side == 1;
+    pose[left ? SquatJoint.leftHip : SquatJoint.rightHip] = V3(
+      0,
+      shoulderY - Body.torso,
+      side * Body.hipHalf,
+    );
+    pose[left ? SquatJoint.leftKnee : SquatJoint.rightKnee] = V3(
+      0,
+      Body.ankleHeight + Body.shank,
+      side * Body.hipHalf,
+    );
+    pose[left ? SquatJoint.leftAnkle : SquatJoint.rightAnkle] = V3(
+      0,
+      Body.ankleHeight,
+      side * Body.hipHalf,
+    );
+  }
+}
+
+/// Standing curls: arms hanging (elbow ~170°) curled up to [topElbowDeg].
+class CurlMovement implements Movement {
+  CurlMovement({
+    this.reps = 5,
+    this.topElbowDeg = 40,
+    this.restElbowDeg = 170,
+    this.driftDeg = 8,
+    this.alternate = false,
+    double curlS = .8,
+    double pauseS = .2,
+    double lowerS = 1.1,
+    double restS = .5,
+  }) : timeline = RepTimeline(
+         reps: reps,
+         descentS: curlS,
+         pauseS: pauseS,
+         ascentS: lowerS,
+         restS: restS,
+       );
+
+  final int reps;
+
+  /// Elbow angle at the top: ~40 curled to the shoulder, 90 a half curl.
+  final double topElbowDeg;
+
+  /// Elbow angle between reps (the set starts and ends hanging at 170).
+  final double restElbowDeg;
+
+  /// How far the upper arm swings forward at the top of each curl.
+  final double driftDeg;
+
+  /// One arm per rep, left first, the other hanging.
+  final bool alternate;
+  final RepTimeline timeline;
+
+  static const _shoulderY = 1.44;
+
+  @override
+  double get durationS => timeline.durationS;
+
+  @override
+  Pose3 poseAt(double t) {
+    final p = timeline.progress(t);
+    final inSet =
+        t >= timeline.leadS && t < timeline.durationS - timeline.tailS;
+    final rest = inSet ? restElbowDeg : 170.0;
+    final rep = ((t - timeline.leadS) / timeline.repS).floor();
+    final pose = <SquatJoint, V3>{};
+    for (final side in const [1, -1]) {
+      final left = side == 1;
+      final active = !alternate || (rep.isEven == left);
+      final armP = active ? p : 0.0;
+      final elbowAngle = rest + (topElbowDeg - rest) * armP;
+      final drift = _rad(driftDeg * armP);
+      // Forearm bend, forward from the upper arm's line.
+      final bend = drift + _rad(180 - elbowAngle);
+      final shoulder = V3(0, _shoulderY, side * Body.shoulderHalf);
+      final elbow =
+          shoulder +
+          V3(math.sin(drift), -math.cos(drift), side * .08) * Body.upperArm;
+      final wrist =
+          elbow + V3(math.sin(bend), -math.cos(bend), 0) * Body.forearm;
+      pose[left ? SquatJoint.leftShoulder : SquatJoint.rightShoulder] =
+          shoulder;
+      pose[left ? SquatJoint.leftElbow : SquatJoint.rightElbow] = elbow;
+      pose[left ? SquatJoint.leftWrist : SquatJoint.rightWrist] = wrist;
+    }
+    _standingLegs(pose, _shoulderY);
+    return pose;
+  }
+}
+
+/// Overhead triceps extension: upper arms up by the head, forearms
+/// lowering the weight behind it from locked out to [bottomElbowDeg].
+class TricepsExtensionMovement implements Movement {
+  TricepsExtensionMovement({
+    this.reps = 5,
+    this.bottomElbowDeg = 60,
+    this.topElbowDeg = 175,
+    this.flareDeg = 10,
+    double lowerS = 1.0,
+    double pauseS = .2,
+    double extendS = .8,
+    double restS = .5,
+  }) : timeline = RepTimeline(
+         reps: reps,
+         descentS: lowerS,
+         pauseS: pauseS,
+         ascentS: extendS,
+         restS: restS,
+       );
+
+  final int reps;
+  final double bottomElbowDeg;
+
+  /// Elbow angle at the top between reps (the set starts and ends at 175).
+  final double topElbowDeg;
+
+  /// How far the upper arms lean out to the sides.
+  final double flareDeg;
+  final RepTimeline timeline;
+
+  static const _shoulderY = 1.44;
+
+  @override
+  double get durationS => timeline.durationS;
+
+  @override
+  Pose3 poseAt(double t) {
+    final p = timeline.progress(t);
+    final inSet =
+        t >= timeline.leadS && t < timeline.durationS - timeline.tailS;
+    final top = inSet ? topElbowDeg : 175.0;
+    final elbowAngle = top + (bottomElbowDeg - top) * p;
+    final flare = _rad(flareDeg);
+    final bend = _rad(180 - elbowAngle);
+    final pose = <SquatJoint, V3>{};
+    for (final side in const [1, -1]) {
+      final left = side == 1;
+      final shoulder = V3(0, _shoulderY, side * Body.shoulderHalf);
+      final elbow =
+          shoulder +
+          V3(.03, math.cos(flare), side * math.sin(flare)) * Body.upperArm;
+      // Bent backward, behind the head, in the upper arm's plane.
+      final wrist =
+          elbow +
+          V3(
+                -math.sin(bend),
+                math.cos(bend) * math.cos(flare),
+                side * math.cos(bend) * math.sin(flare),
+              ) *
+              Body.forearm;
+      pose[left ? SquatJoint.leftShoulder : SquatJoint.rightShoulder] =
+          shoulder;
+      pose[left ? SquatJoint.leftElbow : SquatJoint.rightElbow] = elbow;
+      pose[left ? SquatJoint.leftWrist : SquatJoint.rightWrist] = wrist;
+    }
+    _standingLegs(pose, _shoulderY);
+    return pose;
+  }
+}
+
+/// Bench dips: hands on a bench behind, legs out front; the body lowers
+/// as the elbows bend from locked out to [bottomElbowDeg].
+class DipMovement implements Movement {
+  DipMovement({
+    this.reps = 5,
+    this.bottomElbowDeg = 90,
+    this.topElbowDeg = 172,
+    double lowerS = 1.0,
+    double pauseS = .2,
+    double pushS = .8,
+    double restS = .5,
+  }) : timeline = RepTimeline(
+         reps: reps,
+         descentS: lowerS,
+         pauseS: pauseS,
+         ascentS: pushS,
+         restS: restS,
+       );
+
+  final int reps;
+  final double bottomElbowDeg;
+
+  /// Elbow angle at the top between reps (the set starts and ends at 172).
+  final double topElbowDeg;
+  final RepTimeline timeline;
+
+  /// Hands on the bench edge, a little behind the hips.
+  static const _wristY = .48;
+  static const _wristX = -.12;
+
+  @override
+  double get durationS => timeline.durationS;
+
+  @override
+  Pose3 poseAt(double t) {
+    final p = timeline.progress(t);
+    final inSet =
+        t >= timeline.leadS && t < timeline.durationS - timeline.tailS;
+    final top = inSet ? topElbowDeg : 172.0;
+    final elbowAngle = top + (bottomElbowDeg - top) * p;
+    // Forearms stay upright; the upper arms tilt forward as the body drops.
+    final tilt = _rad(180 - elbowAngle);
+    final pose = <SquatJoint, V3>{};
+    for (final side in const [1, -1]) {
+      final left = side == 1;
+      final wrist = V3(_wristX, _wristY, side * (Body.shoulderHalf + .02));
+      final elbow = wrist + V3(-.02, Body.forearm, 0);
+      final shoulder =
+          elbow +
+          V3(math.sin(tilt), math.cos(tilt), -side * .02) * Body.upperArm;
+      final hip = shoulder + V3(.06, -Body.torso, -side * .09);
+      final knee = hip + V3(Body.thigh, .02, 0);
+      final ankle = knee + V3(.08, -Body.shank, 0);
+      pose[left ? SquatJoint.leftShoulder : SquatJoint.rightShoulder] =
+          shoulder;
+      pose[left ? SquatJoint.leftElbow : SquatJoint.rightElbow] = elbow;
+      pose[left ? SquatJoint.leftWrist : SquatJoint.rightWrist] = wrist;
+      pose[left ? SquatJoint.leftHip : SquatJoint.rightHip] = hip;
+      pose[left ? SquatJoint.leftKnee : SquatJoint.rightKnee] = knee;
+      pose[left ? SquatJoint.leftAnkle : SquatJoint.rightAnkle] = ankle;
+    }
+    return pose;
+  }
+}
+
 /// One analyzer frame: what the page would hand to `analyze`.
 class SimFrame {
   const SimFrame(this.timestampUs, this.points);
