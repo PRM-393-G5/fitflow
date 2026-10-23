@@ -85,18 +85,12 @@ void main() {
       ],
     );
 
-    // The page previews 5 sessions; the full, paged history is one tap away.
-    final seeAll = find.byKey(const Key('progress-history-all'));
-    await tester.scrollUntilVisible(
-      seeAll,
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('See all (25)'), findsOneWidget);
-    await tester.tap(seeAll);
+    // The History tab holds the full history, paged.
+    await tester.tap(find.byKey(const Key('progress-tab-history')));
     await tester.pumpAndSettle();
+    expect(find.text('History (25)'), findsOneWidget);
 
-    final scrollable = find.byType(Scrollable).last;
+    final scrollable = find.byType(Scrollable).first;
     await tester.scrollUntilVisible(
       find.textContaining('45 s hold'),
       300,
@@ -121,6 +115,8 @@ void main() {
       sessions: [session(1)],
     );
 
+    await tester.tap(find.byKey(const Key('progress-tab-history')));
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.text('Legs'),
       300,
@@ -168,6 +164,8 @@ void main() {
     );
 
     expect(find.text('0 weeks'), findsOneWidget); // longest streak
+    await tester.tap(find.byKey(const Key('progress-tab-records')));
+    await tester.pumpAndSettle();
     final records = find.text('Personal records');
     await tester.scrollUntilVisible(
       records,
@@ -215,6 +213,8 @@ void main() {
       ],
     );
 
+    await tester.tap(find.byKey(const Key('progress-tab-records')));
+    await tester.pumpAndSettle();
     final tile = find.textContaining('best set 10 × 60 kg');
     await tester.scrollUntilVisible(
       tile,
@@ -281,6 +281,8 @@ void main() {
       ],
     );
 
+    await tester.tap(find.byKey(const Key('progress-tab-history')));
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.text('Push day'),
       300,
@@ -461,8 +463,9 @@ void main() {
     final dd = since.day.toString().padLeft(2, '0');
     final mm = since.month.toString().padLeft(2, '0');
     expect(find.text('−1.5 kg since $dd/$mm'), findsOneWidget);
-    // One session: no "See all" for history.
-    expect(find.byKey(const Key('progress-history-all')), findsNothing);
+    // Records and history live in their own tabs, not under the overview.
+    expect(find.text('Personal records'), findsNothing);
+    expect(find.textContaining('History ('), findsNothing);
   });
 
   testWidgets('weight card never shows an old log as a recent trend', (
@@ -544,6 +547,8 @@ void main() {
       ],
     );
 
+    await tester.tap(find.byKey(const Key('progress-tab-muscles')));
+    await tester.pumpAndSettle();
     expect(find.text('Muscles this week'), findsOneWidget);
     expect(find.byKey(const Key('muscle-map-front')), findsOneWidget);
     expect(find.byKey(const Key('muscle-map-back')), findsOneWidget);
@@ -579,5 +584,88 @@ void main() {
       find.textContaining('trained indirectly by compound lifts'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('body metrics lead with the latest weigh-in and a short log', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    // 8 weigh-ins every 10 days, 76.0 → 72.5 kg, the last one today.
+    const weights = [76.0, 75.6, 75.0, 74.8, 74.1, 73.6, 72.8, 72.5];
+    final controller = await pumpPage(
+      tester,
+      const BodyMetricsPage(),
+      prefs: {
+        'body_profile_v1':
+            '{"heightCm":172,"age":22,"isMale":true,"activityLevel":2}',
+        'body_weights_v1': jsonEncode([
+          for (var i = 0; i < weights.length; i++)
+            {
+              'date': today
+                  .subtract(Duration(days: (weights.length - 1 - i) * 10))
+                  .toIso8601String(),
+              'weightKg': weights[i],
+            },
+        ]),
+      },
+    );
+
+    // Current weight, how fresh it is, and the action right under it.
+    final current = find.byKey(const Key('metrics-current'));
+    expect(
+      find.descendant(of: current, matching: find.text('72.5 kg')),
+      findsOneWidget,
+    );
+    expect(find.text('Logged today'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: current,
+        matching: find.byKey(const Key('log-weight')),
+      ),
+      findsOneWidget,
+    );
+
+    // 70 days fit the 90-day range: the whole drop, with a real minus.
+    expect(
+      tester.widget<Text>(find.byKey(const Key('metrics-trend-change'))).data,
+      '−3.5 kg',
+    );
+
+    // Figures explain themselves.
+    expect(find.text('Normal'), findsOneWidget);
+    expect(find.text('kcal at rest'), findsOneWidget);
+    expect(find.text('kcal per day'), findsOneWidget);
+
+    // The log previews the newest 5, each with its change.
+    final logAll = find.byKey(const Key('metrics-log-all'));
+    await tester.scrollUntilVisible(
+      logAll,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Show all (8)'), findsOneWidget);
+    expect(find.text('76.0 kg'), findsNothing);
+    expect(find.text('−0.3'), findsOneWidget); // 72.8 → 72.5
+    await tester.tap(logAll);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('76.0 kg'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Show less'), findsOneWidget);
+
+    // Deleting goes through the entry itself and a confirmation.
+    final oldest = controller.weightEntries.first;
+    await tester.tap(find.byKey(Key('weight-entry-${oldest.id}')));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete this entry?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('confirm-delete-weight')));
+    await tester.pumpAndSettle();
+    expect(controller.weightEntries, hasLength(7));
   });
 }

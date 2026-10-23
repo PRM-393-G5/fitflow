@@ -25,212 +25,22 @@ import '../../../core/widgets/app_card.dart';
 import 'form_quality_card.dart';
 import 'muscle_map_card.dart';
 
-class ProgressPage extends StatelessWidget {
+/// The four views of the progress tab.
+enum _ProgressTab {
+  overview('Overview'),
+  muscles('Muscles'),
+  records('Records'),
+  history('History');
+
+  const _ProgressTab(this.label);
+  final String label;
+}
+
+class ProgressPage extends StatefulWidget {
   const ProgressPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
-    final sessions = controller.sessions;
-    final metric = controller.useMetric;
-    // Stats ignore empty sessions and camera form checks (the helpers
-    // filter them out themselves); records still include form checks — a
-    // best set is real.
-    final training = WorkoutStats.training(sessions).toList();
-    final records = PersonalRecords.all(sessions).values.toList();
-    final week = WorkoutStats.thisWeek(sessions);
-    final streak = WorkoutStats.weeklyStreak(sessions, controller.weeklyGoal);
-    // Camera-judged sets, from form checks and workouts alike.
-    final formTrends = FormTrend.of(sessions);
-
-    return ResponsiveContent(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Progress',
-                  style: Theme.of(context).textTheme.headlineMedium
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              ),
-              Semantics(
-                label: 'Achievements',
-                child: FButton.icon(
-                  key: const Key('progress-achievements'),
-                  variant: .ghost,
-                  onPress: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const AchievementsPage(),
-                    ),
-                  ),
-                  child: const Icon(FLucideIcons.trophy),
-                ),
-              ),
-              Semantics(
-                label: 'Share summary',
-                child: FButton.icon(
-                  key: const Key('progress-share'),
-                  variant: .ghost,
-                  onPress: () => showShareSummaryDialog(context),
-                  child: const Icon(FLucideIcons.share),
-                ),
-              ),
-            ],
-          ),
-          const Text('Consistency compounds. Every session counts.'),
-          const SizedBox(height: AppSpacing.lg),
-          const SectionHeader(title: 'This week'),
-          const SizedBox(height: AppSpacing.sm),
-          AppCard(
-            child: _ThisWeek(
-              week: week,
-              streakWeeks: streak.current,
-              goal: controller.weeklyGoal,
-              metric: metric,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          const SectionHeader(title: 'Muscles this week'),
-          const SizedBox(height: AppSpacing.sm),
-          AppCard(
-            child: MuscleMapCard(
-              weeks: MuscleVolume.weekly(
-                sessions,
-                now: clock.now(),
-                trainingLevel: controller.level,
-              ),
-              target: MuscleVolume.targetFor(controller.level),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          const SectionHeader(title: 'All time'),
-          const SizedBox(height: AppSpacing.sm),
-          _StatGrid(
-            tiles: [
-              _StatTile(
-                icon: FLucideIcons.calendarCheck,
-                value: thousands(training.length),
-                label: 'sessions',
-              ),
-              _StatTile(
-                icon: FLucideIcons.timer,
-                value: _hours(WorkoutStats.totalMinutes(sessions)),
-                label: 'trained',
-              ),
-              _StatTile(
-                icon: FLucideIcons.weight,
-                value: _weight(WorkoutStats.totalVolume(sessions), metric),
-                label: 'volume lifted',
-              ),
-              _StatTile(
-                icon: FLucideIcons.flame,
-                value: _weeks(streak.longest),
-                label: 'longest streak',
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          const SectionHeader(title: 'Activity'),
-          const SizedBox(height: AppSpacing.sm),
-          AppCard(child: _ActivityHeatmap(sessions: training)),
-          if (formTrends.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.lg),
-            const SectionHeader(title: 'Form quality'),
-            const SizedBox(height: AppSpacing.sm),
-            FormQualityCard(trends: formTrends),
-          ],
-          const SizedBox(height: AppSpacing.lg),
-          const SectionHeader(title: 'Body weight'),
-          const SizedBox(height: AppSpacing.sm),
-          _WeightCard(entries: controller.weightEntries, metric: metric),
-          // Form checks alone can set records without any training
-          // session, so the two parts are guarded separately.
-          if (training.isNotEmpty || records.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.lg),
-            SectionHeader(
-              title: 'Personal records',
-              action: records.length > _preview
-                  ? FButton(
-                      key: const Key('progress-records-all'),
-                      variant: .ghost,
-                      size: .sm,
-                      mainAxisSize: .min,
-                      onPress: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const _RecordsPage(),
-                        ),
-                      ),
-                      child: Text('See all (${records.length})'),
-                    )
-                  : null,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            if (training.isNotEmpty)
-              _StatGrid(
-                tiles: [
-                  _StatTile(
-                    icon: FLucideIcons.dumbbell,
-                    value: _weight(
-                      training.map((item) => item.volumeKg).reduce(math.max),
-                      metric,
-                    ),
-                    label: 'best session',
-                  ),
-                  _StatTile(
-                    icon: FLucideIcons.clock,
-                    value:
-                        '${training.map((item) => item.durationMinutes).reduce(math.max)} min',
-                    label: 'longest session',
-                  ),
-                ],
-              ),
-            if (records.isNotEmpty) ...[
-              if (training.isNotEmpty) const SizedBox(height: AppSpacing.sm),
-              FTileGroup(
-                children: [
-                  for (final record in _newestFirst(records).take(_preview))
-                    _recordTile(context, record, metric),
-                ],
-              ),
-            ],
-          ],
-          const SizedBox(height: AppSpacing.lg),
-          SectionHeader(
-            title: 'History',
-            action: sessions.length > _preview
-                ? FButton(
-                    key: const Key('progress-history-all'),
-                    variant: .ghost,
-                    size: .sm,
-                    mainAxisSize: .min,
-                    onPress: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const _HistoryPage(),
-                      ),
-                    ),
-                    child: Text('See all (${sessions.length})'),
-                  )
-                : null,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          if (sessions.isEmpty)
-            const AppCard(
-              child: Center(
-                child: Text('Complete a workout to begin tracking.'),
-              ),
-            )
-          else
-            _HistoryList(sessions: sessions.take(_preview).toList()),
-        ],
-      ),
-    );
-  }
-
-  /// Rows shown before "See all".
-  static const _preview = 5;
+  State<ProgressPage> createState() => _ProgressPageState();
 
   /// By exercise name, then record kind.
   static int _byExercise(PersonalRecord a, PersonalRecord b) {
@@ -290,6 +100,289 @@ class ProgressPage extends StatelessWidget {
         },
         style: Theme.of(context).textTheme.titleMedium
             ?.copyWith(fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+}
+
+class _ProgressPageState extends State<ProgressPage> {
+  var _tab = _ProgressTab.overview;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = AppScope.of(context);
+    final sessions = controller.sessions;
+    final metric = controller.useMetric;
+    // Stats ignore empty sessions and camera form checks (the helpers
+    // filter them out themselves); records still include form checks — a
+    // best set is real.
+    final training = WorkoutStats.training(sessions).toList();
+    final colors = context.theme.colors;
+    final muted = Theme.of(context).textTheme.bodyMedium
+        ?.copyWith(color: colors.mutedForeground);
+
+    final List<Widget> body;
+    switch (_tab) {
+      case _ProgressTab.overview:
+        final streak = WorkoutStats.weeklyStreak(
+          sessions,
+          controller.weeklyGoal,
+        );
+        body = [
+          const SectionHeader(title: 'This week'),
+          const SizedBox(height: AppSpacing.sm),
+          AppCard(
+            child: _ThisWeek(
+              week: WorkoutStats.thisWeek(sessions),
+              streakWeeks: streak.current,
+              goal: controller.weeklyGoal,
+              metric: metric,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          const SectionHeader(title: 'All time'),
+          const SizedBox(height: AppSpacing.sm),
+          _StatGrid(
+            tiles: [
+              _StatTile(
+                icon: FLucideIcons.calendarCheck,
+                value: thousands(training.length),
+                label: 'sessions',
+              ),
+              _StatTile(
+                icon: FLucideIcons.timer,
+                value: ProgressPage._hours(WorkoutStats.totalMinutes(sessions)),
+                label: 'trained',
+              ),
+              _StatTile(
+                icon: FLucideIcons.weight,
+                value: ProgressPage._weight(
+                  WorkoutStats.totalVolume(sessions),
+                  metric,
+                ),
+                label: 'volume lifted',
+              ),
+              _StatTile(
+                icon: FLucideIcons.flame,
+                value: ProgressPage._weeks(streak.longest),
+                label: 'longest streak',
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          const SectionHeader(title: 'Activity'),
+          const SizedBox(height: AppSpacing.sm),
+          AppCard(child: _ActivityHeatmap(sessions: training)),
+          const SizedBox(height: AppSpacing.lg),
+          const SectionHeader(title: 'Body weight'),
+          const SizedBox(height: AppSpacing.sm),
+          _WeightCard(entries: controller.weightEntries, metric: metric),
+        ];
+      case _ProgressTab.muscles:
+        // Camera-judged sets, from form checks and workouts alike.
+        final formTrends = FormTrend.of(sessions);
+        body = [
+          const SectionHeader(title: 'Muscles this week'),
+          const SizedBox(height: AppSpacing.sm),
+          AppCard(
+            child: MuscleMapCard(
+              weeks: MuscleVolume.weekly(
+                sessions,
+                now: clock.now(),
+                trainingLevel: controller.level,
+              ),
+              target: MuscleVolume.targetFor(controller.level),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          const SectionHeader(title: 'Form quality'),
+          const SizedBox(height: AppSpacing.sm),
+          if (formTrends.isNotEmpty)
+            FormQualityCard(trends: formTrends)
+          else
+            AppCard(
+              child: Text(
+                'Use "Count with camera" during a workout and your form '
+                'trend per exercise shows up here.',
+                style: muted,
+              ),
+            ),
+        ];
+      case _ProgressTab.records:
+        final records = ProgressPage._newestFirst(
+          PersonalRecords.all(sessions).values.toList(),
+        );
+        body = [
+          // Form checks alone can set records without any training
+          // session, so the two parts are guarded separately.
+          if (training.isNotEmpty) ...[
+            _StatGrid(
+              tiles: [
+                _StatTile(
+                  icon: FLucideIcons.dumbbell,
+                  value: ProgressPage._weight(
+                    training.map((item) => item.volumeKg).reduce(math.max),
+                    metric,
+                  ),
+                  label: 'best session',
+                ),
+                _StatTile(
+                  icon: FLucideIcons.clock,
+                  value:
+                      '${training.map((item) => item.durationMinutes).reduce(math.max)} min',
+                  label: 'longest session',
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+          const SectionHeader(title: 'Personal records'),
+          const SizedBox(height: AppSpacing.sm),
+          if (records.isEmpty)
+            AppCard(
+              child: Text(
+                'Finish a workout or a form check to set your first record.',
+                style: muted,
+              ),
+            )
+          else
+            FTileGroup(
+              children: [
+                for (final record in records)
+                  ProgressPage._recordTile(context, record, metric),
+              ],
+            ),
+        ];
+      case _ProgressTab.history:
+        body = [
+          SectionHeader(title: 'History (${sessions.length})'),
+          const SizedBox(height: AppSpacing.sm),
+          if (sessions.isEmpty)
+            const AppCard(
+              child: Center(
+                child: Text('Complete a workout to begin tracking.'),
+              ),
+            )
+          else
+            _HistoryList(sessions: sessions),
+        ];
+    }
+
+    return ResponsiveContent(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Progress',
+                  style: Theme.of(context).textTheme.headlineMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              Semantics(
+                label: 'Achievements',
+                child: FButton.icon(
+                  key: const Key('progress-achievements'),
+                  variant: .ghost,
+                  onPress: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AchievementsPage(),
+                    ),
+                  ),
+                  child: const Icon(FLucideIcons.trophy),
+                ),
+              ),
+              Semantics(
+                label: 'Share summary',
+                child: FButton.icon(
+                  key: const Key('progress-share'),
+                  variant: .ghost,
+                  onPress: () => showShareSummaryDialog(context),
+                  child: const Icon(FLucideIcons.share),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _TabBar(
+            selected: _tab,
+            onSelect: (tab) => setState(() => _tab = tab),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          ...body,
+        ],
+      ),
+    );
+  }
+}
+
+/// Segmented control for [_ProgressTab]: one row, equal widths, the
+/// selected tab raised on the muted track.
+class _TabBar extends StatelessWidget {
+  const _TabBar({required this.selected, required this.onSelect});
+
+  final _ProgressTab selected;
+  final ValueChanged<_ProgressTab> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: colors.muted,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          for (final tab in _ProgressTab.values)
+            Expanded(
+              child: Semantics(
+                button: true,
+                selected: tab == selected,
+                label: tab.label,
+                excludeSemantics: true,
+                child: FTappable(
+                  key: Key('progress-tab-${tab.name}'),
+                  onPress: () => onSelect(tab),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: tab == selected ? colors.background : null,
+                      borderRadius: BorderRadius.circular(9),
+                      boxShadow: tab == selected
+                          ? [
+                              BoxShadow(
+                                color: colors.foreground.withValues(alpha: .08),
+                                blurRadius: 4,
+                                offset: const Offset(0, 1),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Text(
+                      tab.label,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.labelLarge?.copyWith(
+                        fontWeight: tab == selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: tab == selected
+                            ? colors.foreground
+                            : colors.mutedForeground,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -887,50 +980,4 @@ class _Sparkline extends CustomPainter {
   @override
   bool shouldRepaint(_Sparkline oldDelegate) =>
       oldDelegate.color != color || !listEquals(oldDelegate.values, values);
-}
-
-/// Every personal record, by exercise.
-class _RecordsPage extends StatelessWidget {
-  const _RecordsPage();
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
-    final records = PersonalRecords.all(controller.sessions).values.toList()
-      ..sort(ProgressPage._byExercise);
-    return FScaffold(
-      header: FHeader.nested(
-        title: const Text('Personal records'),
-        prefixes: [
-          FHeaderAction.back(onPress: () => Navigator.of(context).pop()),
-        ],
-      ),
-      child: ResponsiveContent(
-        child: FTileGroup(
-          children: [
-            for (final record in records)
-              ProgressPage._recordTile(context, record, controller.useMetric),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The full session history, paged.
-class _HistoryPage extends StatelessWidget {
-  const _HistoryPage();
-
-  @override
-  Widget build(BuildContext context) => FScaffold(
-    header: FHeader.nested(
-      title: const Text('History'),
-      prefixes: [
-        FHeaderAction.back(onPress: () => Navigator.of(context).pop()),
-      ],
-    ),
-    child: ResponsiveContent(
-      child: _HistoryList(sessions: AppScope.of(context).sessions),
-    ),
-  );
 }
