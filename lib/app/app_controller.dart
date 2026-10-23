@@ -11,6 +11,7 @@ import '../data/local_workout_repository.dart';
 import '../data/reminder_service.dart';
 import '../data/remote_workout_repository.dart';
 import '../domain/meal_plan.dart';
+import '../domain/models/active_workout_draft.dart';
 import '../domain/models/body_weight_entry.dart';
 import '../domain/models/workout.dart';
 import '../domain/models/workout_session.dart';
@@ -32,10 +33,12 @@ class AppController extends ChangeNotifier {
   static const _metaPulledKey = 'meta_pulled_uid';
   static const _skipSignInKey = 'sign_in_skipped_v1';
 
-  /// Feature-owned keys holding per-user data (nutrition cache and food
-  /// log); wiped with the rest of the user's data on account changes.
+  /// Feature-owned keys holding per-user data (nutrition cache, food
+  /// log, and active workout draft); wiped with the rest of the user's
+  /// data on account changes.
   static const _foodLogKey = 'food_log_v1';
-  static const featureUserKeys = ['meal_plan_v1', _foodLogKey];
+  static const _activeDraftKey = 'active_workout_draft_v1';
+  static const featureUserKeys = ['meal_plan_v1', _foodLogKey, _activeDraftKey];
 
   /// Schedule value marking a deliberate rest day (vs. an unassigned day).
   static const restDay = 'rest';
@@ -63,6 +66,9 @@ class AppController extends ChangeNotifier {
   /// Meals logged per day (last [FoodLog.keepDays] days), each synced
   /// as one `meals` doc.
   FoodLog foodLog = FoodLog();
+
+  /// In-progress workout saved locally so an interrupted session can resume.
+  ActiveWorkoutDraft? activeDraft;
   ThemeMode themeMode = ThemeMode.system;
   bool useMetric = true;
   bool loading = true;
@@ -182,6 +188,9 @@ class AppController extends ChangeNotifier {
     // Imports and remote meta store whatever they carry; read it back
     // within the range the picker offers.
     weeklyGoal = (preferences.getInt(_weeklyGoalKey) ?? 3).clamp(1, 7);
+    activeDraft = ActiveWorkoutDraft.tryDecode(
+      preferences.getString(_activeDraftKey),
+    );
   }
 
   /// Wipes the user's local data (not settings) and the in-memory copy.
@@ -479,6 +488,31 @@ class AppController extends ChangeNotifier {
     await repository.saveSession(session);
     sessions = [session, ...sessions.where((item) => item.id != session.id)]
       ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
+    if (activeDraft?.workout.id == session.workoutId) {
+      activeDraft = null;
+      await preferences.remove(_activeDraftKey);
+    }
+    notifyListeners();
+  }
+
+  /// Persists the in-progress workout [draft] locally.
+  Future<void> saveActiveDraft(ActiveWorkoutDraft draft) async {
+    activeDraft = draft;
+    try {
+      await preferences.setString(_activeDraftKey, draft.encode());
+    } catch (e) {
+      debugPrint('Saving active workout draft failed: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Clears any persisted in-progress workout draft.
+  Future<void> clearActiveDraft() async {
+    if (activeDraft == null && !preferences.containsKey(_activeDraftKey)) {
+      return;
+    }
+    activeDraft = null;
+    await preferences.remove(_activeDraftKey);
     notifyListeners();
   }
 
@@ -511,6 +545,10 @@ class AppController extends ChangeNotifier {
     if (schedule.containsValue(id)) {
       schedule.removeWhere((_, workoutId) => workoutId == id);
       await _saveSchedule();
+    }
+    if (activeDraft?.workout.id == id) {
+      activeDraft = null;
+      await preferences.remove(_activeDraftKey);
     }
     notifyListeners();
   }

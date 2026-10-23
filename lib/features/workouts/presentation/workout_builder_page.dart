@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../domain/ai_workout_parser.dart';
+import '../../../domain/exercise_catalog.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/training_options.dart';
@@ -415,6 +416,7 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
   Widget _draftCard(int index, _ExerciseDraft draft) {
     // Keep a legacy group (e.g. "Glutes") selectable when editing.
     final groups = {...workoutMuscleGroups, draft.muscleGroup};
+    final controller = AppScope.of(context);
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -444,6 +446,47 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
               ),
             ],
           ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: draft.name,
+            builder: (context, value, _) {
+              final suggestions = ExerciseCatalog.suggestions(
+                query: value.text,
+                muscleGroup: draft.muscleGroup,
+                workouts: controller.workouts,
+                sessions: controller.sessions,
+                limit: 6,
+              );
+              if (suggestions.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.xs),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final item in suggestions)
+                        Padding(
+                          padding: const EdgeInsets.only(right: AppSpacing.xs),
+                          child: FButton(
+                            key: Key('builder-suggest-$index-${item.name}'),
+                            variant: .outline,
+                            size: .sm,
+                            mainAxisSize: .min,
+                            onPress: () => _applySuggestion(draft, item),
+                            prefix: item.hasCameraCheck
+                                ? const Icon(
+                                    FLucideIcons.accessibility,
+                                    size: 14,
+                                  )
+                                : null,
+                            child: Text(item.name),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
           const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
@@ -466,18 +509,21 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
-                child: FSelect<String>(
-                  key: Key('builder-muscle-$index'),
-                  items: {for (final group in groups) group: group},
-                  control: .managed(
-                    initial: draft.muscleGroup,
-                    onChange: (value) {
-                      if (value != null) {
-                        setState(() => draft.muscleGroup = value);
-                      }
-                    },
+                child: KeyedSubtree(
+                  key: ValueKey(draft.muscleGroup),
+                  child: FSelect<String>(
+                    key: Key('builder-muscle-$index'),
+                    items: {for (final group in groups) group: group},
+                    control: .managed(
+                      initial: draft.muscleGroup,
+                      onChange: (value) {
+                        if (value != null) {
+                          setState(() => draft.muscleGroup = value);
+                        }
+                      },
+                    ),
+                    hint: 'Muscle group',
                   ),
-                  hint: 'Muscle group',
                 ),
               ),
             ],
@@ -530,6 +576,29 @@ class _WorkoutBuilderPageState extends State<WorkoutBuilderPage> {
         ],
       ),
     );
+  }
+
+  void _applySuggestion(_ExerciseDraft draft, CatalogExercise item) {
+    final untouchedPrescription =
+        draft.sets.text == '3' &&
+        draft.reps.text == '10' &&
+        draft.seconds.text == '30' &&
+        draft.rest.text == '45';
+    setState(() {
+      draft.name.text = item.name;
+      draft.nameError = null;
+      draft.muscleGroup = item.muscleGroup;
+      draft.timed = item.isTimed;
+      if (untouchedPrescription) {
+        draft.sets.text = '${item.defaultSets}';
+        if (item.isTimed) {
+          draft.seconds.text = '${item.defaultSeconds}';
+        } else {
+          draft.reps.text = '${item.defaultReps}';
+        }
+        draft.rest.text = '${item.defaultRestSeconds}';
+      }
+    });
   }
 
   Widget _number(
