@@ -32,6 +32,7 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 | Triceps extension | Overhead/French, quay mặt camera, khuỷu cao cạnh đầu (một hoặc hai tay); lỗi: khuỷu xoè, không duỗi thẳng ở trên; hạ nông không tính + nhắc | ✅ |
 | Dip | Bench/chair/bar dip, nghiêng người về phía camera; đếm theo góc khuỷu; lỗi: không duỗi thẳng ở trên; xuống nông không tính + nhắc; quay mặt vào camera thì nhắc quay nghiêng | ✅ |
 | Đếm trong buổi tập | Nút "Count with camera" ở bài có analyzer: camera đếm xong tự ghi set (kèm verdict) và bắt đầu nghỉ; Undo để sửa nếu đếm sai | ✅ |
+| Hands-free | Nút "Hands-free · N sets" trong buổi tập: camera mở suốt các set liên tiếp có analyzer. Set tự kết thúc khi đủ rep/giây mục tiêu hoặc 8 s không có rep mới (plank: 4 s không tăng); nghỉ đếm ngược trên màn camera + giọng nói ("Xong set 1. Nghỉ 45 giây", "Còn 10 giây", "Bài tiếp theo: Bench Dip, 15 rep"); tự đổi analyzer khi sang bài; dừng ở bài không có camera check. Done giữ các set đã xong; về buổi tập tự ghi các set (mức tạ gợi ý), set cuối bắt đầu nghỉ | ✅ |
 | Thêm bài tập | Lunge, pull-up, row (analyzer mới, tái dùng pipeline) | 📋 |
 
 ## 3. Theo dõi tiến độ (Progress & Motivation)

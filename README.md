@@ -70,7 +70,7 @@ For a distributable Android release, configure a production application ID and r
 - Body weight log with trend chart plus BMI/BMR/TDEE profile
 - Onboarding goal/level setup that personalizes suggested workouts
 - Weekly schedule that pins a plan to each day
-- AI form check via on-device pose detection: squat, push-up, plank, shoulder press, biceps curl (dumbbell/hammer/barbell, alternating counts each arm), overhead triceps extension and dips. In a workout, "Count with camera" counts the set and logs it straight away (undo to fix a miscount)
+- AI form check via on-device pose detection: squat, push-up, plank, shoulder press, biceps curl (dumbbell/hammer/barbell, alternating counts each arm), overhead triceps extension and dips. In a workout, "Count with camera" counts the set and logs it straight away (undo to fix a miscount). "Hands-free" runs the remaining camera sets back to back with no taps: each set ends at its target (or 8 s after the last rep), a spoken rest counts down, and it moves on to the next set or exercise, up to the first exercise the camera can't count
 - Reminder preferences, JSON export/import backup, and a shareable summary image
 - Optional Google sign-in with cloud sync via the FitFlow API, sign-out and account deletion
 - Session detail view per completed workout

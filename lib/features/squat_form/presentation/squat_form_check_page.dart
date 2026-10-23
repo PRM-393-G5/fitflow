@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -18,6 +19,7 @@ import '../../../domain/models/form_result.dart';
 import '../domain/adaptive_inference_scheduler.dart';
 import '../domain/form_feedback.dart';
 import '../domain/form_record.dart';
+import '../domain/hands_free_session.dart';
 import '../domain/plank_analyzer.dart';
 import '../domain/pose_frame.dart';
 import '../domain/pushup_analyzer.dart';
@@ -35,9 +37,10 @@ class SquatFormCheckPage extends StatefulWidget {
   const SquatFormCheckPage({
     required this.controller,
     this.forSet,
+    this.plan,
     this.voice,
     super.key,
-  });
+  }) : assert(forSet == null || plan == null);
 
   final AppController controller;
 
@@ -50,6 +53,13 @@ class SquatFormCheckPage extends StatefulWidget {
   /// or hold seconds, and the form verdict to log with the set), or null
   /// when nothing was counted.
   final FormExercise? forSet;
+
+  /// Hands-free mode: runs these sets back to back without a tap (see
+  /// [HandsFreeSession]), resting and switching exercise in between.
+  /// Nothing is saved as a session; the page pops with the
+  /// [FormSetOutcome] of each finished set, in plan order (fewer than
+  /// planned when the user stops early).
+  final List<PlannedSet>? plan;
 
   @override
   State<SquatFormCheckPage> createState() => _SquatFormCheckPageState();
@@ -76,7 +86,16 @@ const _voicePreferenceKey = 'form_check_voice';
 
 class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     with WidgetsBindingObserver {
-  late FormExercise _exercise = widget.forSet ?? FormExercise.squat;
+  late final HandsFreeSession? _session = widget.plan == null
+      ? null
+      : HandsFreeSession(widget.plan!);
+  late FormExercise _exercise =
+      widget.plan?.first.exercise ?? widget.forSet ?? FormExercise.squat;
+
+  /// Hands-free sets finished so far.
+  final _outcomes = <FormSetOutcome>[];
+  Timer? _restTimer;
+  int _restShown = 0;
   late RepAnalyzer _analyzer = _analyzerFor(_exercise);
 
   static RepAnalyzer _analyzerFor(FormExercise exercise) => switch (exercise) {
@@ -311,11 +330,18 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
         _inferenceCount = 0;
         _telemetryStartedUs = completedUs;
       }
+      final session = _session;
+      // Resting (or wrapping up): the skeleton keeps moving, nothing counts.
+      if (session != null && session.stage != HandsFreeStage.active) return;
       final next = _analyzer.analyze(points, timestampUs: completedUs);
       // Always fed, so turning voice on mid-set doesn't replay counts.
       final feedback = _feedback.update(next, completedUs);
       _poseModel.highlight = _feedback.shown!.faultJoints;
-      if (feedback.say != null && _voiceOn) _voice.speak(feedback.say!);
+      final step = session?.onFrame(next, completedUs) ?? HandsFreeStep.none;
+      // One utterance: the last count, then what the set end means.
+      final say = [feedback.say, step.say].nonNulls.join('. ');
+      if (say.isNotEmpty && _voiceOn) _voice.speak(say);
+      if (!identical(step, HandsFreeStep.none)) _applyStep(step);
       final tracked =
           _tracked ||
           (next.bodyVisible && next.phase != SquatPhase.findingBody);
@@ -452,6 +478,71 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     if (mounted) setState(() => _switchingCamera = false);
   }
 
+  /// Acts on what the hands-free session decided (its words are already
+  /// said by the caller).
+  void _applyStep(HandsFreeStep step) {
+    if (step.setEnded) _bankSet();
+    if (step.finished) {
+      _finishPlan();
+      return;
+    }
+    if (step.nextSet) _startSet();
+    if (_session!.stage == HandsFreeStage.resting) _startRestTimer();
+    setState(() {});
+  }
+
+  void _bankSet() {
+    final result = _snapshot();
+    if (result.amount > 0) {
+      _outcomes.add((amount: result.amount, form: result.form));
+    }
+  }
+
+  /// A fresh analyzer for the session's current set; a new exercise gets
+  /// its camera setup guide again.
+  void _startSet() {
+    _restTimer?.cancel();
+    _restTimer = null;
+    final set = _session!.current;
+    if (set.exercise != _exercise) _tracked = _setupDismissed = false;
+    _exercise = set.exercise;
+    _analyzer = _analyzerFor(set.exercise);
+    _feedback = _feedbackFor(set.exercise);
+    _poseModel.highlight = const {};
+  }
+
+  void _startRestTimer() {
+    _restTimer?.cancel();
+    _restShown = _session!.restLeft(_clock.elapsedMicroseconds);
+    _restTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (!mounted || _paused) return;
+      final session = _session;
+      final step = session.tick(_clock.elapsedMicroseconds);
+      if (step.say != null && _voiceOn) _voice.speak(step.say!);
+      if (!identical(step, HandsFreeStep.none)) {
+        _applyStep(step);
+        return;
+      }
+      final left = session.restLeft(_clock.elapsedMicroseconds);
+      if (left != _restShown) setState(() => _restShown = left);
+    });
+  }
+
+  void _skipRest() {
+    final step = _session!.skipRest();
+    if (step.say != null && _voiceOn) _voice.speak(step.say!);
+    if (!identical(step, HandsFreeStep.none)) _applyStep(step);
+  }
+
+  /// Every set done: lets "Hoàn thành!" be heard, then hands the sets back.
+  Future<void> _finishPlan() async {
+    if (_saving) return;
+    _restTimer?.cancel();
+    setState(() => _saving = true);
+    await Future<void>.delayed(const Duration(seconds: 2));
+    if (mounted) Navigator.of(context).pop(List.of(_outcomes));
+  }
+
   _SetSnapshot _snapshot() {
     final analyzer = _analyzer;
     final records = List.of(analyzer.repRecords);
@@ -551,6 +642,19 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
 
   Future<void> _saveAndClose() async {
     if (_saving) return;
+    if (_session case final session?) {
+      // Stopping hands-free keeps every finished set, and the one in
+      // progress if it counted anything. No review: each set's verdict
+      // is saved with it, to open from the session later.
+      _saving = true;
+      _restTimer?.cancel();
+      final active = session.stage == HandsFreeStage.active;
+      final step = session.stop(active ? _analyzer.repetitions : 0);
+      if (step.setEnded) _bankSet();
+      _voice.stop();
+      Navigator.of(context).pop(List.of(_outcomes));
+      return;
+    }
     if (_discardOnClose) {
       Navigator.of(context).pop();
       return;
@@ -668,9 +772,23 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     SystemChrome.setPreferredOrientations(const []);
     // Queued behind any in-flight open so that controller is released too.
     _cameraQueue.then((_) => _teardown());
+    _restTimer?.cancel();
     _voice.stop();
     _poseModel.dispose();
     super.dispose();
+  }
+
+  /// Counting for a workout (one set or hands-free): the close button
+  /// finishes rather than discards.
+  bool get _counting => widget.forSet != null || widget.plan != null;
+
+  /// "Dumbbell Curl · Set 1/3 · 12 rep". While resting, [next] describes
+  /// the set after the current one.
+  String _setTitle(PlannedSet current, {bool next = false}) {
+    final set = next ? (_session!.upcoming ?? current) : current;
+    final unit = set.timed ? 'giây' : 'rep';
+    return '${set.name} · Set ${set.setNumber}/${set.sets} · '
+        '${set.target} $unit';
   }
 
   @override
@@ -765,10 +883,8 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                 child: Row(
                   children: [
                     _CamButton(
-                      icon: widget.forSet == null
-                          ? FLucideIcons.x
-                          : FLucideIcons.check,
-                      tooltip: widget.forSet == null ? 'Close' : 'Done',
+                      icon: _counting ? FLucideIcons.check : FLucideIcons.x,
+                      tooltip: _counting ? 'Done' : 'Close',
                       onPress: _saveAndClose,
                     ),
                     const Spacer(),
@@ -862,7 +978,17 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
                     child: Column(
                       children: [
-                        if (widget.forSet != null)
+                        if (_session case final session?)
+                          Text(
+                            _setTitle(session.current),
+                            key: const Key('hands-free-set'),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          )
+                        else if (widget.forSet != null)
                           Text(
                             _exercise.label,
                             style: const TextStyle(
@@ -908,7 +1034,10 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                           children: [
                             _Metric(
                               label: _analyzer.countLabel,
-                              value: '${analysis?.repetitions ?? 0}',
+                              value: _session == null
+                                  ? '${analysis?.repetitions ?? 0}'
+                                  : '${analysis?.repetitions ?? 0}'
+                                        '/${_session.current.target}',
                             ),
                             _Metric(
                               label: 'TRẠNG THÁI',
@@ -953,6 +1082,25 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                     onDismiss: () => setState(() => _setupDismissed = true),
                   ),
                 ),
+              if (_session?.stage == HandsFreeStage.resting && !_paused)
+                Center(
+                  child: _RestCard(
+                    seconds: _restShown,
+                    next: _setTitle(_session!.current, next: true),
+                    onSkip: _skipRest,
+                  ),
+                ),
+              if (_session?.stage == HandsFreeStage.done)
+                const Center(
+                  child: Text(
+                    'Hoàn thành!',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 34,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               if (_paused)
                 const Center(
                   child: Text(
@@ -966,6 +1114,64 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
       ],
     );
   }
+}
+
+/// The hands-free rest: a countdown readable from across the room, what
+/// comes next, and a way to cut it short.
+class _RestCard extends StatelessWidget {
+  const _RestCard({
+    required this.seconds,
+    required this.next,
+    required this.onSkip,
+  });
+
+  final int seconds;
+  final String next;
+  final VoidCallback onSkip;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    key: const Key('hands-free-rest'),
+    decoration: BoxDecoration(
+      color: const Color(0xE6151515),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(28, 20, 28, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'NGHỈ',
+            style: TextStyle(color: Colors.white54, letterSpacing: 2),
+          ),
+          Text(
+            '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 64,
+              fontWeight: FontWeight.bold,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Tiếp theo: $next',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          const SizedBox(height: 12),
+          FButton(
+            key: const Key('hands-free-skip-rest'),
+            variant: .outline,
+            mainAxisSize: .min,
+            onPress: onSkip,
+            child: const Text('Bỏ qua nghỉ'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _Metric extends StatelessWidget {
