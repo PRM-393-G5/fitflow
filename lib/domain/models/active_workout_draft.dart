@@ -103,13 +103,22 @@ class ActiveWorkoutDraft {
 
     final rawLog = json['log'] as List? ?? const [];
     final log = <(int, int)>[];
+    final seenPerExercise = <int, int>{};
     for (final item in rawLog) {
       if (item is List && item.length == 2) {
         final ex = item[0];
-        final set = item[1];
-        if (ex is int && set is int && ex >= 0 && ex < count && set >= 0) {
-          log.add((ex, set));
+        if (ex is int && entries.containsKey(ex)) {
+          final seen = seenPerExercise[ex] ?? 0;
+          if (seen < entries[ex]!.length) {
+            seenPerExercise[ex] = seen + 1;
+            log.add((ex, seen));
+          }
         }
+      }
+    }
+    for (final MapEntry(:key, :value) in entries.entries) {
+      for (var set = seenPerExercise[key] ?? 0; set < value.length; set++) {
+        log.add((key, set));
       }
     }
 

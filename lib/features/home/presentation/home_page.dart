@@ -11,6 +11,7 @@ import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/stat_card.dart';
 import '../../../domain/workout_stats.dart';
 import '../../squat_form/presentation/squat_form_check_page.dart';
+import '../../../domain/models/active_workout_draft.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../workouts/presentation/active_workout_page.dart';
@@ -111,7 +112,8 @@ class HomePage extends StatelessWidget {
                         variant: .ghost,
                         size: .sm,
                         mainAxisSize: .min,
-                        onPress: controller.clearActiveDraft,
+                        onPress: () =>
+                            _confirmDiscardDraft(context, controller, draft),
                         child: const Text('Discard'),
                       ),
                     ],
@@ -335,6 +337,42 @@ class HomePage extends StatelessWidget {
         ],
       ),
     ];
+  }
+
+  Future<void> _confirmDiscardDraft(
+    BuildContext context,
+    AppController controller,
+    ActiveWorkoutDraft draft,
+  ) async {
+    if (draft.completedSets == 0) {
+      await controller.clearActiveDraft();
+      return;
+    }
+    final sets = draft.completedSets;
+    final confirmed = await showAppDialog<bool>(
+      context: context,
+      title: 'Discard workout?',
+      body: Text(
+        'Your $sets logged ${sets == 1 ? 'set' : 'sets'} for '
+        '${draft.workout.name} will not be saved.',
+      ),
+      actions: [
+        FButton(
+          variant: .ghost,
+          onPress: () => Navigator.pop(context, false),
+          child: const Text('Keep'),
+        ),
+        FButton(
+          key: const Key('confirm-discard-draft'),
+          variant: .destructive,
+          onPress: () => Navigator.pop(context, true),
+          child: const Text('Discard'),
+        ),
+      ],
+    );
+    if (confirmed == true) {
+      await controller.clearActiveDraft();
+    }
   }
 
   void _pickWeeklyGoal(BuildContext context, AppController controller) {
