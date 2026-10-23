@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prm/features/squat_form/domain/curl_analyzer.dart';
 import 'package:prm/features/squat_form/domain/plank_analyzer.dart';
 import 'package:prm/features/squat_form/domain/pushup_analyzer.dart';
 import 'package:prm/features/squat_form/domain/squat_analyzer.dart';
@@ -244,5 +245,36 @@ void main() {
       hold(analyzer, pose(.4, elbowY: .42), 0, 30);
       expect(analyzer.repetitions, 0);
     });
+  });
+
+  test('curl analyzer starts after stepping in close then back', () {
+    final analyzer = CurlAnalyzer(smoothingFactor: 1, transitionFrames: 2);
+
+    // One arm, scaled by distance: upper arm [drop] long, the wrist
+    // [rise] forearm lengths above the elbow (-1 hanging).
+    Map<SquatJoint, SquatPoint> pose(double drop, double rise) => {
+      SquatJoint.leftShoulder: const SquatPoint(.5, .2),
+      SquatJoint.leftElbow: SquatPoint(.5, .2 + drop),
+      SquatJoint.leftWrist: SquatPoint(.5, .2 + drop - rise * drop * .9),
+    };
+
+    // Stepping in close: one frame with the arm hanging (too few to
+    // start), then half bent. That one frame used to fix the arm length.
+    analyzer.analyze(pose(.3, -1));
+    for (var i = 0; i < 4; i++) {
+      analyzer.analyze(pose(.3, -.3));
+    }
+    // Back at a normal distance, arm hanging, then one curl.
+    for (var i = 0; i < 4; i++) {
+      analyzer.analyze(pose(.15, -1));
+    }
+    expect(analyzer.analyze(pose(.15, -1)).cue, 'Sẵn sàng, cuộn tạ lên');
+    for (var i = 0; i < 3; i++) {
+      analyzer.analyze(pose(.15, .8));
+    }
+    for (var i = 0; i < 3; i++) {
+      analyzer.analyze(pose(.15, -1));
+    }
+    expect(analyzer.repetitions, 1);
   });
 }

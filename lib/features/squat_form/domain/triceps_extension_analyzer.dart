@@ -91,6 +91,10 @@ class TricepsExtensionAnalyzer extends ArmRepAnalyzer {
       // Elbow well above the shoulder: the arm is up in position. A
       // hanging arm (single-arm extensions) is ignored.
       if (arm.shoulder.y - arm.elbow.y < length * .5) continue;
+      // Until tracking starts, the reference follows the current frame:
+      // one taken from another distance would never let the arms read as
+      // straight, and so never refresh.
+      if (phase == SquatPhase.findingBody) _upperArm[left] = length;
       final reference = _upperArm[left] ?? length;
       final forearm = reference * _forearmRatio;
       // Forearm along the upper arm's direction (shoulder to elbow).
