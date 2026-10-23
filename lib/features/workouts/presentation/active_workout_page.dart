@@ -365,8 +365,11 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     );
   }
 
-  /// Counts the current set with the camera and puts the count in the
-  /// amount field; the user still confirms the set (and its weight).
+  /// Counts the current set with the camera and logs it with that count
+  /// and the weight in the field, as "Complete set" would: the user lifts,
+  /// the camera counts, the set is done. Undo puts the count back to fix.
+  /// If the set can't be logged as is (an invalid weight, a heavy load
+  /// they don't confirm), the count stays in the field to log by hand.
   Future<void> _checkForm(FormExercise exercise) async {
     if (_done || _resting || _holding || _saving || _dialogOpen) return;
     final launch =
@@ -398,10 +401,18 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       ),
       _ => null,
     };
+    final before = _completedSets;
+    await _completeSet();
+    if (!mounted) return;
+    final logged = _completedSets > before;
     showFToast(
       context: context,
       title: Text(
-        timed
+        logged
+            ? timed
+                  ? 'Logged a ${amount}s hold from the camera. Undo to fix it.'
+                  : 'Logged $amount reps from the camera. Undo to fix it.'
+            : timed
             ? 'Held ${amount}s — log the set to save it.'
             : 'Counted $amount reps — complete the set to save it.',
       ),

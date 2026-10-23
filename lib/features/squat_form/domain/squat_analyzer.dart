@@ -141,10 +141,16 @@ enum FormExercise {
   squat('Squat'),
   pushup('Push-up'),
   plank('Plank'),
-  shoulderPress('Shoulder press');
+  shoulderPress('Shoulder press', upFirst: true),
+  curl('Biceps curl', upFirst: true),
+  tricepsExtension('Triceps extension'),
+  dip('Dip');
 
-  const FormExercise(this.label);
+  const FormExercise(this.label, {this.upFirst = false});
   final String label;
+
+  /// The rep goes up first (press, curl): its first half isn't a descent.
+  final bool upFirst;
 
   /// The analyzer that can count a planned exercise, by name and kind, or
   /// null when none fits. Variants the analyzers can't judge are left out:
@@ -156,6 +162,23 @@ enum FormExercise {
       return lower.contains('plank') && !lower.contains('side') ? plank : null;
     }
     if (RegExp(r'push[\s-]?ups?\b').hasMatch(lower)) return pushup;
+    // Dips on a bench, chair or bars; the elbow is read side-on.
+    if (RegExp(r'\bdips?\b').hasMatch(lower)) return dip;
+    // Overhead (French) extensions only: lying skull crushers, kickbacks
+    // and pushdowns don't hold the elbows up by the head.
+    if (lower.contains('french') ||
+        RegExp(r'\boverhead\b').hasMatch(lower) &&
+            RegExp(r'tricep|extension').hasMatch(lower)) {
+      return tricepsExtension;
+    }
+    // Standing curls of the arms; leg, wrist and arm-supported curls
+    // (preacher, concentration, incline, spider) move differently.
+    if (RegExp(r'\bcurls?\b').hasMatch(lower) &&
+        !RegExp(
+          r'leg|hamstring|nordic|wrist|preacher|concentration|incline|spider|seated|lying|machine',
+        ).hasMatch(lower)) {
+      return curl;
+    }
     // Standing two-arm presses only: a bench press lies down out of view,
     // and one arm or a seat/machine never moves both arms through the rack.
     if (RegExp(r'\b(shoulder|overhead|military)[\s-]?press\b|\bohp\b')
@@ -212,6 +235,9 @@ const faultTips = {
   'noLockout': 'đẩy thẳng tay lên hết',
   'unevenArms': 'đẩy đều hai tay',
   'partialRange': 'hạ khuỷu xuống ngang vai',
+  'elbowDrift': 'giữ khuỷu tay sát người',
+  'noFullExtension': 'duỗi thẳng tay hết ở dưới',
+  'elbowFlare': 'khép khuỷu tay lại',
 };
 
 /// The between-reps cue after [last]: praise for a clean rep, otherwise
@@ -883,7 +909,11 @@ Rules:
   heelsUp, asymmetry (one leg dominant), fastEccentric (dropped too fast),
   hipSag (hips sagging below the body line), hipPike (hips too high),
   noLockout (arms not straightened overhead), unevenArms (one arm lagging),
-  partialRange (pressed again before lowering to the shoulders).
+  partialRange (pressed again before lowering to the shoulders),
+  elbowDrift (curl: upper arm swung forward), noFullExtension (curl: arms
+  not straightened at the bottom), elbowFlare (triceps extension: elbows
+  flared out). For triceps extensions and dips, noLockout means the arms
+  weren't straightened at the top.
 - For a plank, judge how much of the hold was in good form.
 - Be direct and encouraging; plain text only.''';
 
@@ -908,16 +938,20 @@ Rules:
       ? 'Exercise: $exercise\nHold telemetry: ${jsonEncode(hold)}'
       : 'Exercise: $exercise\nRep telemetry: ${jsonEncode([for (final rep in reps) _repJson(exercise, rep)])}';
 
-  /// A press goes up first: its records keep the squat-shaped fields
-  /// (down, then up), so name them for what they hold before the coach
-  /// reads the tempo backwards.
+  /// A press or curl goes up first: its records keep the squat-shaped
+  /// fields (down, then up), so name them for what they hold before the
+  /// coach reads the tempo backwards.
   static Map<String, Object> _repJson(String exercise, RepRecord rep) {
     final json = rep.toJson();
-    if (exercise != FormExercise.shoulderPress.label) return json;
+    final upFirst = FormExercise.values.any(
+      (item) => item.upFirst && item.label == exercise,
+    );
+    if (!upFirst) return json;
+    final up = exercise == FormExercise.curl.label ? 'curlUpMs' : 'pressUpMs';
     return {
       for (final MapEntry(:key, :value) in json.entries)
         switch (key) {
-          'descentMs' => 'pressUpMs',
+          'descentMs' => up,
           'ascentMs' => 'lowerMs',
           _ => key,
         }: value,
