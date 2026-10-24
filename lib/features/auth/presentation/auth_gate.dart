@@ -5,9 +5,9 @@ import '../../../domain/models/app_user.dart';
 import '../../navigation/presentation/app_shell.dart';
 import 'login_page.dart';
 
-/// Signing in is optional: the welcome/login page shows until the user
-/// signs in or chooses to continue without an account. Without an auth
-/// service (tests, local-only setups) the app runs local-only.
+/// FitFlow requires an account: the login page shows until the user signs
+/// in, and again when the session ends. Without an auth service (widget
+/// tests only) the gate is skipped.
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
@@ -23,10 +23,7 @@ class AuthGate extends StatelessWidget {
       stream: auth.userChanges,
       initialData: auth.currentUser,
       builder: (context, snapshot) {
-        final signedIn = snapshot.data != null;
-        return signedIn || controller.signInSkipped
-            ? const AppShell()
-            : const LoginPage();
+        return snapshot.data != null ? const AppShell() : const LoginPage();
       },
     );
   }

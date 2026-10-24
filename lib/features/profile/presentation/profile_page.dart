@@ -20,7 +20,6 @@ import '../../../data/backend_auth_service.dart';
 import '../../../domain/body_metrics.dart';
 import '../../../domain/models/app_user.dart';
 import '../../../domain/training_options.dart';
-import '../../auth/presentation/login_page.dart';
 import '../../metrics/presentation/body_metrics_page.dart';
 import '../../workouts/presentation/schedule_page.dart';
 import '../../workouts/presentation/weight_units.dart';
@@ -139,8 +138,12 @@ class ProfilePage extends StatelessWidget {
               ),
             ],
           ),
-          const _SectionLabel('Account'),
-          _AccountSection(controller: controller, user: user),
+          // Signed out only without an auth service (tests): the app is
+          // gated behind sign-in otherwise.
+          if (user != null) ...[
+            const _SectionLabel('Account'),
+            _AccountSection(controller: controller),
+          ],
         ],
       ),
     );
@@ -375,10 +378,9 @@ class _ImportDialogState extends State<_ImportDialog> {
 }
 
 class _AccountSection extends StatelessWidget {
-  const _AccountSection({required this.controller, required this.user});
+  const _AccountSection({required this.controller});
 
   final AppController controller;
-  final AppUser? user;
 
   Future<bool> _confirm(
     BuildContext context, {
@@ -456,67 +458,35 @@ class _AccountSection extends StatelessWidget {
     }
   }
 
-  Future<void> _clearLocal(BuildContext context) async {
-    final confirmed = await _confirm(
-      context,
-      title: 'Delete all data?',
-      body:
-          'This removes every session, custom plan, weight entry and your '
-          'profile from this device. Export a backup first if unsure.',
-      action: 'Delete data',
-    );
-    if (confirmed) await controller.clearLocalData();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final signedIn = user != null;
-    // The destructive action sits apart from the everyday ones.
-    final danger = signedIn
-        ? FTile(
-            key: const Key('profile-delete-account'),
-            variant: .destructive,
-            prefix: const Icon(FLucideIcons.userX),
-            title: const Text('Delete account'),
-            subtitle: const Text('Remove your account and cloud data'),
-            onPress: () => _deleteAccount(context),
-          )
-        : FTile(
-            variant: .destructive,
-            prefix: const Icon(FLucideIcons.trash2),
-            title: const Text('Delete data on this device'),
-            onPress: () => _clearLocal(context),
-          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (signedIn || controller.auth != null) ...[
-          FTileGroup(
-            children: [
-              if (signedIn)
-                FTile(
-                  key: const Key('profile-sign-out'),
-                  prefix: const Icon(FLucideIcons.logOut),
-                  title: const Text('Sign out'),
-                  onPress: () => _signOut(context),
-                )
-              else
-                FTile(
-                  prefix: const Icon(FLucideIcons.logIn),
-                  title: const Text('Sign in with Google'),
-                  subtitle: const Text('Back up and sync across devices'),
-                  suffix: const Icon(FLucideIcons.chevronRight),
-                  onPress: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const LoginPage(popOnSuccess: true),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-        ],
-        FTileGroup(children: [danger]),
+        FTileGroup(
+          children: [
+            FTile(
+              key: const Key('profile-sign-out'),
+              prefix: const Icon(FLucideIcons.logOut),
+              title: const Text('Sign out'),
+              onPress: () => _signOut(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        // The destructive action sits apart from the everyday ones.
+        FTileGroup(
+          children: [
+            FTile(
+              key: const Key('profile-delete-account'),
+              variant: .destructive,
+              prefix: const Icon(FLucideIcons.userX),
+              title: const Text('Delete account'),
+              subtitle: const Text('Remove your account and cloud data'),
+              onPress: () => _deleteAccount(context),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -637,11 +607,12 @@ class _ProfileCard extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      Text(
-                        user?.email ?? 'Guest · data stays on this device',
-                        style: muted,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      if (user case final user?)
+                        Text(
+                          user.email,
+                          style: muted,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                     ],
                   ),
                 ),
