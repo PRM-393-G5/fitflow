@@ -16,6 +16,7 @@ import '../../../domain/models/workout_session.dart';
 import '../../../domain/personal_records.dart';
 import '../../../domain/progression.dart';
 import '../../squat_form/domain/squat_analyzer.dart';
+import '../../squat_form/domain/hands_free_session.dart';
 import '../../squat_form/presentation/squat_form_check_page.dart';
 import 'set_input.dart';
 import 'weight_units.dart';
@@ -28,12 +29,20 @@ typedef FormCheckLauncher = Future<FormSetOutcome?> Function(
   FormExercise exercise,
 );
 
+/// Opens the camera hands-free for [plan]; resolves to each finished set's
+/// count and verdict, in plan order, or null when closed with none.
+typedef HandsFreeLauncher = Future<List<FormSetOutcome>?> Function(
+  BuildContext context,
+  List<PlannedSet> plan,
+);
+
 class ActiveWorkoutPage extends StatefulWidget {
   const ActiveWorkoutPage({
     required this.workout,
     required this.controller,
     this.clock = DateTime.now,
     this.launchFormCheck,
+    this.launchHandsFree,
     super.key,
   });
 
@@ -45,6 +54,9 @@ class ActiveWorkoutPage extends StatefulWidget {
 
   /// Replaces the camera page; tests inject a fake count.
   final FormCheckLauncher? launchFormCheck;
+
+  /// Replaces the hands-free camera page; tests inject fake sets.
+  final HandsFreeLauncher? launchHandsFree;
 
   @override
   State<ActiveWorkoutPage> createState() => _ActiveWorkoutPageState();
@@ -415,6 +427,93 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
             : timed
             ? 'Held ${amount}s — log the set to save it.'
             : 'Counted $amount reps — complete the set to save it.',
+      ),
+    );
+  }
+
+  /// The sets the camera can run back to back from here: the rest of this
+  /// exercise, then each following one it can count, up to the first it
+  /// can't (logged by hand as usual).
+  List<PlannedSet> _handsFreePlan() {
+    final plan = <PlannedSet>[];
+    for (var index = _exerciseIndex; index < _exercises.length; index++) {
+      final exercise = _exercises[index];
+      if (exercise.sets == 0) continue;
+      final kind = FormExercise.match(exercise.name, timed: exercise.isTimed);
+      if (kind == null) break;
+      final target = exercise.isTimed
+          ? exercise.durationSeconds
+          : exercise.reps;
+      for (
+        var set = index == _exerciseIndex ? _setIndex : 0;
+        set < exercise.sets;
+        set++
+      ) {
+        plan.add(
+          PlannedSet(
+            exercise: kind,
+            name: exercise.name,
+            target: target < 1 ? 1 : target,
+            restSeconds: exercise.restSeconds,
+            setNumber: set + 1,
+            sets: exercise.sets,
+          ),
+        );
+      }
+    }
+    return plan;
+  }
+
+  /// Runs [plan] on the camera without a tap, then logs each set it
+  /// finished with the weight the workout would have suggested for it.
+  Future<void> _handsFree(List<PlannedSet> plan) async {
+    if (_done || _resting || _holding || _saving || _dialogOpen) return;
+    final launch =
+        widget.launchHandsFree ??
+        (context, plan) => Navigator.of(context).push<List<FormSetOutcome>>(
+          MaterialPageRoute(
+            builder: (_) =>
+                SquatFormCheckPage(controller: widget.controller, plan: plan),
+          ),
+        );
+    final outcomes = await _whilePaused(() => launch(context, plan));
+    if (outcomes == null || outcomes.isEmpty || !mounted) return;
+    var logged = 0;
+    for (final (index, outcome) in outcomes.indexed) {
+      if (_done || outcome.amount < 1) break;
+      final amount = outcome.amount.clamp(
+        1,
+        _exercise.isTimed ? _maxSeconds : _maxReps,
+      );
+      setState(() {
+        _amountCtrl.text = '$amount';
+        _amountError = null;
+      });
+      _pendingForm = switch (outcome.form) {
+        final form? when amount == outcome.amount => (
+          exercise: _exerciseIndex,
+          set: _setIndex,
+          amount: amount,
+          form: form,
+        ),
+        _ => null,
+      };
+      // Each set is prefilled (weight included) as it comes up, exactly
+      // as when logged by hand; an unusable weight stops here for the
+      // user to fix and log the rest themselves.
+      final entry = _readEntry();
+      if (entry == null) break;
+      // The camera already rested between sets: only the last one starts
+      // a rest here (or finishes the workout).
+      _logSet(entry, finishing: index < outcomes.length - 1);
+      logged++;
+    }
+    if (!mounted || logged == 0) return;
+    showFToast(
+      context: context,
+      title: Text(
+        'Logged $logged ${logged == 1 ? 'set' : 'sets'} hands-free. '
+        'Undo to fix one.',
       ),
     );
   }
@@ -933,6 +1032,14 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
           _exercise.isTimed ? 'Time hold with camera' : 'Count with camera',
         ),
       ),
+      if (_handsFreePlan() case final plan when plan.length > 1)
+        FButton(
+          key: const Key('hands-free'),
+          variant: .outline,
+          onPress: () => _handsFree(plan),
+          prefix: const Icon(FLucideIcons.hand),
+          child: Text('Hands-free · ${plan.length} sets'),
+        ),
     ],
   ];
 }

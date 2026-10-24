@@ -7,6 +7,7 @@ import 'package:prm/data/local_workout_repository.dart';
 import 'package:prm/domain/models/exercise.dart';
 import 'package:prm/domain/models/form_result.dart';
 import 'package:prm/domain/models/workout.dart';
+import 'package:prm/features/squat_form/domain/hands_free_session.dart';
 import 'package:prm/features/squat_form/domain/squat_analyzer.dart';
 import 'package:prm/features/workouts/presentation/active_workout_page.dart';
 import 'package:prm/features/workouts/presentation/set_input.dart';
@@ -125,6 +126,8 @@ void main() {
     WidgetTester tester,
     Exercise planned, {
     FormCheckLauncher? launch,
+    HandsFreeLauncher? handsFree,
+    List<Exercise> then = const [],
   }) async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
@@ -148,10 +151,11 @@ void main() {
             level: 'Beginner',
             category: 'Strength',
             description: '',
-            exercises: [planned],
+            exercises: [planned, ...then],
           ),
           controller: controller,
           launchFormCheck: launch,
+          launchHandsFree: handsFree,
         ),
       ),
     );
@@ -388,5 +392,121 @@ void main() {
     await pumpWorkout(tester, exercise('Dumbbell Bench Press'));
 
     expect(find.byKey(const Key('form-check-set')), findsNothing);
+  });
+
+  group('hands-free', () {
+    testWidgets('plans the camera sets up to the first manual exercise', (
+      tester,
+    ) async {
+      List<PlannedSet>? planned;
+      await pumpWorkout(
+        tester,
+        exercise('Dumbbell Curl', reps: 12),
+        then: [
+          exercise('Bench Dip', reps: 15),
+          exercise('Cable Crossover'),
+          exercise('Hammer Curl'),
+        ],
+        handsFree: (_, plan) async {
+          planned = plan;
+          return null;
+        },
+      );
+
+      expect(find.text('Hands-free · 4 sets'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('hands-free')));
+      await tester.pump();
+
+      expect(
+        [
+          for (final set in planned!)
+            '${set.name} ${set.setNumber}/${set.sets}',
+        ],
+        [
+          'Dumbbell Curl 1/2',
+          'Dumbbell Curl 2/2',
+          'Bench Dip 1/2',
+          'Bench Dip 2/2',
+        ],
+      );
+      expect(planned!.first.exercise, FormExercise.curl);
+      expect(planned!.first.target, 12);
+      expect(planned![2].exercise, FormExercise.dip);
+      expect(planned![2].restSeconds, 30);
+      // Closed without a set: nothing logged.
+      expect(find.text('0 of 8 sets'), findsOneWidget);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('logs every set the camera ran, resting after the last', (
+      tester,
+    ) async {
+      await pumpWorkout(
+        tester,
+        exercise('Dumbbell Curl', reps: 12),
+        then: [exercise('Bench Dip', reps: 15), exercise('Cable Crossover')],
+        handsFree: (_, plan) async => [
+          (amount: 12, form: verdict),
+          (amount: 10, form: null),
+          (amount: 15, form: null),
+        ],
+      );
+      await tester.tap(find.byKey(const Key('hands-free')));
+      await tester.pump();
+
+      expect(find.text('3 of 6 sets'), findsOneWidget);
+      expect(
+        find.text('Logged 3 sets hands-free. Undo to fix one.'),
+        findsOneWidget,
+      );
+      // The camera rested between sets; the last one rests here.
+      expect(find.byKey(const Key('skip-rest')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('skip-rest')));
+      await tester.pump();
+      expect(find.text('Bench Dip'), findsWidgets);
+      expect(find.text('Set 2 of 2'), findsOneWidget);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('saves counts and verdicts, and finishes at the end', (
+      tester,
+    ) async {
+      final controller = await pumpWorkout(
+        tester,
+        exercise('Hammer Curl', reps: 10),
+        handsFree: (_, plan) async => [
+          (amount: 10, form: verdict),
+          (amount: 8, form: null),
+        ],
+      );
+      await tester.tap(find.byKey(const Key('hands-free')));
+      await tester.pumpAndSettle();
+
+      // Every planned set is done: the workout asks to finish.
+      await tester.tap(find.text('Finish').last);
+      await tester.pumpAndSettle();
+      final sets = controller.sessions.single.exercises.single.performedSets;
+      expect([for (final set in sets) set.amount], [10, 8]);
+      expect(sets.first.form?.reps, hasLength(2));
+      expect(sets.last.form, isNull);
+    });
+
+    testWidgets('a single set left needs no hands-free', (tester) async {
+      await pumpWorkout(
+        tester,
+        exercise('Dumbbell Curl'),
+        then: [exercise('Cable Crossover')],
+        launch: (_, _) async => (amount: 10, form: null),
+      );
+      expect(find.byKey(const Key('hands-free')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('form-check-set')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('skip-rest')));
+      await tester.pump();
+      // One curl set left: counting it is one tap already.
+      expect(find.byKey(const Key('hands-free')), findsNothing);
+      expect(find.byKey(const Key('form-check-set')), findsOneWidget);
+      await tester.pumpAndSettle();
+    });
   });
 }
