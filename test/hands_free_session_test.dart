@@ -135,4 +135,23 @@ void main() {
     expect(done.finished, isTrue);
     expect(resting.counts, [3]);
   });
+
+  test('pausing mid-set or mid-rest freezes the idle and rest timers', () {
+    final active = HandsFreeSession([curl1, curl2]);
+    active.onFrame(frame(1), s(1));
+    active.pause(s(6));
+    // Paused for 20s: resuming gives a fresh 8s idle window.
+    active.resume(s(26));
+    expect(active.onFrame(frame(1), s(33)).setEnded, isFalse);
+    expect(active.onFrame(frame(1), s(34)).setEnded, isTrue);
+
+    final resting = HandsFreeSession([curl1, curl2])..onFrame(frame(3), s(0));
+    resting.pause(s(10));
+    expect(resting.restLeft(s(25)), 20);
+    expect(resting.tick(s(35)), same(HandsFreeStep.none));
+    resting.resume(s(40));
+    expect(resting.restLeft(s(40)), 20);
+    expect(resting.tick(s(50)).say, 'Còn 10 giây. Chuẩn bị set 2.');
+    expect(resting.tick(s(60)).nextSet, isTrue);
+  });
 }

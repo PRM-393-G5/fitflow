@@ -508,5 +508,33 @@ void main() {
       expect(find.byKey(const Key('form-check-set')), findsOneWidget);
       await tester.pumpAndSettle();
     });
+
+    testWidgets('uses the edited target and validates weight before opening', (
+      tester,
+    ) async {
+      List<PlannedSet>? planned;
+      await pumpWorkout(
+        tester,
+        exercise('Dumbbell Curl', reps: 10),
+        handsFree: (_, plan) async {
+          planned = plan;
+          return null;
+        },
+      );
+
+      await tester.enterText(find.byKey(const Key('set-amount')), '14');
+      await tester.enterText(find.byKey(const Key('set-weight')), 'abc');
+      await tester.tap(find.byKey(const Key('hands-free')));
+      await tester.pumpAndSettle();
+      // Invalid weight blocks opening the camera and shows the field error.
+      expect(planned, isNull);
+      expect(find.text('Enter 0 or more'), findsOneWidget);
+
+      await tester.enterText(find.byKey(const Key('set-weight')), '12');
+      await tester.tap(find.byKey(const Key('hands-free')));
+      await tester.pumpAndSettle();
+      expect(planned, isNotNull);
+      expect([for (final set in planned!) set.target], [14, 14]);
+    });
   });
 }

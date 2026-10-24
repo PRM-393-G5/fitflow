@@ -233,6 +233,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     final camera = _camera;
     if (camera == null) return;
     _camera = null;
+    _session?.pause(_clock.elapsedMicroseconds);
     // Rebuild first so no CameraPreview holds the disposed controller.
     if (mounted) setState(() {});
     try {
@@ -270,6 +271,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     _poseModel.clear();
     // A pause (or open review) survives reopening after background/resume.
     if (!_paused && !_reviewing) {
+      _session?.resume(_clock.elapsedMicroseconds);
       await controller.startImageStream(_processFrame);
     }
     if (mounted) {
@@ -452,6 +454,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     final camera = _camera;
     _analyzer.pauseTiming();
     if (paused) {
+      _session?.pause(_clock.elapsedMicroseconds);
       // Flag first so frames already in flight are ignored.
       setState(() => _paused = true);
       _voice.stop();
@@ -459,6 +462,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
         await camera.stopImageStream();
       }
     } else {
+      _session?.resume(_clock.elapsedMicroseconds);
       if (camera != null && !camera.value.isStreamingImages) {
         await camera.startImageStream(_processFrame);
       }
@@ -724,6 +728,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      _session?.pause(_clock.elapsedMicroseconds);
       _analyzer.pauseTiming();
       _voice.stop();
       _serialized(_closeCamera);

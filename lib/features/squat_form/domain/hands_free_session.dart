@@ -80,6 +80,7 @@ class HandsFreeSession {
   int _lastCount = 0;
   int? _lastProgressUs;
   int? _restEndsUs;
+  int? _pausedAtUs;
   bool _warned = false;
 
   /// Each finished set's count, in plan order.
@@ -97,12 +98,34 @@ class HandsFreeSession {
   int restLeft(int nowUs) {
     final ends = _restEndsUs;
     if (_stage != HandsFreeStage.resting || ends == null) return 0;
-    final left = ends - nowUs;
+    final at = _pausedAtUs ?? nowUs;
+    final left = ends - at;
     return left <= 0 ? 0 : (left + 999999) ~/ 1000000;
+  }
+
+  /// Freezes the idle and rest timers while the camera is paused or closed.
+  void pause(int nowUs) {
+    _pausedAtUs ??= nowUs;
+  }
+
+  /// Resumes after [pause], shifting the rest deadline by the time paused
+  /// and giving the active set a fresh idle window to step back into frame.
+  void resume(int nowUs) {
+    final pausedAt = _pausedAtUs;
+    if (pausedAt == null) return;
+    _pausedAtUs = null;
+    final gap = nowUs - pausedAt;
+    if (gap > 0 && _restEndsUs != null) {
+      _restEndsUs = _restEndsUs! + gap;
+    }
+    if (_lastProgressUs != null && nowUs > _lastProgressUs!) {
+      _lastProgressUs = nowUs;
+    }
   }
 
   /// Feeds one analyzed frame of the active set.
   HandsFreeStep onFrame(SquatAnalysis analysis, int nowUs) {
+    resume(nowUs);
     if (_stage != HandsFreeStage.active) return HandsFreeStep.none;
     final count = analysis.repetitions;
     if (count > _lastCount) {
@@ -133,7 +156,7 @@ class HandsFreeSession {
   /// Advances the rest countdown.
   HandsFreeStep tick(int nowUs) {
     final ends = _restEndsUs;
-    if (_stage != HandsFreeStage.resting || ends == null) {
+    if (_stage != HandsFreeStage.resting || ends == null || _pausedAtUs != null) {
       return HandsFreeStep.none;
     }
     if (nowUs >= ends) return _startNext();
@@ -183,6 +206,7 @@ class HandsFreeSession {
     _index++;
     _stage = HandsFreeStage.active;
     _restEndsUs = null;
+    _pausedAtUs = null;
     _lastCount = 0;
     _lastProgressUs = null;
     final set = current;
