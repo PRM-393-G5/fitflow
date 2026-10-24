@@ -28,6 +28,10 @@ Future<void> main() async {
     reminders = null;
   }
   final preferences = await SharedPreferences.getInstance();
+  // Flag of the removed guest mode; nothing reads it any more.
+  if (preferences.containsKey('sign_in_skipped_v1')) {
+    await preferences.remove('sign_in_skipped_v1');
+  }
   final local = LocalWorkoutRepository(preferences);
 
   // One API client for the whole app: refresh tokens are single-use.
@@ -42,7 +46,7 @@ Future<void> main() async {
   try {
     await auth.init();
   } catch (e) {
-    // Secure storage unavailable — start signed out; local data still works.
+    // Secure storage unavailable — start signed out on the login page.
     debugPrint('Restoring the sign-in session failed: $e');
   }
 

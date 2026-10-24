@@ -1,6 +1,6 @@
 # FitFlow
 
-FitFlow is a Flutter workout-tracking MVP. It ships with built-in workout plans, guides a local workout session, and records progress on the device without requiring an account or network connection. Signing in with Google is optional and adds cloud backup and multi-device sync through the FitFlow API.
+FitFlow is a Flutter workout-tracking MVP. It ships with built-in workout plans, guides a workout session, and records progress. A Google account is required: the app opens on the sign-in page, and every account's data is backed up and synced across devices through the FitFlow API. Data is cached on the device so reads are instant and edits made offline are kept until they reach the server.
 
 ## Toolchain
 
@@ -27,9 +27,8 @@ flutter run
 fails on the missing asset entry, so create it even if empty.
 `--dart-define=OPENAI_API_KEY=sk-...` also works.
 
-Accounts and sync need the FitFlow API running (see **Backend API**
-below). The app works fully offline without it; only sign-in and cloud
-sync are unavailable.
+The app needs the FitFlow API running (see **Backend API** below): signing
+in goes through it. Once signed in, a lost connection only delays sync.
 
 Select a target explicitly when needed, for example `flutter run -d <device-id>`. Android and iOS currently use the existing `com.zcode9211.prm` application identifier.
 
@@ -72,7 +71,7 @@ For a distributable Android release, configure a production application ID and r
 - Weekly schedule that pins a plan to each day
 - AI form check via on-device pose detection: squat, push-up, plank, shoulder press, biceps curl (dumbbell/hammer/barbell, alternating counts each arm), overhead triceps extension and dips. In a workout, "Count with camera" counts the set and logs it straight away (undo to fix a miscount). "Hands-free" runs the remaining camera sets back to back with no taps: each set ends at its target (or 8 s after the last rep), a spoken rest counts down, and it moves on to the next set or exercise, up to the first exercise the camera can't count
 - Reminder preferences, JSON export/import backup, and a shareable summary image
-- Optional Google sign-in with cloud sync via the FitFlow API, sign-out and account deletion
+- Required Google sign-in with cloud sync via the FitFlow API, sign-out and account deletion
 - Session detail view per completed workout
 - Theme selection (system, light, or dark)
 - Metric/imperial preference
@@ -119,14 +118,14 @@ The project separates app composition, domain rules, persistence, and feature UI
 
 ## Local storage
 
-FitFlow stores everything locally in `shared_preferences` first; when signed in, data is also synced to the cloud (see below).
+The signed-in account's data is cached in `shared_preferences` and synced to the cloud (see **Backend API**). Signing out removes it from the device.
 
 - Bundled workouts are seeded on first access and stored as JSON under `workouts_v1`.
 - Completed sessions are stored as JSON under `sessions_v1`.
 - Body weight entries are stored as JSON under `body_weights_v1`.
 - Theme and unit choices are stored under `theme_mode` and `unit_system`.
 - Data is scoped to the app installation and may be removed when the app is uninstalled or its storage is cleared.
-- Without signing in there is no sync or cross-device recovery; there is no encryption layer.
+- The cache has no encryption layer.
 
 `shared_preferences` is appropriate for this MVP's small local dataset, but it is not intended for sensitive data or large relational datasets.
 

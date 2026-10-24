@@ -92,7 +92,7 @@
         <mxCell id="uc19" value="Export data (JSON)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
           <mxGeometry x="690" y="570" width="170" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="uc20" value="Sign in &amp; sync (optional)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
+        <mxCell id="uc20" value="Sign in &amp; sync (required)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;" vertex="1" parent="1">
           <mxGeometry x="900" y="510" width="180" height="40" as="geometry" />
         </mxCell>
 
