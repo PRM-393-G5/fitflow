@@ -16,10 +16,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'fake_backend.dart';
 
 void main() {
-  Future<AppController> signedOutApp(Map<String, Object> stored) async {
+  Future<(AppController, BackendAuthService)> app(
+    Map<String, Object> stored, {
+    FakeBackend? backend,
+  }) async {
     SharedPreferences.setMockInitialValues(stored);
     final preferences = await SharedPreferences.getInstance();
-    final backend = FakeBackend({});
+    backend ??= FakeBackend({});
     final auth = BackendAuthService(
       api: backend.api,
       tokens: backend.tokens,
@@ -33,8 +36,11 @@ void main() {
       auth: auth,
     );
     await controller.load();
-    return controller;
+    return (controller, auth);
   }
+
+  Future<AppController> signedOutApp(Map<String, Object> stored) async =>
+      (await app(stored)).$1;
 
   Future<void> pumpGate(WidgetTester tester, AppController controller) async {
     await tester.pumpWidget(
@@ -70,6 +76,29 @@ void main() {
     expect(find.byType(AppShell), findsNothing);
     expect(find.text('Continue with Google'), findsOneWidget);
     expect(find.textContaining('without an account'), findsNothing);
+  });
+
+  testWidgets('signing out closes pages pushed over the app', (tester) async {
+    final (controller, auth) = await app(
+      {},
+      backend: FakeBackend({
+        'POST /api/auth/google': signInResponse,
+      }, fallback: (_) => FakeBackend.json({})),
+    );
+    await auth.signInWithGoogle();
+    await pumpGate(tester, controller);
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    navigator.push(
+      MaterialPageRoute<void>(builder: (_) => const Text('pushed page')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('pushed page'), findsOneWidget);
+
+    await auth.signOut();
+    await tester.pumpAndSettle();
+
+    expect(find.text('pushed page'), findsNothing);
+    expect(find.byType(LoginPage), findsOneWidget);
   });
 
   test('delete errors explain a wrong Google account', () {

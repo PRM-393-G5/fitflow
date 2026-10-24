@@ -42,7 +42,7 @@ Future<void> main() async {
   try {
     await auth.init();
   } catch (e) {
-    // Secure storage unavailable — start signed out; local data still works.
+    // Secure storage unavailable — start signed out on the login page.
     debugPrint('Restoring the sign-in session failed: $e');
   }
 

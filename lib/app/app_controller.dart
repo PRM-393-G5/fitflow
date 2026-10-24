@@ -124,6 +124,8 @@ class AppController extends ChangeNotifier {
   Future<void> _load() async {
     loading = true;
     error = null;
+    // Flag of the removed guest mode; nothing reads it any more.
+    await preferences.remove('sign_in_skipped_v1');
     try {
       await _guardAccountSwitch();
     } catch (e) {

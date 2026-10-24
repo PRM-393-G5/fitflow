@@ -80,5 +80,5 @@ Trạng thái: ✅ đã có · 🟡 có UI, chưa hoàn chỉnh · 📋 kế ho�
 
 1. Chuyển OpenAI key ra backend (`fitflow-api`) — hiện key vẫn nằm trong APK
 2. Đưa `fitflow-api` lên server HTTPS để bản release dùng được cloud sync
-3. Cấu hình Google Sign-In cho iOS (`GIDClientID` + reversed client ID URL scheme trong `ios/Runner/Info.plist`) — iOS hiện chạy local-only
+3. Cấu hình Google Sign-In cho iOS (`GIDClientID` + reversed client ID URL scheme trong `ios/Runner/Info.plist`) — iOS hiện chưa đăng nhập được nên chưa dùng được app (đã bỏ chế độ khách)
 3. Bài tập form check mới / số đo cơ thể — nếu dư thời gian

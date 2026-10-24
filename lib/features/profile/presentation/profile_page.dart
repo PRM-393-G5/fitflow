@@ -431,11 +431,14 @@ class _AccountSection extends StatelessWidget {
       action: 'Delete account',
     );
     if (!confirmed || !context.mounted) return;
+    // Deleting signs out, which replaces this page with the login page:
+    // keep the app-wide toaster to confirm on.
+    final toaster = FToaster.of(context);
     try {
       await controller.deleteAccount();
-      if (context.mounted) {
-        showFToast(context: context, title: const Text('Account deleted.'));
-      }
+      toaster.show(
+        builder: (_, _) => const FToast(title: Text('Account deleted.')),
+      );
     } on GoogleSignInException catch (e) {
       // Cancelled the confirmation login: nothing was deleted.
       if (e.code == GoogleSignInExceptionCode.canceled) return;
