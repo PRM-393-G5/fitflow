@@ -59,6 +59,67 @@ class HomePage extends StatelessWidget {
             ),
           ),
           Text('Ready to move?', style: textTheme.headlineMedium),
+          if (controller.activeDraft case final draft?) ...[
+            const SizedBox(height: AppSpacing.md),
+            AppCard(
+              key: const Key('resume-workout-card'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(FLucideIcons.play, color: colors.primary),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          'Workout in progress: ${draft.workout.name}',
+                          style: textTheme.titleMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '${draft.completedSets} of ${draft.totalSets} sets logged',
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colors.mutedForeground,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.xs,
+                    children: [
+                      FButton(
+                        key: const Key('resume-workout'),
+                        size: .sm,
+                        mainAxisSize: .min,
+                        onPress: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => ActiveWorkoutPage(
+                              workout: draft.workout,
+                              controller: controller,
+                              initialDraft: draft,
+                            ),
+                          ),
+                        ),
+                        prefix: const Icon(FLucideIcons.play, size: 16),
+                        child: const Text('Resume'),
+                      ),
+                      FButton(
+                        key: const Key('discard-active-draft'),
+                        variant: .ghost,
+                        size: .sm,
+                        mainAxisSize: .min,
+                        onPress: controller.clearActiveDraft,
+                        child: const Text('Discard'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.lg),
           Container(
             decoration: BoxDecoration(

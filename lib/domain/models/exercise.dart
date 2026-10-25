@@ -66,11 +66,11 @@ class Exercise {
       ? 0
       : performedSets.fold(0, (sum, set) => sum + set.weightKg * set.amount);
 
-  Exercise copyWith({List<SetEntry>? performedSets}) => Exercise(
+  Exercise copyWith({int? sets, List<SetEntry>? performedSets}) => Exercise(
     id: id,
     name: name,
     muscleGroup: muscleGroup,
-    sets: sets,
+    sets: sets ?? this.sets,
     reps: reps,
     durationSeconds: durationSeconds,
     restSeconds: restSeconds,
