@@ -6,9 +6,11 @@ import 'package:prm/app/app_scope.dart';
 import 'package:prm/core/theme/app_theme.dart';
 import 'package:prm/data/local_workout_repository.dart';
 import 'package:prm/domain/exercise_catalog.dart';
+import 'package:prm/domain/models/active_workout_draft.dart';
 import 'package:prm/domain/models/exercise.dart';
 import 'package:prm/domain/models/workout.dart';
 import 'package:prm/features/home/presentation/home_page.dart';
+import 'package:prm/features/squat_form/domain/hands_free_session.dart';
 import 'package:prm/features/workouts/presentation/active_workout_page.dart';
 import 'package:prm/features/workouts/presentation/workout_builder_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -206,6 +208,72 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.activeDraft, isNull);
     });
+
+    testWidgets('discarding a draft on Home asks for confirmation', (
+      tester,
+    ) async {
+      final controller = await makeController(saved: [twoExercisePlan]);
+      await controller.saveActiveDraft(
+        ActiveWorkoutDraft(
+          workout: twoExercisePlan,
+          startedAt: DateTime(2026, 10, 23, 9, 0),
+          exerciseIndex: 0,
+          setIndex: 1,
+          done: false,
+          entries: {
+            0: const [SetEntry(amount: 8, weightKg: 60)],
+          },
+          log: const [(0, 0)],
+        ),
+      );
+      await tester.pumpWidget(
+        AppScope(
+          controller: controller,
+          child: MaterialApp(
+            theme: AppTheme.light.toApproximateMaterialTheme(),
+            builder: (context, child) => FTheme(
+              data: AppTheme.light,
+              child: FToaster(child: child!),
+            ),
+            home: const FScaffold(child: HomePage()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('discard-active-draft')));
+      await tester.pumpAndSettle();
+      expect(find.text('Discard workout?'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('confirm-discard-draft')));
+      await tester.pumpAndSettle();
+      expect(controller.activeDraft, isNull);
+      expect(find.byKey(const Key('resume-workout-card')), findsNothing);
+    });
+
+    test('ActiveWorkoutDraft.fromJson reconciles mismatched log and entries', () {
+      final json = {
+        'workout': twoExercisePlan.toJson(),
+        'startedAt': DateTime(2026, 10, 23, 9, 0).toIso8601String(),
+        'exerciseIndex': 0,
+        'setIndex': 0,
+        'done': false,
+        'entries': {
+          '0': [
+            const SetEntry(amount: 8, weightKg: 60).toJson(),
+            const SetEntry(amount: 8, weightKg: 60).toJson(),
+          ],
+        },
+        // Corrupted log referencing non-existent exercise 1 and only 1 set of exercise 0.
+        'log': [
+          [1, 0],
+          [0, 5],
+        ],
+      };
+      final draft = ActiveWorkoutDraft.fromJson(json);
+      expect(draft.completedSets, 2);
+      expect(draft.log, const [(0, 0), (0, 1)]);
+    });
   });
 
   group('mid-workout flexibility (switch, skip, add set)', () {
@@ -349,6 +417,75 @@ void main() {
       expect(controller.sessions.single.completedSets, 3);
       await flushToasts(tester);
     });
+
+    testWidgets(
+      'hands-free plan wraps around to earlier unfinished exercises when switched',
+      (tester) async {
+        final controller = await makeController();
+        const cameraPlan = Workout(
+          id: 'w-cam',
+          name: 'Camera Pair',
+          duration: Duration(minutes: 10),
+          level: 'Beginner',
+          category: 'Strength',
+          description: '',
+          exercises: [
+            Exercise(
+              id: 'squat',
+              name: 'Bodyweight Squat',
+              muscleGroup: 'Legs',
+              sets: 1,
+              reps: 10,
+              restSeconds: 0,
+            ),
+            Exercise(
+              id: 'pushup',
+              name: 'Push-up',
+              muscleGroup: 'Chest',
+              sets: 1,
+              reps: 8,
+              restSeconds: 0,
+            ),
+          ],
+        );
+        List<PlannedSet>? capturedPlan;
+        await launchPage(
+          tester,
+          controller,
+          () => ActiveWorkoutPage(
+            workout: cameraPlan,
+            controller: controller,
+            launchHandsFree: (_, plan) async {
+              capturedPlan = plan;
+              return const [
+                (amount: 8, form: null),
+                (amount: 10, form: null),
+              ];
+            },
+          ),
+        );
+
+        // Switch to Exercise 2 (Push-up) first.
+        await tester.tap(find.byKey(const Key('switch-exercise')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('pick-exercise-1')));
+        await tester.pumpAndSettle();
+
+        // Hands-free should offer 2 sets: Push-up first, then wrap around to Squat.
+        expect(find.text('Hands-free · 2 sets'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('hands-free')));
+        await tester.pumpAndSettle();
+
+        expect(
+          capturedPlan?.map((item) => item.name).toList(),
+          const ['Push-up', 'Bodyweight Squat'],
+        );
+        await tester.tap(find.text('Finish').last);
+        await tester.pumpAndSettle();
+        expect(controller.sessions.single.completedSets, 2);
+        await flushToasts(tester);
+      },
+    );
   });
 
   group('exercise catalog & builder autocomplete', () {

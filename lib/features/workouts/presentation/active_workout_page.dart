@@ -192,6 +192,13 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       }
       _log.addAll(draft.log);
       _skipped.addAll(draft.skippedExercises);
+      final next = _nextPosition();
+      if (next == null) {
+        _done = true;
+      } else if (!_done) {
+        _exerciseIndex = next.$1;
+        _setIndex = next.$2;
+      }
     } else {
       _exercises = List.of(widget.workout.exercises);
       _startedAt = widget.clock();
@@ -685,20 +692,19 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   }
 
   /// The sets the camera can run back to back from here: the rest of this
-  /// exercise, then each following one it can count, up to the first it
-  /// can't (logged by hand as usual).
+  /// exercise, then each following unfinished one it can count (wrapping
+  /// around when the user switched order), up to the first it can't.
   List<PlannedSet> _handsFreePlan() {
     final plan = <PlannedSet>[];
-    for (var index = _exerciseIndex; index < _exercises.length; index++) {
+    for (var offset = 0; offset < _exercises.length; offset++) {
+      final index = (_exerciseIndex + offset) % _exercises.length;
       if (_skipped.contains(index)) continue;
       final exercise = _exercises[index];
-      if (exercise.sets == 0) continue;
+      final startSet = offset == 0 ? _setIndex : _loggedSetsFor(index);
+      if (startSet >= exercise.sets) continue;
       final kind = FormExercise.match(exercise.name, timed: exercise.isTimed);
       if (kind == null) break;
       final target = _plannedTarget(index);
-      final startSet = index == _exerciseIndex
-          ? _setIndex
-          : _loggedSetsFor(index);
       for (var set = startSet; set < exercise.sets; set++) {
         plan.add(
           PlannedSet(
