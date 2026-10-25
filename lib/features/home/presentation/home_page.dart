@@ -11,6 +11,7 @@ import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/stat_card.dart';
 import '../../../domain/workout_stats.dart';
 import '../../squat_form/presentation/squat_form_check_page.dart';
+import '../../../domain/models/active_workout_draft.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../workouts/presentation/active_workout_page.dart';
@@ -59,6 +60,68 @@ class HomePage extends StatelessWidget {
             ),
           ),
           Text('Ready to move?', style: textTheme.headlineMedium),
+          if (controller.activeDraft case final draft?) ...[
+            const SizedBox(height: AppSpacing.md),
+            AppCard(
+              key: const Key('resume-workout-card'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(FLucideIcons.play, color: colors.primary),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          'Workout in progress: ${draft.workout.name}',
+                          style: textTheme.titleMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '${draft.completedSets} of ${draft.totalSets} sets logged',
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colors.mutedForeground,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.xs,
+                    children: [
+                      FButton(
+                        key: const Key('resume-workout'),
+                        size: .sm,
+                        mainAxisSize: .min,
+                        onPress: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => ActiveWorkoutPage(
+                              workout: draft.workout,
+                              controller: controller,
+                              initialDraft: draft,
+                            ),
+                          ),
+                        ),
+                        prefix: const Icon(FLucideIcons.play, size: 16),
+                        child: const Text('Resume'),
+                      ),
+                      FButton(
+                        key: const Key('discard-active-draft'),
+                        variant: .ghost,
+                        size: .sm,
+                        mainAxisSize: .min,
+                        onPress: () =>
+                            _confirmDiscardDraft(context, controller, draft),
+                        child: const Text('Discard'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.lg),
           Container(
             decoration: BoxDecoration(
@@ -274,6 +337,42 @@ class HomePage extends StatelessWidget {
         ],
       ),
     ];
+  }
+
+  Future<void> _confirmDiscardDraft(
+    BuildContext context,
+    AppController controller,
+    ActiveWorkoutDraft draft,
+  ) async {
+    if (draft.completedSets == 0) {
+      await controller.clearActiveDraft();
+      return;
+    }
+    final sets = draft.completedSets;
+    final confirmed = await showAppDialog<bool>(
+      context: context,
+      title: 'Discard workout?',
+      body: Text(
+        'Your $sets logged ${sets == 1 ? 'set' : 'sets'} for '
+        '${draft.workout.name} will not be saved.',
+      ),
+      actions: [
+        FButton(
+          variant: .ghost,
+          onPress: () => Navigator.pop(context, false),
+          child: const Text('Keep'),
+        ),
+        FButton(
+          key: const Key('confirm-discard-draft'),
+          variant: .destructive,
+          onPress: () => Navigator.pop(context, true),
+          child: const Text('Discard'),
+        ),
+      ],
+    );
+    if (confirmed == true) {
+      await controller.clearActiveDraft();
+    }
   }
 
   void _pickWeeklyGoal(BuildContext context, AppController controller) {
