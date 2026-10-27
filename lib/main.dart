@@ -24,7 +24,7 @@ Future<void> main() async {
     reminders = ReminderService();
     await reminders.init();
   } catch (e) {
-    debugPrint('Notifications khởi tạo thất bại: $e');
+    debugPrint('Notification setup failed: $e');
     reminders = null;
   }
   final preferences = await SharedPreferences.getInstance();
@@ -43,7 +43,7 @@ Future<void> main() async {
     await auth.init();
   } catch (e) {
     // Secure storage unavailable — start signed out; local data still works.
-    debugPrint('Khôi phục phiên đăng nhập thất bại: $e');
+    debugPrint('Restoring the sign-in session failed: $e');
   }
 
   final controller = AppController(

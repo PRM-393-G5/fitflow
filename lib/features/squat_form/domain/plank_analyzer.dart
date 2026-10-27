@@ -63,7 +63,7 @@ class PlankAnalyzer implements RepAnalyzer {
   @override
   int get repetitions => _goodHoldUs ~/ 1000000;
   @override
-  String get countLabel => 'GIÂY GIỮ';
+  String get countLabel => 'SECONDS';
 
   @override
   List<RepRecord> get repRecords => const [];
@@ -99,10 +99,10 @@ class PlankAnalyzer implements RepAnalyzer {
         repetitions: repetitions,
         score: 0,
         cue: headOn
-            ? 'Xoay người nằm ngang so với camera'
+            ? 'Lie side-on to the camera'
             : !inFrame
-            ? 'Lùi ra để thấy toàn thân'
-            : 'Vào tư thế plank để bắt đầu',
+            ? 'Step back so your whole body is in view'
+            : 'Get into a plank to start',
         // Lying on the floor the user can't read the screen: say it.
         tone: headOn ? CueTone.warn : CueTone.info,
         bodyVisible: false,
@@ -114,7 +114,7 @@ class PlankAnalyzer implements RepAnalyzer {
         phase: SquatPhase.findingBody,
         repetitions: repetitions,
         score: 0,
-        cue: 'Chống khuỷu tay dưới vai',
+        cue: 'Elbows under your shoulders',
         bodyVisible: false,
       );
     }
@@ -156,17 +156,17 @@ class PlankAnalyzer implements RepAnalyzer {
       repetitions: repetitions,
       score: score,
       cue: sagging
-          ? 'Đừng để hông xệ'
+          ? 'Keep your hips from sagging'
           : piking
-          ? 'Hạ hông thấp hơn'
-          : 'Tốt lắm, giữ nguyên',
+          ? 'Lower your hips'
+          : 'Great, hold it',
       tone: sagging || piking ? CueTone.warn : CueTone.good,
       faultJoints: sagging || piking
           ? const {SquatJoint.leftHip, SquatJoint.rightHip}
           : const {},
       bodyVisible: true,
       hipAngle: offset * 100,
-      label: 'Đang giữ plank',
+      label: 'Holding',
     );
   }
 

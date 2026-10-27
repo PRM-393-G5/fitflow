@@ -11,6 +11,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../../app/app_controller.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_sheet.dart';
 import '../../../data/openai_service.dart';
 import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout_session.dart';
@@ -204,7 +205,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
           }
           if (mounted) {
             setState(() {
-              _error = 'Không thể mở camera: $error';
+              _error = 'Could not open the camera: $error';
               _initializing = false;
             });
           }
@@ -217,7 +218,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     if (_camera != null) return;
     if (_cameras.isEmpty) {
       _cameras = await availableCameras();
-      if (_cameras.isEmpty) throw StateError('Không tìm thấy camera');
+      if (_cameras.isEmpty) throw StateError('No camera found');
     }
     await _openCamera(
       _description ??
@@ -538,7 +539,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
     if (!identical(step, HandsFreeStep.none)) _applyStep(step);
   }
 
-  /// Every set done: lets "Hoàn thành!" be heard, then hands the sets back.
+  /// Every set done: lets "All done!" be heard, then hands the sets back.
   Future<void> _finishPlan() async {
     if (_saving) return;
     _restTimer?.cancel();
@@ -632,15 +633,19 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
       if (!mounted) return;
       showFToast(
         context: context,
-        title: Text('Không thể lưu ${result.exercise.label}: $error'),
+        title: Text('Could not save ${result.exercise.label}: $error'),
       );
       return;
     }
     if (!mounted) return;
-    final unit = result.exercise == FormExercise.plank ? 'giây' : 'rep';
+    final unit = result.exercise == FormExercise.plank
+        ? 'seconds'
+        : result.amount == 1
+        ? 'rep'
+        : 'reps';
     showFToast(
       context: context,
-      title: Text('Đã lưu ${result.exercise.label}: ${result.amount} $unit'),
+      title: Text('Saved ${result.exercise.label}: ${result.amount} $unit'),
     );
   }
 
@@ -683,11 +688,13 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
           context: context,
           side: .btt,
           mainAxisMaxRatio: .infinity,
-          builder: (_) => _FormReviewSheet(
-            exercise: result.exercise,
-            result: reviewed,
-            records: result.records,
-            hold: result.hold,
+          builder: (_) => AppSheet(
+            child: _FormReviewSheet(
+              exercise: result.exercise,
+              result: reviewed,
+              records: result.records,
+              hold: result.hold,
+            ),
           ),
         );
         if (!mounted) return;
@@ -703,8 +710,8 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
       _discardOnClose = true;
       showFToast(
         context: context,
-        title: Text('Không thể lưu buổi tập: $error'),
-        description: const Text('Nhấn đóng lần nữa để thoát mà không lưu.'),
+        title: Text('Could not save the session: $error'),
+        description: const Text('Tap close again to leave without saving.'),
       );
     } finally {
       if (mounted && !saved) {
@@ -787,11 +794,11 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
   /// finishes rather than discards.
   bool get _counting => widget.forSet != null || widget.plan != null;
 
-  /// "Dumbbell Curl · Set 1/3 · 12 rep". While resting, [next] describes
+  /// "Dumbbell Curl · Set 1/3 · 12 reps". While resting, [next] describes
   /// the set after the current one.
   String _setTitle(PlannedSet current, {bool next = false}) {
     final set = next ? (_session!.upcoming ?? current) : current;
-    final unit = set.timed ? 'giây' : 'rep';
+    final unit = set.timed ? 's' : (set.target == 1 ? 'rep' : 'reps');
     return '${set.name} · Set ${set.setNumber}/${set.sets} · '
         '${set.target} $unit';
   }
@@ -830,12 +837,12 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                 style: const TextStyle(color: Colors.white),
               ),
               const SizedBox(height: 20),
-              FButton(onPress: _retry, child: const Text('Thử lại')),
+              FButton(onPress: _retry, child: const Text('Try again')),
               const SizedBox(height: 8),
               FButton(
                 variant: .outline,
                 onPress: _saveAndClose,
-                child: const Text('Đóng'),
+                child: const Text('Close'),
               ),
             ],
           ),
@@ -916,11 +923,11 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                         child: Icon(
                           FLucideIcons.ellipsisVertical,
                           color: Colors.white,
-                          semanticLabel: 'Chế độ hiệu năng',
+                          semanticLabel: 'Performance mode',
                         ),
                       ),
                     ),
-                    if (kDebugMode)
+                    if (!kReleaseMode)
                       _CamButton(
                         icon: FLucideIcons.gauge,
                         tooltip: 'Telemetry',
@@ -931,24 +938,24 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                       icon: _voiceOn
                           ? FLucideIcons.volume2
                           : FLucideIcons.volumeOff,
-                      tooltip: _voiceOn ? 'Tắt giọng nói' : 'Bật giọng nói',
+                      tooltip: _voiceOn ? 'Mute voice' : 'Unmute voice',
                       onPress: _toggleVoice,
                     ),
                     _CamButton(
                       icon: _paused ? FLucideIcons.play : FLucideIcons.pause,
-                      tooltip: _paused ? 'Tiếp tục' : 'Tạm dừng',
+                      tooltip: _paused ? 'Resume' : 'Pause',
                       onPress: _togglePause,
                     ),
                     if (_cameras.length > 1)
                       _CamButton(
                         icon: FLucideIcons.switchCamera,
-                        tooltip: 'Đổi camera',
+                        tooltip: 'Switch camera',
                         onPress: _switchingCamera ? null : _switchCamera,
                       ),
                   ],
                 ),
               ),
-              if (kDebugMode && _showTelemetry)
+              if (!kReleaseMode && _showTelemetry)
                 Positioned(
                   top: 60,
                   left: 12,
@@ -1045,8 +1052,8 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                                         '/${_session.current.target}',
                             ),
                             _Metric(
-                              label: 'TRẠNG THÁI',
-                              value: analysis?.phaseLabel ?? 'Khởi động',
+                              label: 'PHASE',
+                              value: analysis?.phaseLabel ?? 'Starting',
                             ),
                             _Metric(
                               label: 'FORM',
@@ -1058,7 +1065,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          cue.cue ?? 'Đặt điện thoại để thấy toàn thân',
+                          cue.cue ?? 'Step into the camera view',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: switch (cue.tone) {
@@ -1098,7 +1105,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
               if (_session?.stage == HandsFreeStage.done)
                 const Center(
                   child: Text(
-                    'Hoàn thành!',
+                    'All done!',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 34,
@@ -1109,7 +1116,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
               if (_paused)
                 const Center(
                   child: Text(
-                    'Đã tạm dừng',
+                    'Paused',
                     style: TextStyle(color: Colors.white, fontSize: 22),
                   ),
                 ),
@@ -1147,7 +1154,7 @@ class _RestCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            'NGHỈ',
+            'REST',
             style: TextStyle(color: Colors.white54, letterSpacing: 2),
           ),
           Text(
@@ -1161,7 +1168,7 @@ class _RestCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Tiếp theo: $next',
+            'Next: $next',
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.white, fontSize: 16),
           ),
@@ -1171,7 +1178,7 @@ class _RestCard extends StatelessWidget {
             variant: .outline,
             mainAxisSize: .min,
             onPress: onSkip,
-            child: const Text('Bỏ qua nghỉ'),
+            child: const Text('Skip rest'),
           ),
         ],
       ),
@@ -1226,14 +1233,14 @@ class _PermissionView extends StatelessWidget {
           const Icon(FLucideIcons.cameraOff, color: Colors.white, size: 64),
           const SizedBox(height: 16),
           const Text(
-            'FitFlow cần quyền camera để phân tích tư thế ngay trên thiết bị.',
+            'FitFlow needs camera access to check your form on this device.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white, fontSize: 17),
           ),
           const SizedBox(height: 20),
           FButton(
             onPress: permanent ? openAppSettings : retry,
-            child: Text(permanent ? 'Mở cài đặt' : 'Cho phép camera'),
+            child: Text(permanent ? 'Open settings' : 'Allow camera'),
           ),
         ],
       ),
@@ -1253,48 +1260,39 @@ class _SetupGuide extends StatelessWidget {
   Widget build(BuildContext context) {
     final tips = switch (exercise) {
       FormExercise.squat => const [
-        (FLucideIcons.smartphone, 'Đặt điện thoại ngang hông, cách 2–3 m'),
-        (FLucideIcons.personStanding, 'Đứng nghiêng người về phía camera'),
-        (FLucideIcons.scanEye, 'Thấy trọn người từ đầu đến chân'),
+        (FLucideIcons.smartphone, 'Phone at hip height, 2–3 m away'),
+        (FLucideIcons.personStanding, 'Stand side-on to the camera'),
+        (FLucideIcons.scanEye, 'Whole body in view, head to toe'),
       ],
       FormExercise.pushup || FormExercise.plank => [
-        (FLucideIcons.smartphone, 'Đặt điện thoại sát sàn, cách 2–3 m'),
+        (FLucideIcons.smartphone, 'Phone near the floor, 2–3 m away'),
         (
           FLucideIcons.personStanding,
           exercise == FormExercise.plank
-              ? 'Nằm ngang khung hình, khuỷu tay dưới vai'
-              : 'Nằm ngang khung hình, nghiêng về phía camera',
+              ? 'Lie across the frame, elbows under shoulders'
+              : 'Lie across the frame, side-on to the camera',
         ),
-        (FLucideIcons.scanEye, 'Thấy trọn người từ đầu đến chân'),
+        (FLucideIcons.scanEye, 'Whole body in view, head to toe'),
       ],
       FormExercise.shoulderPress => const [
-        (
-          FLucideIcons.smartphone,
-          'Đặt điện thoại ngang ngực trở lên, cách 2 m',
-        ),
-        (FLucideIcons.personStanding, 'Đứng quay mặt về phía camera'),
-        (FLucideIcons.scanEye, 'Thấy từ thắt lưng lên, cả khi giơ tay cao'),
+        (FLucideIcons.smartphone, 'Phone at chest height or higher, 2 m away'),
+        (FLucideIcons.personStanding, 'Face the camera'),
+        (FLucideIcons.scanEye, 'Waist up in view, even with arms overhead'),
       ],
       FormExercise.curl => const [
-        (FLucideIcons.smartphone, 'Đặt điện thoại ngang ngực, cách 2 m'),
-        (
-          FLucideIcons.personStanding,
-          'Đứng quay mặt hoặc nghiêng về phía camera',
-        ),
-        (FLucideIcons.scanEye, 'Thấy từ đầu gối lên, cả hai tay'),
+        (FLucideIcons.smartphone, 'Phone at chest height, 2 m away'),
+        (FLucideIcons.personStanding, 'Face the camera or stand side-on'),
+        (FLucideIcons.scanEye, 'Knees up in view, both arms included'),
       ],
       FormExercise.tricepsExtension => const [
-        (
-          FLucideIcons.smartphone,
-          'Đặt điện thoại ngang ngực trở lên, cách 2 m',
-        ),
-        (FLucideIcons.personStanding, 'Đứng quay mặt về phía camera'),
-        (FLucideIcons.scanEye, 'Thấy từ thắt lưng lên, cả khi giơ tay cao'),
+        (FLucideIcons.smartphone, 'Phone at chest height or higher, 2 m away'),
+        (FLucideIcons.personStanding, 'Face the camera'),
+        (FLucideIcons.scanEye, 'Waist up in view, even with arms overhead'),
       ],
       FormExercise.dip => const [
-        (FLucideIcons.smartphone, 'Đặt điện thoại ngang ghế, cách 2–3 m'),
-        (FLucideIcons.personStanding, 'Ngồi nghiêng người về phía camera'),
-        (FLucideIcons.scanEye, 'Thấy rõ tay, vai và hông'),
+        (FLucideIcons.smartphone, 'Phone at bench height, 2–3 m away'),
+        (FLucideIcons.personStanding, 'Sit side-on to the camera'),
+        (FLucideIcons.scanEye, 'Arms, shoulders and hips clearly in view'),
       ],
     };
     return DecoratedBox(
@@ -1312,7 +1310,7 @@ class _SetupGuide extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Đặt camera cho ${exercise.label}',
+                    'Camera setup for ${exercise.label}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 17,
@@ -1322,7 +1320,7 @@ class _SetupGuide extends StatelessWidget {
                 ),
                 _CamButton(
                   icon: FLucideIcons.x,
-                  tooltip: 'Ẩn hướng dẫn',
+                  tooltip: 'Hide tips',
                   onPress: onDismiss,
                 ),
               ],
@@ -1349,7 +1347,7 @@ class _SetupGuide extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.only(top: 10, right: 12),
               child: Text(
-                'Tự ẩn khi đã nhận diện được bạn.',
+                'Hides once you are detected.',
                 style: TextStyle(color: Colors.white54, fontSize: 12),
               ),
             ),

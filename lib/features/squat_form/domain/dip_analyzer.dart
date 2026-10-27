@@ -52,22 +52,22 @@ class DipAnalyzer extends ArmRepAnalyzer {
 
   @override
   ArmCues get cues => const ArmCues(
-    start: 'Chống tay, duỗi thẳng tay để bắt đầu',
-    ready: 'Sẵn sàng, hạ người xuống',
-    go: 'Hạ người xuống',
-    far: 'Tốt, đẩy lên',
-    back: 'Đẩy thẳng tay lên',
-    short: 'Xuống sâu hơn, khuỷu tay vuông góc',
-    incomplete: 'Đẩy thẳng tay hết ở trên',
+    start: 'Arms straight on the bars to start',
+    ready: 'Ready, lower yourself',
+    go: 'Lower yourself',
+    far: 'Good, push up',
+    back: 'Push up to straight arms',
+    short: 'Go deeper, elbows to 90°',
+    incomplete: 'Lock out fully at the top',
   );
 
   @override
   String? phaseLabel(SquatPhase phase) => switch (phase) {
     SquatPhase.findingBody => null,
-    SquatPhase.standing => 'Trên cao',
-    SquatPhase.descending => 'Đang xuống',
-    SquatPhase.bottom => 'Đủ sâu',
-    SquatPhase.ascending => 'Đang lên',
+    SquatPhase.standing => 'Top',
+    SquatPhase.descending => 'Going down',
+    SquatPhase.bottom => 'Depth reached',
+    SquatPhase.ascending => 'Coming up',
   };
 
   @override
@@ -90,7 +90,7 @@ class DipAnalyzer extends ArmRepAnalyzer {
     _facingFrames = _facing ? _facingFrames + 1 : 0;
     if (_facingFrames >= _facingCueFrames) {
       return const ArmFrame.missed(
-        'Quay nghiêng người về phía camera',
+        'Turn side-on to the camera',
         missTone: CueTone.warn,
       );
     }
@@ -108,7 +108,9 @@ class DipAnalyzer extends ArmRepAnalyzer {
       }
     }
     if (near == null) {
-      return const ArmFrame.missed('Lùi ra để thấy tay và hông');
+      return const ArmFrame.missed(
+        'Step back so your arms and hips are in view',
+      );
     }
     final elbow = angleDegrees(near.shoulder, near.elbow, near.wrist);
     return ArmFrame.seen((_straightDegrees - elbow) / _rangeDegrees);

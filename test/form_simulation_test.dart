@@ -136,7 +136,7 @@ void main() {
       final runs = _runs(SquatMovement(leanBottomDeg: 60), SquatAnalyzer.new);
       expect(_faultRate(runs, 'forwardLean'), greaterThan(.9));
       expect(
-        runs.every((run) => run.cues.contains('Giữ thân ổn định')),
+        runs.every((run) => run.cues.contains('Keep your torso steady')),
         isTrue,
       );
       expect(runs.every((run) => run.minScore <= 80), isTrue);
@@ -170,7 +170,7 @@ void main() {
         expect(_faultRate(caving, 'kneeValgus'), greaterThan(.9));
         expect(
           caving.every(
-            (run) => run.cues.contains('Giữ gối theo hướng mũi chân'),
+            (run) => run.cues.contains('Keep your knees over your toes'),
           ),
           isTrue,
         );
@@ -243,7 +243,7 @@ void main() {
       );
       for (final run in runs) {
         expect(run.count, 5);
-        expect(run.cues, contains('Đừng để hông xệ'));
+        expect(run.cues, contains('Keep your hips from sagging'));
         expect(run.perfectShare, lessThan(.1));
       }
     });
@@ -258,14 +258,14 @@ void main() {
       )) {
         expect(run.count, inInclusiveRange(18, 20));
         expect(run.minScore, greaterThanOrEqualTo(70));
-        expect(run.cues, contains('Tốt lắm, giữ nguyên'));
+        expect(run.cues, contains('Great, hold it'));
       }
     });
 
     test('sagging or piking hips earn no hold time', () {
       for (final (sag, cue) in [
-        (.12, 'Đừng để hông xệ'),
-        (-.12, 'Hạ hông thấp hơn'),
+        (.12, 'Keep your hips from sagging'),
+        (-.12, 'Lower your hips'),
       ]) {
         final runs = _runs(
           PlankMovement(sagM: sag),
@@ -303,12 +303,15 @@ void main() {
           expect(spoken(SquatAnalyzer(), frames), ['1', '2', '3', '4', '5']);
           final shown = shownCues(SquatAnalyzer(), frames);
           expect(warnings(shown), isEmpty);
-          expect(shown.map((c) => c.$1), contains('Rep chuẩn!'));
+          expect(shown.map((c) => c.$1), contains('Great rep!'));
           // Dropped detector frames mid-set never flash "step back".
           final tracking = shown
               .map((c) => c.$1)
-              .skipWhile((cue) => cue != 'Sẵn sàng, bắt đầu squat');
-          expect(tracking, isNot(contains('Lùi ra để thấy toàn thân')));
+              .skipWhile((cue) => cue != 'Ready, start squatting');
+          expect(
+            tracking,
+            isNot(contains('Step back so your whole body is in view')),
+          );
         }
       }
     });
@@ -320,9 +323,9 @@ void main() {
       }
       for (final frames in sets(PlankMovement(holdS: 25), camera: _prone)) {
         expect(spoken(PlankAnalyzer(), frames, timed: true), [
-          'Bắt đầu tính giờ',
-          '10 giây',
-          '20 giây',
+          'Timer started',
+          '10 seconds',
+          '20 seconds',
         ]);
         expect(
           warnings(shownCues(PlankAnalyzer(), frames, timed: true)),
@@ -335,26 +338,26 @@ void main() {
       (
         'heels lifting',
         SquatMovement(heelLiftM: .05),
-        'Giữ gót chân chạm sàn',
-        'giữ gót chạm sàn',
+        'Keep your heels on the floor',
+        'keep your heels down',
       ),
       (
         'uneven legs',
         SquatMovement(asymmetryDeg: 25),
-        'Dồn đều lực hai chân',
-        'dồn đều lực hai chân',
+        'Spread your weight evenly',
+        'spread your weight evenly',
       ),
       (
         'dropping fast',
         SquatMovement(descentS: .5),
-        'Hạ người chậm hơn',
-        'hạ người chậm hơn',
+        'Lower more slowly',
+        'lower more slowly',
       ),
       (
         'leaning forward',
         SquatMovement(leanBottomDeg: 60),
-        'Giữ thân ổn định',
-        'giữ ngực thẳng',
+        'Keep your torso steady',
+        'keep your chest up',
       ),
     ]) {
       test('$name: warned live and told how to fix the next rep', () {
@@ -373,7 +376,7 @@ void main() {
     test('a shallow squat is told to go deeper on the next rep', () {
       for (final frames in sets(SquatMovement(kneeMinDeg: 103, pauseS: .6))) {
         final cues = shownCues(SquatAnalyzer(), frames).map((c) => c.$1);
-        expect(cues, contains('Rep sau: xuống sâu hơn'));
+        expect(cues, contains('Next rep: go deeper'));
       }
     });
 
@@ -385,7 +388,7 @@ void main() {
         )) {
           expect(
             spoken(SquatAnalyzer(), frames),
-            contains('Xoay nghiêng người về phía camera'),
+            contains('Turn side-on to the camera'),
           );
         }
       }
@@ -399,7 +402,7 @@ void main() {
       )) {
         expect(
           spoken(SquatAnalyzer(), frames),
-          contains('Xoay nghiêng người về phía camera'),
+          contains('Turn side-on to the camera'),
         );
       }
     });
@@ -414,13 +417,13 @@ void main() {
       for (final frames in sets(PushupMovement(), camera: headOn)) {
         expect(
           spoken(PushupAnalyzer(), frames),
-          contains('Xoay người nằm ngang so với camera'),
+          contains('Lie side-on to the camera'),
         );
       }
       for (final frames in sets(PlankMovement(), camera: headOn)) {
         expect(
           spoken(PlankAnalyzer(), frames, timed: true),
-          contains('Xoay người nằm ngang so với camera'),
+          contains('Lie side-on to the camera'),
         );
       }
     });
@@ -428,8 +431,8 @@ void main() {
     test('sagging hips are said aloud and become the next-rep fix', () {
       for (final frames in sets(PushupMovement(sagM: .12), camera: _prone)) {
         final said = spoken(PushupAnalyzer(), frames);
-        expect(said, contains('Đừng để hông xệ'));
-        expect(said, contains('2. siết bụng, giữ hông thẳng'));
+        expect(said, contains('Keep your hips from sagging'));
+        expect(said, contains('2. brace your core, keep your hips level'));
       }
     });
 
@@ -577,7 +580,7 @@ void main() {
         );
         expect(
           spoken(ShoulderPressAnalyzer(), frames),
-          contains('2. đẩy thẳng tay lên hết'),
+          contains('2. press to full lockout'),
         );
       }
     });
@@ -590,14 +593,14 @@ void main() {
           run.records.every((r) => r.faults.first == 'unevenArms'),
           isTrue,
         );
-        expect(warnings(frames), contains('Đẩy đều hai tay'));
+        expect(warnings(frames), contains('Press both arms evenly'));
         expect(
           run.outputs.any((o) => o.faultJoints.contains(SquatJoint.rightWrist)),
           isTrue,
         );
         expect(
           spoken(ShoulderPressAnalyzer(), frames),
-          contains('2. đẩy đều hai tay'),
+          contains('2. press both arms evenly'),
         );
       }
     });
@@ -608,7 +611,10 @@ void main() {
         // Only the final full lowering completes one, partial-range, rep.
         expect(run.count, 1);
         expect(run.records.single.faults, contains('partialRange'));
-        expect(warnings(frames), contains('Hạ khuỷu xuống ngang vai'));
+        expect(
+          warnings(frames),
+          contains('Lower your elbows to shoulder height'),
+        );
       }
     });
 
@@ -620,12 +626,15 @@ void main() {
           camera: upperBody(azimuth: azimuth),
         )) {
           final said = spoken(ShoulderPressAnalyzer(), frames);
-          expect(said, isNot(contains('Đẩy đều hai tay')), reason: '$azimuth');
+          expect(
+            said,
+            isNot(contains('Press both arms evenly')),
+            reason: '$azimuth',
+          );
           // 45° sits on the facing limit: counted cleanly or told to turn.
           final counted = replay(ShoulderPressAnalyzer(), frames).count == 5;
           expect(
-            said.contains('Quay mặt về phía camera') ||
-                (azimuth < 60 && counted),
+            said.contains('Face the camera') || (azimuth < 60 && counted),
             isTrue,
             reason: '$azimuth',
           );
@@ -654,11 +663,11 @@ void main() {
           // Still facing the camera: no "turn" warning, press wording.
           expect(
             spoken(ShoulderPressAnalyzer(), frames),
-            isNot(contains('Quay mặt về phía camera')),
+            isNot(contains('Face the camera')),
           );
           expect(
             run.outputs.map((o) => o.phaseLabel),
-            isNot(contains('Đủ sâu')),
+            isNot(contains('Depth reached')),
           );
         }
       }
@@ -677,7 +686,7 @@ void main() {
         expect(run.count, 5);
         expect(
           spoken(ShoulderPressAnalyzer(), frames),
-          isNot(contains('Đẩy tay lên cao hết cỡ')),
+          isNot(contains('Press as high as you can')),
         );
       }
     });
@@ -687,7 +696,7 @@ void main() {
         expect(replay(ShoulderPressAnalyzer(), frames).count, 0);
         expect(
           spoken(ShoulderPressAnalyzer(), frames),
-          contains('Gập khuỷu, đưa tay ngang vai rồi đẩy'),
+          contains('Bend your elbows, hands to shoulders, then press'),
         );
       }
     });
@@ -718,7 +727,7 @@ void main() {
         expect(replay(ShoulderPressAnalyzer(), frames).count, 0);
         expect(
           spoken(ShoulderPressAnalyzer(), frames),
-          contains('Đẩy tay lên cao hết cỡ'),
+          contains('Press as high as you can'),
         );
       }
     });
@@ -742,7 +751,7 @@ void main() {
       )) {
         expect(
           spoken(ShoulderPressAnalyzer(), frames),
-          contains('Quay mặt về phía camera'),
+          contains('Face the camera'),
         );
       }
     });
@@ -755,7 +764,7 @@ void main() {
         expect(replay(ShoulderPressAnalyzer(), frames).count, 0);
         expect(
           spoken(ShoulderPressAnalyzer(), frames),
-          contains('Quay mặt về phía camera'),
+          contains('Face the camera'),
         );
       }
     });
@@ -865,7 +874,7 @@ void main() {
           expect(_faultRate(runs, 'elbowDrift'), 1);
           expect(
             runs.every(
-              (run) => run.warnings.contains('Giữ khuỷu tay sát người'),
+              (run) => run.warnings.contains('Keep your elbows at your sides'),
             ),
             isTrue,
           );
@@ -876,7 +885,7 @@ void main() {
         for (final frames in sets(CurlMovement(topElbowDeg: 90), chest())) {
           final run = replay(CurlAnalyzer(), frames);
           expect(run.count, 0);
-          expect(warnings(CurlAnalyzer(), frames), {'Cuộn tạ lên cao hết'});
+          expect(warnings(CurlAnalyzer(), frames), {'Curl all the way up'});
         }
       });
 
@@ -891,7 +900,9 @@ void main() {
         expect(_faultRate(runs, 'noFullExtension'), closeTo(.8, .01));
         expect(
           runs.every(
-            (run) => run.warnings.contains('Duỗi thẳng tay hết ở dưới'),
+            (run) => run.warnings.contains(
+              'Straighten your arms fully at the bottom',
+            ),
           ),
           isTrue,
         );
@@ -936,7 +947,7 @@ void main() {
         expect(runs.every((run) => run.count == 5), isTrue);
         expect(_faultRate(runs, 'elbowFlare'), 1);
         expect(
-          runs.every((run) => run.warnings.contains('Khép khuỷu tay lại')),
+          runs.every((run) => run.warnings.contains('Keep your elbows in')),
           isTrue,
         );
       });
@@ -948,7 +959,7 @@ void main() {
         )) {
           expect(replay(TricepsExtensionAnalyzer(), frames).count, 0);
           expect(warnings(TricepsExtensionAnalyzer(), frames), {
-            'Hạ tạ sâu hơn ra sau đầu',
+            'Lower it deeper behind your head',
           });
         }
       });
@@ -984,7 +995,7 @@ void main() {
         )) {
           expect(replay(DipAnalyzer(), frames).count, 0);
           expect(warnings(DipAnalyzer(), frames), {
-            'Quay nghiêng người về phía camera',
+            'Turn side-on to the camera',
           });
         }
       });
@@ -992,9 +1003,7 @@ void main() {
       test('shallow dips never count, and say why', () {
         for (final frames in sets(DipMovement(bottomElbowDeg: 125), bench)) {
           expect(replay(DipAnalyzer(), frames).count, 0);
-          expect(warnings(DipAnalyzer(), frames), {
-            'Xuống sâu hơn, khuỷu tay vuông góc',
-          });
+          expect(warnings(DipAnalyzer(), frames), {'Go deeper, elbows to 90°'});
         }
       });
 

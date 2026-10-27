@@ -118,9 +118,9 @@ void main() {
       return result;
     }
 
-    expect(feed(plank(.68), 10).cue, 'Đừng để hông xệ');
+    expect(feed(plank(.68), 10).cue, 'Keep your hips from sagging');
     feed(const {}, 30); // dropped to the knees for a couple of seconds
-    expect(feed(plank(.545), 1).cue, 'Tốt lắm, giữ nguyên');
+    expect(feed(plank(.545), 1).cue, 'Great, hold it');
   });
 
   test('standing facing the camera is not read as lying head-on', () {
@@ -133,7 +133,7 @@ void main() {
       SquatJoint.leftElbow: const SquatPoint(.28, .45),
       SquatJoint.leftAnkle: const SquatPoint(.32, .95),
     });
-    expect(result.cue, isNot('Xoay người nằm ngang so với camera'));
+    expect(result.cue, isNot('Lie side-on to the camera'));
   });
 
   test('push-up analyzer flags sagging hips in torso lengths', () {
@@ -145,7 +145,7 @@ void main() {
       SquatJoint.leftHip: const SquatPoint(.55, .45),
       SquatJoint.leftAnkle: const SquatPoint(.75, .4),
     });
-    expect(result.cue, 'Đừng để hông xệ');
+    expect(result.cue, 'Keep your hips from sagging');
   });
 
   test('push-up analyzer ignores elbow bends while standing upright', () {
@@ -170,7 +170,7 @@ void main() {
       }
     }
     expect(analyzer.repetitions, 0);
-    expect(result!.cue, 'Giữ thân nằm ngang để bắt đầu');
+    expect(result!.cue, 'Get your body horizontal to start');
   });
 
   group('plank analyzer', () {
@@ -205,7 +205,7 @@ void main() {
       final us = hold(analyzer, pose(.4), 0, 20);
       expect(analyzer.repetitions, 2);
       final sag = analyzer.analyze(pose(.5), timestampUs: us + 100000);
-      expect(sag.cue, 'Đừng để hông xệ');
+      expect(sag.cue, 'Keep your hips from sagging');
       expect(sag.repetitions, 2);
     });
 
@@ -268,7 +268,7 @@ void main() {
     for (var i = 0; i < 4; i++) {
       analyzer.analyze(pose(.15, -1));
     }
-    expect(analyzer.analyze(pose(.15, -1)).cue, 'Sẵn sàng, cuộn tạ lên');
+    expect(analyzer.analyze(pose(.15, -1)).cue, 'Ready, curl up');
     for (var i = 0; i < 3; i++) {
       analyzer.analyze(pose(.15, .8));
     }

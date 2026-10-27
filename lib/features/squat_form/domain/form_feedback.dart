@@ -62,9 +62,9 @@ class FormVoiceCoach {
       if (!timed) {
         return _say(tip == null ? '$count' : '$count. $tip', nowUs);
       }
-      if (previous == 0) return _say('Bắt đầu tính giờ', nowUs);
+      if (previous == 0) return _say('Timer started', nowUs);
       if (count ~/ 10 > previous ~/ 10) {
-        return _say('${count ~/ 10 * 10} giây', nowUs);
+        return _say('${count ~/ 10 * 10} seconds', nowUs);
       }
     }
     if (tone != CueTone.warn) return null;
