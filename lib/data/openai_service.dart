@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -42,19 +43,6 @@ class OpenAiService {
       (_dartDefineKey.isNotEmpty ||
           _dartDefineApiUrl.isNotEmpty ||
           dotenv.isInitialized);
-
-  /// Queries `GET /api/ai/status` on the backend to check whether the server
-  /// has `OPENAI_API_KEY` configured.
-  Future<bool> checkServerStatus() async {
-    final client = _client;
-    if (client == null) return false;
-    try {
-      final decoded = await client.get('ai/status', auth: false);
-      return decoded is Map<String, dynamic> && decoded['configured'] == true;
-    } catch (_) {
-      return false;
-    }
-  }
 
   /// Sends a structured-output JSON generation request to `POST /api/ai/generate`
   /// on the FitFlow API backend. Throws [OpenAiException] on any failure.
@@ -133,6 +121,14 @@ class OpenAiService {
     } on ApiException catch (e) {
       debugPrint('Backend AI ${e.statusCode}: ${e.message}');
       throw OpenAiException(errorCodeFor(e));
+    } on IOException catch (e) {
+      // TLS failures (captive portals, …) are not wrapped by ApiClient.
+      debugPrint('Backend AI unreachable: $e');
+      throw const OpenAiException('offline');
+    } catch (e) {
+      // e.g. secure storage failing to read the token.
+      debugPrint('Backend AI unexpected: $e');
+      throw const OpenAiException('invalid-response');
     }
     if (decoded is Map<String, dynamic>) return decoded;
     throw const OpenAiException('invalid-response');
@@ -145,8 +141,11 @@ class OpenAiService {
     if (e.isNetwork) return e.timedOut ? 'timeout' : 'offline';
     if (_backendCodes.contains(e.message)) return e.message;
     return switch (e.statusCode!) {
+      // A success whose body could not be read.
+      < 300 => 'invalid-response',
       // The session ended (or never started): only signing in helps.
       401 => 'signed-out',
+      403 => 'unauthorized',
       429 => 'rate-limited',
       503 => 'not-configured',
       504 => 'timeout',

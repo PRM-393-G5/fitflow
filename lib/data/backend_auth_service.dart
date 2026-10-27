@@ -195,7 +195,9 @@ String describeAuthError(Object error) {
   }
   if (error is ApiException) {
     if (error.isNetwork) return 'Cannot reach the FitFlow server.';
-    if (error.statusCode == 403 && error.message == 'Account is locked') {
+    // 403 alone also means a failed re-authentication (account deletion).
+    if (error.statusCode == 403 &&
+        error.message.toLowerCase().contains('locked')) {
       return 'This account has been locked by an administrator.';
     }
     return switch (error.statusCode) {
