@@ -61,7 +61,7 @@ class PushupAnalyzer implements RepAnalyzer {
   @override
   int get repetitions => _repetitions;
   @override
-  String get countLabel => 'SỐ REP';
+  String get countLabel => 'REPS';
 
   @override
   List<RepRecord> get repRecords => _repRecords;
@@ -117,10 +117,10 @@ class PushupAnalyzer implements RepAnalyzer {
         repetitions: _repetitions,
         score: 0,
         cue: !armVisible
-            ? 'Lùi ra để thấy cánh tay'
+            ? 'Step back so your arms are in view'
             : headOn
-            ? 'Xoay người nằm ngang so với camera'
-            : 'Giữ thân nằm ngang để bắt đầu',
+            ? 'Lie side-on to the camera'
+            : 'Get your body horizontal to start',
         // Lying on the floor the user can't read the screen: say it.
         tone: headOn ? CueTone.warn : CueTone.info,
         bodyVisible: false,
@@ -190,20 +190,20 @@ class PushupAnalyzer implements RepAnalyzer {
         ? betweenRepsCue(last)
         : null;
     final (cue, tone) = sagging
-        ? ('Đừng để hông xệ', CueTone.warn)
+        ? ('Keep your hips from sagging', CueTone.warn)
         : piking
-        ? ('Hạ hông thấp hơn', CueTone.warn)
+        ? ('Lower your hips', CueTone.warn)
         : _phase == SquatPhase.findingBody
-        ? ('Duỗi thẳng tay để bắt đầu', CueTone.info)
+        ? ('Straighten your arms to start', CueTone.info)
         : _phase == SquatPhase.descending
-        ? ('Hạ ngực thấp hơn', CueTone.info)
+        ? ('Lower your chest more', CueTone.info)
         : _phase == SquatPhase.bottom
-        ? ('Đẩy lên', CueTone.good)
+        ? ('Push up', CueTone.good)
         : between != null
         ? (between.cue, between.tone)
         : _phase == SquatPhase.standing
-        ? ('Sẵn sàng, bắt đầu hít đất', CueTone.info)
-        : ('Giữ nhịp đều', CueTone.info);
+        ? ('Ready, start your push-ups', CueTone.info)
+        : ('Keep a steady pace', CueTone.info);
 
     return SquatAnalysis(
       phase: _phase,
@@ -217,7 +217,7 @@ class PushupAnalyzer implements RepAnalyzer {
       nextRepTip: between?.tip,
       bodyVisible: true,
       kneeAngle: _elbow,
-      label: _phase == SquatPhase.standing ? 'Ở đỉnh' : null,
+      label: _phase == SquatPhase.standing ? 'At the top' : null,
     );
   }
 

@@ -6,9 +6,9 @@ abstract interface class FormVoice {
   Future<void> stop();
 }
 
-/// Device text-to-speech in Vietnamese. Fails silently: a phone without a
-/// TTS engine or a Vietnamese voice must never break the form check, and
-/// reading Vietnamese cues with another language's voice is worse than
+/// Device text-to-speech in English. Fails silently: a phone without a
+/// TTS engine or an English voice must never break the form check, and
+/// reading English cues with another language's voice is worse than
 /// silence.
 class TtsFormVoice implements FormVoice {
   /// How long a failed setup waits before trying again. The Android engine
@@ -27,8 +27,8 @@ class TtsFormVoice implements FormVoice {
   Future<bool> _init() async {
     try {
       final tts = _tts ??= FlutterTts();
-      if (await tts.isLanguageAvailable('vi-VN') != true) return false;
-      await tts.setLanguage('vi-VN');
+      if (await tts.isLanguageAvailable('en-US') != true) return false;
+      await tts.setLanguage('en-US');
       await tts.setSpeechRate(.55);
       return true;
     } catch (_) {

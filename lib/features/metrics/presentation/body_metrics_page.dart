@@ -1,16 +1,20 @@
+import 'dart:math' as math;
+
 import 'package:clock/clock.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
 
 import '../../../app/app_controller.dart';
 import '../../../app/app_scope.dart';
+import '../../../core/formatting.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../../domain/body_metrics.dart';
 import '../../../domain/models/body_weight_entry.dart';
 import '../../../domain/training_options.dart';
-import '../../../core/widgets/app_card.dart';
 
 class BodyMetricsPage extends StatelessWidget {
   const BodyMetricsPage({super.key});
@@ -21,13 +25,8 @@ class BodyMetricsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final entries = controller.weightEntries;
-    final unit = controller.useMetric ? 'kg' : 'lb';
-    double display(double kg) => controller.useMetric ? kg : kg / _kgPerLb;
-
+    final metric = controller.useMetric;
     final latest = entries.isEmpty ? null : entries.last;
-    final delta = entries.length < 2
-        ? null
-        : entries.last.weightKg - entries[entries.length - 2].weightKg;
 
     return FScaffold(
       header: FHeader.nested(
@@ -38,100 +37,48 @@ class BodyMetricsPage extends StatelessWidget {
       ),
       child: ResponsiveContent(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AppCard(
-              style: .delta(
-                decoration: .boxDelta(
-                  color: context.theme.colors.secondary,
-                  border: Border.all(width: 0, color: Colors.transparent),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Current weight'),
-                        Text(
-                          latest == null
-                              ? '—'
-                              : '${display(latest.weightKg).toStringAsFixed(1)} $unit',
-                          style: Theme.of(context).textTheme.displaySmall
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        if (delta != null)
-                          Text(
-                            '${delta >= 0 ? '+' : ''}${display(delta).toStringAsFixed(1)} $unit vs last entry',
-                          ),
-                      ],
-                    ),
-                  ),
-                  const Icon(FLucideIcons.weight, size: 56),
-                ],
-              ),
+            _CurrentWeight(
+              latest: latest,
+              metric: metric,
+              onLog: () => _logWeight(context, controller),
             ),
-            const SizedBox(height: AppSpacing.md),
-            _BodyProfileCard(latestKg: latest?.weightKg),
-            const SizedBox(height: AppSpacing.lg),
             if (entries.length >= 2) ...[
-              Text('Trend', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: AppSpacing.lg),
+              const SectionHeader(title: 'Trend'),
               const SizedBox(height: AppSpacing.sm),
               AppCard(
-                child: _WeightTrend(
-                  entries: entries,
-                  metric: controller.useMetric,
-                ),
+                child: _WeightTrend(entries: entries, metric: metric),
               ),
-              const SizedBox(height: AppSpacing.lg),
             ],
-            Text('Log', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: AppSpacing.sm),
-            if (entries.isEmpty)
-              const AppCard(
-                child: Center(child: Text('Log your first weigh-in.')),
-              )
-            else
-              FTileGroup(
-                children: [
-                  for (final entry in entries.reversed)
-                    FTile(
-                      prefix: FAvatar.raw(
-                        child: const Icon(FLucideIcons.weight),
-                      ),
-                      title: Text(
-                        '${display(entry.weightKg).toStringAsFixed(1)} $unit',
-                      ),
-                      subtitle: Text(_date(entry.date)),
-                      suffix: FButton.icon(
-                        variant: .ghost,
-                        size: .sm,
-                        onPress: () => _confirmRemove(
-                          context,
-                          controller,
-                          entry,
-                          '${display(entry.weightKg).toStringAsFixed(1)} $unit',
-                        ),
-                        child: const Icon(FLucideIcons.trash2),
-                      ),
-                    ),
-                ],
-              ),
             const SizedBox(height: AppSpacing.lg),
-            SizedBox(
-              width: double.infinity,
-              child: FButton(
-                key: const Key('log-weight'),
-                onPress: () => _logWeight(context, controller),
-                prefix: const Icon(FLucideIcons.plus),
-                child: const Text('Log weight'),
+            _BodyProfileCard(latestKg: latest?.weightKg),
+            if (entries.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.lg),
+              _WeightLog(
+                entries: entries,
+                metric: metric,
+                onRemove: (entry, label) =>
+                    _confirmRemove(context, controller, entry, label),
               ),
-            ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  /// "72.5 kg" (or lb), one decimal.
+  static String _weight(double kg, bool metric) =>
+      '${(metric ? kg : kg / _kgPerLb).toStringAsFixed(1)} '
+      '${metric ? 'kg' : 'lb'}';
+
+  /// A change with a real minus sign: "−0.3", "+1.2", "0.0".
+  static String _signed(double kg, bool metric) {
+    final value = (metric ? kg : kg / _kgPerLb).toStringAsFixed(1);
+    if (value == '0.0' || value == '-0.0') return '0.0';
+    return kg < 0 ? '−${value.substring(1)}' : '+$value';
   }
 
   Future<void> _confirmRemove(
@@ -213,6 +160,75 @@ class BodyMetricsPage extends StatelessWidget {
       '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 }
 
+/// The latest weigh-in, how old it is, and the one action the page is
+/// for: logging the next one.
+class _CurrentWeight extends StatelessWidget {
+  const _CurrentWeight({
+    required this.latest,
+    required this.metric,
+    required this.onLog,
+  });
+
+  final BodyWeightEntry? latest;
+  final bool metric;
+  final VoidCallback onLog;
+
+  static String _age(DateTime date) {
+    final now = clock.now();
+    final days = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).difference(DateTime(date.year, date.month, date.day)).inDays;
+    return switch (days) {
+      <= 0 => 'Logged today',
+      1 => 'Logged yesterday',
+      < 60 => 'Logged $days days ago',
+      _ => 'Logged on ${BodyMetricsPage._date(date)}',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
+    final entry = latest;
+    return AppCard(
+      key: const Key('metrics-current'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Current weight',
+            style: textTheme.labelMedium?.copyWith(
+              color: colors.mutedForeground,
+            ),
+          ),
+          Text(
+            entry == null
+                ? '—'
+                : BodyMetricsPage._weight(entry.weightKg, metric),
+            style: textTheme.displaySmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Text(
+            entry == null ? 'No weigh-ins yet' : _age(entry.date),
+            style: textTheme.bodySmall?.copyWith(color: colors.mutedForeground),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          FButton(
+            key: const Key('log-weight'),
+            onPress: onLog,
+            prefix: const Icon(FLucideIcons.plus),
+            child: const Text('Log weight'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Weight entry with inline validation; pops the weight in kg. Owns its
 /// controller so disposal can't race the exit animation.
 class _LogWeightDialog extends StatefulWidget {
@@ -288,9 +304,20 @@ class _BodyProfileCard extends StatelessWidget {
 
   final double? latestKg;
 
+  /// BMI band colour: only the category carries meaning, so only it is
+  /// coloured.
+  static Color? _bmiColor(String category, FColors colors) =>
+      switch (category) {
+        'Normal' => const Color(0xFF16A34A),
+        'Underweight' || 'Overweight' => const Color(0xFFD97706),
+        'Obese' => colors.destructive,
+        _ => null,
+      };
+
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    final colors = context.theme.colors;
     final height = controller.heightCm;
     final age = controller.age;
     final hasProfile = height != null && age != null;
@@ -320,101 +347,150 @@ class _BodyProfileCard extends StatelessWidget {
       );
     }
     final mutedStyle = Theme.of(context).textTheme.bodySmall
-        ?.copyWith(color: context.theme.colors.mutedForeground);
+        ?.copyWith(color: colors.mutedForeground);
 
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Body profile',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              FButton(
-                variant: .ghost,
-                size: .sm,
-                onPress: () => _edit(context),
-                child: Text(hasProfile ? 'Edit' : 'Set up'),
-              ),
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionHeader(
+          title: 'Body profile',
+          action: FButton(
+            variant: .ghost,
+            size: .sm,
+            mainAxisSize: .min,
+            onPress: () => _edit(context),
+            child: Text(hasProfile ? 'Edit' : 'Set up'),
           ),
-          if (!hasProfile)
-            Text(
-              adult
-                  ? 'Add height, age, and sex to compute BMI and TDEE.'
-                  : 'Add your height to compute BMI.',
-            )
-          else ...[
-            Text(
-              '${height.round()} cm'
-              '${controller.useMetric ? '' : ' (${BodyMetrics.feetInches(height)})'}'
-              ' • $age years • ${controller.isMale ? 'Male' : 'Female'}'
-              ' • ${activityLabel(controller.activityLevel)}',
-              style: mutedStyle,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            if (weight == null)
-              Text(
-                adult
-                    ? 'Log your weight to see BMI/BMR/TDEE.'
-                    : 'Log your weight to see BMI.',
-                key: const Key('metrics-weight-hint'),
-              )
-            else ...[
-              Row(
-                children: [
-                  _value(
-                    context,
-                    'BMI',
-                    bmi!.toStringAsFixed(1),
-                    BodyMetrics.bmiCategory(bmi, age: age),
-                  ),
-                  if (adult) ...[
-                    _value(context, 'BMR', '${bmr!.round()} kcal'),
-                    _value(context, 'TDEE', '${tdee!.round()} kcal'),
-                  ],
-                ],
-              ),
-              if (!adult) ...[
-                const SizedBox(height: AppSpacing.xs),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (!hasProfile)
                 Text(
-                  'BMR and TDEE use adult formulas, so they are not shown '
-                  'under ${BodyMetrics.adultAge}.',
-                  key: const Key('metrics-minor-note'),
+                  adult
+                      ? 'Add height, age, and sex to compute BMI and TDEE.'
+                      : 'Add your height to compute BMI.',
+                )
+              else ...[
+                Text(
+                  '${height.round()} cm'
+                  '${controller.useMetric ? '' : ' (${BodyMetrics.feetInches(height)})'}'
+                  ' · $age years · ${controller.isMale ? 'Male' : 'Female'}'
+                  ' · ${activityLabel(controller.activityLevel)}',
                   style: mutedStyle,
                 ),
+                const SizedBox(height: AppSpacing.md),
+                if (weight == null)
+                  Text(
+                    adult
+                        ? 'Log your weight to see BMI/BMR/TDEE.'
+                        : 'Log your weight to see BMI.',
+                    key: const Key('metrics-weight-hint'),
+                  )
+                else ...[
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: AppSpacing.sm,
+                      children: [
+                        () {
+                          final category = BodyMetrics.bmiCategory(
+                            bmi!,
+                            age: age,
+                          );
+                          return _value(
+                            context,
+                            'BMI',
+                            bmi.toStringAsFixed(1),
+                            category,
+                            _bmiColor(category, colors),
+                          );
+                        }(),
+                        if (adult) ...[
+                          _value(
+                            context,
+                            'BMR',
+                            thousands(bmr!),
+                            'kcal at rest',
+                          ),
+                          _value(
+                            context,
+                            'TDEE',
+                            thousands(tdee!),
+                            'kcal per day',
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (!adult) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'BMR and TDEE use adult formulas, so they are not shown '
+                      'under ${BodyMetrics.adultAge}.',
+                      key: const Key('metrics-minor-note'),
+                      style: mutedStyle,
+                    ),
+                  ],
+                ],
               ],
             ],
-          ],
-        ],
-      ),
+          ),
+        ),
+      ],
     );
   }
 
+  /// One equal-width figure: label, value, and what the value means.
   Widget _value(
     BuildContext context,
     String label,
-    String value, [
-    String? caption,
-  ]) => Expanded(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.labelMedium),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.bold),
+    String value,
+    String caption, [
+    Color? captionColor,
+  ]) {
+    final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: colors.muted,
+          borderRadius: BorderRadius.circular(10),
         ),
-        if (caption != null)
-          Text(caption, style: Theme.of(context).textTheme.bodySmall),
-      ],
-    ),
-  );
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: textTheme.labelMedium?.copyWith(
+                color: colors.mutedForeground,
+              ),
+            ),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                style: textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            Text(
+              caption,
+              style: textTheme.bodySmall?.copyWith(
+                color: captionColor ?? colors.mutedForeground,
+                fontWeight: captionColor == null ? null : FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _edit(BuildContext context) {
     final controller = AppScope.of(context);
@@ -600,18 +676,69 @@ class _WeightTrendState extends State<_WeightTrend> {
       for (final entry in widget.entries)
         if (from == null || !entry.date.isBefore(from)) entry,
     ];
-    final unit = widget.metric ? 'kg' : 'lb';
-    String display(double kg) =>
-        (widget.metric ? kg : kg / BodyMetrics.kgPerLb).toStringAsFixed(1);
+    final metric = widget.metric;
+    final unit = metric ? 'kg' : 'lb';
     final colors = context.theme.colors;
-    final labelStyle = Theme.of(context).textTheme.labelSmall
-        ?.copyWith(color: colors.mutedForeground);
+    final textTheme = Theme.of(context).textTheme;
+    final labelStyle = textTheme.labelSmall?.copyWith(
+      color: colors.mutedForeground,
+    );
 
-    double? min;
-    double? max;
-    for (final entry in entries) {
-      if (min == null || entry.weightKg < min) min = entry.weightKg;
-      if (max == null || entry.weightKg > max) max = entry.weightKg;
+    final Widget body;
+    if (entries.length < 2) {
+      body = const SizedBox(
+        height: 160,
+        child: Center(child: Text('Not enough entries in this range.')),
+      );
+    } else {
+      final change = entries.last.weightKg - entries.first.weightKg;
+      final spanDays = entries.last.date.difference(entries.first.date).inDays;
+      final perWeek = spanDays >= 7 ? change / spanDays * 7 : null;
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '${BodyMetricsPage._signed(change, metric)} $unit',
+            key: const Key('metrics-trend-change'),
+            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          Text(
+            'since ${BodyMetricsPage._date(entries.first.date)}'
+            '${perWeek == null ? '' : ' · ${BodyMetricsPage._signed(perWeek, metric)} $unit per week'}',
+            style: textTheme.bodySmall?.copyWith(color: colors.mutedForeground),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(
+            height: 160,
+            child: CustomPaint(
+              painter: _WeightPainter(
+                entries: entries,
+                metric: metric,
+                color: colors.primary,
+                gridColor: colors.border,
+                labelStyle: labelStyle ?? const TextStyle(fontSize: 11),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Padding(
+            padding: const EdgeInsets.only(left: _WeightPainter.axisWidth),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  BodyMetricsPage._date(entries.first.date),
+                  style: labelStyle,
+                ),
+                Text(
+                  BodyMetricsPage._date(entries.last.date),
+                  style: labelStyle,
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
     }
 
     return Column(
@@ -631,67 +758,35 @@ class _WeightTrendState extends State<_WeightTrend> {
           ],
         ),
         const SizedBox(height: AppSpacing.md),
-        if (entries.length < 2)
-          const SizedBox(
-            height: 160,
-            child: Center(child: Text('Not enough entries in this range.')),
-          )
-        else ...[
-          SizedBox(
-            height: 160,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('${display(max!)} $unit', style: labelStyle),
-                    Text('${display(min!)} $unit', style: labelStyle),
-                  ],
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: CustomPaint(
-                    painter: _WeightPainter(
-                      entries: entries,
-                      color: colors.primary,
-                      dotColor: colors.foreground,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                BodyMetricsPage._date(entries.first.date),
-                style: labelStyle,
-              ),
-              Text(BodyMetricsPage._date(entries.last.date), style: labelStyle),
-            ],
-          ),
-        ],
+        body,
       ],
     );
   }
 }
 
+/// The weight line over three faint gridlines (top, middle, bottom of the
+/// range) labelled on the left. Only the latest point is marked: with
+/// daily weigh-ins, a dot per entry is noise.
 class _WeightPainter extends CustomPainter {
   _WeightPainter({
     required this.entries,
+    required this.metric,
     required this.color,
-    required this.dotColor,
+    required this.gridColor,
+    required this.labelStyle,
   }) : signature = Object.hashAll(
          entries.map((entry) => Object.hash(entry.id, entry.weightKg)),
        );
 
+  /// Room on the left for the weight labels; the date row below lines up
+  /// with the plot by the same amount.
+  static const axisWidth = 44.0;
+
   final List<BodyWeightEntry> entries;
+  final bool metric;
   final Color color;
-  final Color dotColor;
+  final Color gridColor;
+  final TextStyle labelStyle;
 
   /// Content hash: the controller mutates its list in place, so identity
   /// comparison would miss edits.
@@ -703,56 +798,160 @@ class _WeightPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const pad = 12.0;
+    const pad = 8.0;
     var min = entries.first.weightKg;
     var max = entries.first.weightKg;
     for (final entry in entries) {
-      if (entry.weightKg < min) min = entry.weightKg;
-      if (entry.weightKg > max) max = entry.weightKg;
+      min = math.min(min, entry.weightKg);
+      max = math.max(max, entry.weightKg);
     }
-    if (min == max) {
-      min -= 1;
-      max += 1;
+    if (max - min < 1) {
+      final mid = (max + min) / 2;
+      min = mid - .5;
+      max = mid + .5;
     }
+    final left = axisWidth;
+    final width = size.width - left - pad;
+    final top = pad;
+    final height = size.height - pad * 2;
+    double y(double kg) => top + (max - kg) / (max - min) * height;
+
+    final grid = Paint()
+      ..color = gridColor
+      ..strokeWidth = 1;
+    for (final kg in [max, (max + min) / 2, min]) {
+      final dy = y(kg);
+      canvas.drawLine(Offset(left, dy), Offset(size.width, dy), grid);
+      final label = TextPainter(
+        text: TextSpan(
+          text: (metric ? kg : kg / BodyMetrics.kgPerLb).toStringAsFixed(1),
+          style: labelStyle,
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: axisWidth - 6);
+      label.paint(
+        canvas,
+        Offset(axisWidth - 6 - label.width, dy - label.height / 2),
+      );
+    }
+
     final firstDay = _dayIndex(entries.first.date);
     final span = _dayIndex(entries.last.date) - firstDay;
-
-    Offset point(int index) => Offset(
-      pad +
-          (span == 0
-              ? 0
-              : (_dayIndex(entries[index].date) - firstDay) /
-                    span *
-                    (size.width - pad * 2)),
-      size.height -
-          pad -
-          (entries[index].weightKg - min) /
-              (max - min) *
-              (size.height - pad * 2),
+    Offset point(BodyWeightEntry entry) => Offset(
+      left +
+          (span == 0 ? 0 : (_dayIndex(entry.date) - firstDay) / span * width),
+      y(entry.weightKg),
     );
 
-    final path = Path()..moveTo(point(0).dx, point(0).dy);
-    for (var i = 1; i < entries.length; i++) {
-      path.lineTo(point(i).dx, point(i).dy);
+    final path = Path()
+      ..moveTo(point(entries.first).dx, point(entries.first).dy);
+    for (final entry in entries.skip(1)) {
+      final p = point(entry);
+      path.lineTo(p.dx, p.dy);
     }
     canvas.drawPath(
       path,
       Paint()
         ..color = color
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5
-        ..strokeJoin = StrokeJoin.round,
+        ..strokeWidth = 2
+        ..strokeJoin = StrokeJoin.round
+        ..strokeCap = StrokeCap.round,
     );
-
-    final dots = Paint()..color = dotColor;
-    for (var i = 0; i < entries.length; i++) {
-      canvas.drawCircle(point(i), 3, dots);
-    }
+    canvas.drawCircle(point(entries.last), 4, Paint()..color = color);
   }
 
   @override
   bool shouldRepaint(_WeightPainter oldDelegate) =>
       oldDelegate.signature != signature ||
+      oldDelegate.metric != metric ||
       oldDelegate.color != color ||
-      oldDelegate.dotColor != dotColor;
+      oldDelegate.gridColor != gridColor;
+}
+
+/// Recent weigh-ins, newest first, each with its change from the one
+/// before. The full list is one tap away; tapping an entry offers to
+/// delete it, so no delete button sits in reach of every scroll.
+class _WeightLog extends StatefulWidget {
+  const _WeightLog({
+    required this.entries,
+    required this.metric,
+    required this.onRemove,
+  });
+
+  /// Sorted oldest first.
+  final List<BodyWeightEntry> entries;
+  final bool metric;
+  final void Function(BodyWeightEntry entry, String label) onRemove;
+
+  @override
+  State<_WeightLog> createState() => _WeightLogState();
+}
+
+class _WeightLogState extends State<_WeightLog> {
+  static const _preview = 5;
+  bool _all = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = widget.entries;
+    final metric = widget.metric;
+    final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
+    final newestFirst = entries.reversed.toList();
+    final shown = _all ? newestFirst : newestFirst.take(_preview).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionHeader(
+          title: 'Log',
+          action: entries.length > _preview
+              ? FButton(
+                  key: const Key('metrics-log-all'),
+                  variant: .ghost,
+                  size: .sm,
+                  mainAxisSize: .min,
+                  onPress: () => setState(() => _all = !_all),
+                  child: Text(
+                    _all ? 'Show less' : 'Show all (${entries.length})',
+                  ),
+                )
+              : null,
+        ),
+        Text(
+          'Tap an entry to delete it.',
+          style: textTheme.bodySmall?.copyWith(color: colors.mutedForeground),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        FTileGroup(
+          children: [
+            for (final entry in shown)
+              () {
+                final index = entries.indexOf(entry);
+                final label = BodyMetricsPage._weight(entry.weightKg, metric);
+                return FTile(
+                  key: Key('weight-entry-${entry.id}'),
+                  title: Text(label),
+                  subtitle: Text(BodyMetricsPage._date(entry.date)),
+                  suffix: index > 0
+                      ? Text(
+                          BodyMetricsPage._signed(
+                            entry.weightKg - entries[index - 1].weightKg,
+                            metric,
+                          ),
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: colors.mutedForeground,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        )
+                      : null,
+                  onPress: () => widget.onRemove(entry, label),
+                );
+              }(),
+          ],
+        ),
+      ],
+    );
+  }
 }

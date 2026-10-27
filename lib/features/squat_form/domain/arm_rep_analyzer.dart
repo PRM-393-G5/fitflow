@@ -156,7 +156,7 @@ abstract class ArmRepAnalyzer implements RepAnalyzer {
   @override
   int get repetitions => _repetitions;
   @override
-  String get countLabel => 'SỐ REP';
+  String get countLabel => 'REPS';
   @override
   List<RepRecord> get repRecords => _repRecords;
 
