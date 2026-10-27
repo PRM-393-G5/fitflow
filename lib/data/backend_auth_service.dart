@@ -195,6 +195,9 @@ String describeAuthError(Object error) {
   }
   if (error is ApiException) {
     if (error.isNetwork) return 'Cannot reach the FitFlow server.';
+    if (error.statusCode == 403 && error.message == 'Account is locked') {
+      return 'This account has been locked by an administrator.';
+    }
     return switch (error.statusCode) {
       401 || 403 => 'Google could not confirm this account — try again.',
       429 => 'Too many attempts — try again in a minute.',

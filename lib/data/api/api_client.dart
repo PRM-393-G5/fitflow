@@ -10,13 +10,21 @@ import 'token_store.dart';
 /// A failed API call. [statusCode] is null when the server was not reached
 /// (offline, DNS, timeout).
 class ApiException implements Exception {
-  const ApiException(this.statusCode, this.message, {this.error});
+  const ApiException(
+    this.statusCode,
+    this.message, {
+    this.error,
+    this.timedOut = false,
+  });
 
   final int? statusCode;
   final String message;
 
   /// The server's `error` reason (e.g. `Unauthorized`), when it sent one.
   final String? error;
+
+  /// The request ran out of time (a network failure, [isNetwork] too).
+  final bool timedOut;
 
   bool get isNetwork => statusCode == null;
   bool get isUnauthorized => statusCode == 401;
@@ -59,8 +67,13 @@ class ApiClient {
   Future<dynamic> get(String path, {bool auth = true}) =>
       _send('GET', path, auth: auth);
 
-  Future<dynamic> post(String path, {Object? body, bool auth = true}) =>
-      _send('POST', path, body: body, auth: auth);
+  /// [timeout] overrides the client's for slow routes (AI generation).
+  Future<dynamic> post(
+    String path, {
+    Object? body,
+    bool auth = true,
+    Duration? timeout,
+  }) => _send('POST', path, body: body, auth: auth, timeout: timeout);
 
   Future<dynamic> put(String path, {Object? body, bool auth = true}) =>
       _send('PUT', path, body: body, auth: auth);
@@ -74,6 +87,7 @@ class ApiClient {
     String path, {
     Object? body,
     required bool auth,
+    Duration? timeout,
   }) async {
     final session = auth ? await tokens.read() : null;
     if (auth && session == null) {
@@ -84,6 +98,7 @@ class ApiClient {
       path,
       body: body,
       accessToken: session?.accessToken,
+      timeout: timeout,
     );
     if (session != null && response.statusCode == 401) {
       final renewed = await _refresh(session);
@@ -93,6 +108,7 @@ class ApiClient {
           path,
           body: body,
           accessToken: renewed.accessToken,
+          timeout: timeout,
         );
       }
     }
@@ -153,6 +169,7 @@ class ApiClient {
     String path, {
     Object? body,
     String? accessToken,
+    Duration? timeout,
   }) async {
     // A leading slash would resolve from the host root and drop `/api/`.
     final relative = path.startsWith('/') ? path.substring(1) : path;
@@ -170,9 +187,13 @@ class ApiClient {
       return await _http
           .send(request)
           .then(http.Response.fromStream)
-          .timeout(timeout);
+          .timeout(timeout ?? this.timeout);
     } on TimeoutException {
-      throw const ApiException(null, 'The server took too long to answer');
+      throw const ApiException(
+        null,
+        'The server took too long to answer',
+        timedOut: true,
+      );
     } on SocketException catch (e) {
       throw ApiException(null, 'No connection to the server: ${e.message}');
     } on http.ClientException catch (e) {

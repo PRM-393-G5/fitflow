@@ -1,23 +1,29 @@
-import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-import 'api/api_config.dart';
+import 'api/api_client.dart';
 
 /// Client for FitFlow's backend AI endpoints (`/api/ai/*`).
 ///
 /// All OpenAI requests and the `OPENAI_API_KEY` secret live on the
 /// `fitflow-api` NestJS server; the mobile app sends prompts/schemas (or
 /// domain payloads) to the backend and receives validated JSON back.
+/// Requests go through the app's [ApiClient], so they carry the signed-in
+/// user's token (refreshed when it expires) and the server can tell who
+/// used which AI feature.
 class OpenAiService {
-  const OpenAiService({this.baseUrl});
+  const OpenAiService({this.api});
 
-  final Uri? baseUrl;
+  /// The client to use; null means [defaultApi].
+  final ApiClient? api;
 
-  Uri get _resolvedBaseUrl => baseUrl ?? ApiConfig.baseUrl;
+  /// The app's shared client, set once in `main`; pages create
+  /// `const OpenAiService()` and use it.
+  static ApiClient? defaultApi;
+
+  ApiClient? get _client => api ?? defaultApi;
 
   static const _dartDefineKey = String.fromEnvironment('OPENAI_API_KEY');
   static const _dartDefineApiUrl = String.fromEnvironment('API_BASE_URL');
@@ -40,19 +46,13 @@ class OpenAiService {
   /// Queries `GET /api/ai/status` on the backend to check whether the server
   /// has `OPENAI_API_KEY` configured.
   Future<bool> checkServerStatus() async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
+    final client = _client;
+    if (client == null) return false;
     try {
-      final req = await client.getUrl(_resolvedBaseUrl.resolve('ai/status'));
-      final res = await req.close().timeout(const Duration(seconds: 10));
-      if (res.statusCode != 200) return false;
-      final body = await res.transform(utf8.decoder).join();
-      final decoded = jsonDecode(body);
+      final decoded = await client.get('ai/status', auth: false);
       return decoded is Map<String, dynamic> && decoded['configured'] == true;
     } catch (_) {
       return false;
-    } finally {
-      client.close(force: true);
     }
   }
 
@@ -123,95 +123,49 @@ class OpenAiService {
     String path,
     Map<String, dynamic> payload,
   ) async {
-    if (!configured) throw const OpenAiException('not-configured');
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 15);
-    try {
-      return await _request(
-        client,
-        uri: _resolvedBaseUrl.resolve(path),
-        payload: payload,
-      ).timeout(_timeout);
-    } on OpenAiException {
-      rethrow;
-    } on TimeoutException {
-      debugPrint('Backend AI timeout');
-      throw const OpenAiException('timeout');
-    } on SocketException catch (e) {
-      debugPrint('Backend AI socket: $e');
-      throw const OpenAiException('offline');
-    } on HandshakeException catch (e) {
-      debugPrint('Backend AI TLS: $e');
-      throw const OpenAiException('offline');
-    } on HttpException catch (e) {
-      debugPrint('Backend AI http: $e');
-      throw const OpenAiException('offline');
-    } catch (e) {
-      debugPrint('Backend AI unexpected: $e');
-      throw const OpenAiException('invalid-response');
-    } finally {
-      client.close(force: true);
+    final client = _client;
+    if (!configured || client == null) {
+      throw const OpenAiException('not-configured');
     }
+    final dynamic decoded;
+    try {
+      decoded = await client.post(path, body: payload, timeout: _timeout);
+    } on ApiException catch (e) {
+      debugPrint('Backend AI ${e.statusCode}: ${e.message}');
+      throw OpenAiException(errorCodeFor(e));
+    }
+    if (decoded is Map<String, dynamic>) return decoded;
+    throw const OpenAiException('invalid-response');
   }
 
-  Future<Map<String, dynamic>> _request(
-    HttpClient client, {
-    required Uri uri,
-    required Map<String, dynamic> payload,
-  }) async {
-    final request = await client.postUrl(uri);
-    request.headers.contentType = ContentType.json;
-    request.write(jsonEncode(payload));
-    final response = await request.close();
-    final body = await response.transform(utf8.decoder).join();
-
-    if (response.statusCode != 200) {
-      final code = _extractErrorCode(body, response.statusCode);
-      throw OpenAiException(code);
-    }
-
-    try {
-      final decoded = jsonDecode(body);
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
-      }
-      throw const OpenAiException('invalid-response');
-    } on FormatException {
-      throw const OpenAiException('invalid-response');
-    }
+  /// The [OpenAiException] code for a failed call: the backend's own code
+  /// when it sent one, else one derived from the status.
+  @visibleForTesting
+  static String errorCodeFor(ApiException e) {
+    if (e.isNetwork) return e.timedOut ? 'timeout' : 'offline';
+    if (_backendCodes.contains(e.message)) return e.message;
+    return switch (e.statusCode!) {
+      // The session ended (or never started): only signing in helps.
+      401 => 'signed-out',
+      429 => 'rate-limited',
+      503 => 'not-configured',
+      504 => 'timeout',
+      >= 500 => 'server-error',
+      final status => 'http-$status',
+    };
   }
 
-  String _extractErrorCode(String body, int statusCode) {
-    try {
-      final decoded = jsonDecode(body);
-      if (decoded is Map<String, dynamic>) {
-        final msg = decoded['message'];
-        if (msg is String && msg.isNotEmpty) {
-          if (const {
-            'not-configured',
-            'refused',
-            'rate-limited',
-            'unauthorized',
-            'server-error',
-            'too-long',
-            'invalid-response',
-            'timeout',
-            'offline',
-          }.contains(msg)) {
-            return msg;
-          }
-        }
-      }
-    } catch (_) {
-      // Fall through to status-code mapping.
-    }
-    if (statusCode == 429) return 'rate-limited';
-    if (statusCode == 503) return 'not-configured';
-    if (statusCode == 504) return 'timeout';
-    if (statusCode == 401 || statusCode == 403) return 'unauthorized';
-    if (statusCode >= 500) return 'server-error';
-    return 'http-$statusCode';
-  }
+  static const _backendCodes = {
+    'not-configured',
+    'refused',
+    'rate-limited',
+    'unauthorized',
+    'server-error',
+    'too-long',
+    'invalid-response',
+    'timeout',
+    'offline',
+  };
 }
 
 /// Sniffs PNG/WebP magic bytes; everything else is sent as JPEG.
@@ -240,6 +194,7 @@ class OpenAiException implements Exception {
     'invalid-response' => 'The AI returned an unexpected answer — try again.',
     'timeout' => 'Request timed out — try again.',
     'offline' => 'Could not reach the FitFlow API server.',
+    'signed-out' => 'Your session has ended — sign in again to use AI.',
     _ => 'Could not generate ($code) — try again.',
   };
 

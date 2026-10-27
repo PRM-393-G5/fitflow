@@ -11,6 +11,7 @@ import 'data/api/token_store.dart';
 import 'data/backend_auth_service.dart';
 import 'data/google_id_tokens.dart';
 import 'data/local_workout_repository.dart';
+import 'data/openai_service.dart';
 import 'data/reminder_service.dart';
 import 'data/remote_workout_repository.dart';
 import 'data/sync_outbox.dart';
@@ -37,6 +38,8 @@ Future<void> main() async {
   // One API client for the whole app: refresh tokens are single-use.
   final tokens = SecureTokenStore();
   final api = ApiClient(baseUrl: ApiConfig.baseUrl, tokens: tokens);
+  // AI calls send the user's token too, so the server knows who used them.
+  OpenAiService.defaultApi = api;
   final auth = BackendAuthService(
     api: api,
     tokens: tokens,
