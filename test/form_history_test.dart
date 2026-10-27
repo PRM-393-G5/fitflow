@@ -192,6 +192,8 @@ void main() {
             formSession(day, [squatForm(day > 3 ? 1 : 5, 5)]),
         ],
       );
+      await tester.tap(find.byKey(const Key('progress-tab-muscles')));
+      await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.byKey(const Key('form-trend-squat')),
         200,
@@ -204,7 +206,7 @@ void main() {
       expect(find.text('Most common: Heels lifted'), findsOneWidget);
     });
 
-    testWidgets('progress has no form section without camera sets', (
+    testWidgets('progress explains form quality without camera sets', (
       tester,
     ) async {
       await pumpPage(
@@ -214,7 +216,14 @@ void main() {
           formSession(1, [null]),
         ],
       );
-      expect(find.text('Form quality'), findsNothing);
+      await tester.tap(find.byKey(const Key('progress-tab-muscles')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.textContaining('Count with camera'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(const Key('form-trend-squat')), findsNothing);
     });
 
     testWidgets('sets with nothing judged are not shown as 0%', (tester) async {
