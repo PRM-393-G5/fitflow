@@ -224,7 +224,14 @@ class HomePage extends StatelessWidget {
           _WeeklyGoalCard(
             done: week.length,
             goal: controller.weeklyGoal,
-            onTap: () => _pickWeeklyGoal(context, controller),
+            fromSchedule: controller.plannedDays > 0,
+            onTap: controller.plannedDays > 0
+                ? () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SchedulePage(),
+                    ),
+                  )
+                : () => _pickWeeklyGoal(context, controller),
           ),
           const SizedBox(height: AppSpacing.sm),
           LayoutBuilder(
@@ -399,11 +406,16 @@ class _WeeklyGoalCard extends StatelessWidget {
   const _WeeklyGoalCard({
     required this.done,
     required this.goal,
+    required this.fromSchedule,
     required this.onTap,
   });
 
   final int done;
   final int goal;
+
+  /// The goal is the weekly schedule's training days, so tapping opens
+  /// the schedule rather than the goal picker.
+  final bool fromSchedule;
   final VoidCallback onTap;
 
   @override
@@ -441,6 +453,9 @@ class _WeeklyGoalCard extends StatelessWidget {
                   Text(
                     done >= goal
                         ? 'Goal reached — nice work.'
+                        : fromSchedule
+                        ? '$done of $goal planned workouts done. Tap to edit '
+                              'your schedule.'
                         : '$done of $goal workouts done. Tap to change your goal.',
                     style: Theme.of(context).textTheme.bodyMedium
                         ?.copyWith(color: colors.mutedForeground),
@@ -449,7 +464,10 @@ class _WeeklyGoalCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.md),
-            Icon(FLucideIcons.pencil, color: colors.mutedForeground),
+            Icon(
+              fromSchedule ? FLucideIcons.calendarDays : FLucideIcons.pencil,
+              color: colors.mutedForeground,
+            ),
           ],
         ),
       ),
