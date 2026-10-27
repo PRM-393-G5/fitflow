@@ -1,79 +1,286 @@
-@startuml FitFlow - Use Case Diagram
-title FitFlow — Use Case Diagram
+@startuml fitflow-usecase-overview
+title FitFlow — Use cases (overview)
 left to right direction
 skinparam packageStyle rectangle
+skinparam actorStyle awesome
 skinparam usecase {
   BackgroundColor #EFEDFB
   BorderColor #6558D3
 }
-skinparam actorStyle awesome
-
-actor "User" as user
-actor "Camera +\nML Kit Pose" as camera << secondary >>
-
-rectangle "FitFlow App" {
-
-  package "Training" {
-    usecase "Onboarding\n(goal, level)" as UC0
-    usecase "View today's workout" as UC1
-    usecase "Browse / filter workouts" as UC2
-    usecase "View workout details" as UC3
-    usecase "Follow a workout\n(complete sets, rest)" as UC4
-    usecase "Build custom workout" as UC5
-    usecase "Set weekly schedule" as UC6
-    usecase "Save session\nto history" as UC7
+actor "User\n(trainee)" as user
+actor "Admin" as admin
+actor "Google\nSign-In" as google <<system>>
+actor "Camera +\nML Kit Pose" as camera <<system>>
+actor "OpenAI\n(GPT models)" as openai <<system>>
+actor "Device OS\n(notifications, share)" as os <<system>>
+rectangle "FitFlow system" {
+  package "Mobile app (Flutter) + FitFlow API" {
+    usecase "Sign in with Google" as o1
+    usecase "Plan workouts" as o2
+    usecase "Do a guided workout" as o3
+    usecase "Check exercise form" as o4
+    usecase "Get AI coaching" as o5
+    usecase "Plan nutrition & log meals" as o6
+    usecase "Track progress & body metrics" as o7
+    usecase "Manage settings & reminders" as o8
+    usecase "Back up & sync data" as o9
   }
-
-  package "AI Form Check" {
-    usecase "Select exercise\nSquat / Push-up / Plank" as UC8
-    usecase "Analyze pose\nin real time" as UC9
-    usecase "Count reps / hold time\n+ score form" as UC10
-  }
-
-  package "Progress Tracking" {
-    usecase "View dashboard\n(heatmap, chart, PRs)" as UC11
-    usecase "View session detail" as UC12
-    usecase "View achievements" as UC13
-    usecase "Log body weight" as UC14
-    usecase "View BMI / BMR / TDEE" as UC15
-    usecase "Share summary" as UC16
-  }
-
-  package "Settings" {
-    usecase "Set workout reminders" as UC17
-    usecase "Theme / units" as UC18
-    usecase "Export data (JSON)" as UC19
-    usecase "Sign in & sync\n(required)" as UC20
+  package "Admin web (React) + admin API" {
+    usecase "Sign in (email & password)" as a1
+    usecase "View statistics dashboard" as a2
+    usecase "Manage users" as a3
+    usecase "Manage workout templates" as a4
+    usecase "Monitor AI usage" as a5
   }
 }
+user -- o1
+user -- o2
+user -- o3
+user -- o4
+user -- o5
+user -- o6
+user -- o7
+user -- o8
+user -- o9
+admin -- a1
+admin -- a2
+admin -- a3
+admin -- a4
+admin -- a5
+o1 -- google
+o4 -- camera
+o5 -- openai
+o6 -- openai
+o8 -- os
+@enduml
 
-user --> UC0
-user --> UC1
-user --> UC2
-user --> UC3
-user --> UC4
-user --> UC5
-user --> UC6
-user --> UC8
-user --> UC11
-user --> UC12
-user --> UC13
-user --> UC14
-user --> UC15
-user --> UC16
-user --> UC17
-user --> UC18
-user --> UC19
-user --> UC20
+@startuml fitflow-usecase-account-data
+title FitFlow — Account & data
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #EFEDFB
+  BorderColor #6558D3
+}
+actor "User" as user
+actor "Google\nSign-In" as google <<system>>
+rectangle "Mobile app + FitFlow API" {
+  usecase "Sign in with Google" as s1
+  usecase "Sign out" as s2
+  usecase "Delete account" as s3
+  usecase "Back up data (JSON)" as s4
+  usecase "See “account locked” message" as s7
+  usecase "Sync data with the cloud" as s5
+  usecase "Re-authenticate with Google" as s6
+  usecase "Export data" as s8
+  usecase "Import data" as s9
+}
+user -- s1
+user -- s2
+user -- s3
+user -- s4
+s1 -- google
+s6 -- google
+s1 ..> s5 : <<include>>\ndownload account data
+s2 ..> s5 : <<include>>\nupload pending changes
+s3 ..> s6 : <<include>>
+s7 ..> s1 : <<extend>>\n[locked by an admin]
+s8 --|> s4
+s9 --|> s4
+note as n1
+  Sign-in is required. Data stays cached on the phone, so it works offline; edits wait in an outbox until they reach the server.
+end note
+@enduml
 
-UC1 ..> UC0 : <<extend>>\nsuggested by goal
-UC1 ..> UC6 : <<extend>>
-UC4 ..> UC7 : <<include>>
-UC8 ..> UC9 : <<include>>
-UC9 ..> UC10 : <<include>>
-UC8 ..> UC7 : <<include>>
-UC15 ..> UC14 : <<include>>
-UC20 ..> UC19 : <<extend>>\nsync backups
+@startuml fitflow-usecase-workout-planning
+title FitFlow — Workout planning
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #EFEDFB
+  BorderColor #6558D3
+}
+actor "User" as user
+actor "OpenAI" as openai <<system>>
+rectangle "Mobile app + FitFlow API" {
+  usecase "Complete onboarding\n(goal, level)" as p1
+  usecase "View today’s workout" as p2
+  usecase "Browse workout library" as p3
+  usecase "Build custom workout" as p4
+  usecase "Plan weekly schedule" as p5
+  usecase "View workout details" as p6
+  usecase "Generate workout with AI" as p7
+}
+user -- p1
+user -- p2
+user -- p3
+user -- p4
+user -- p5
+p6 ..> p3 : <<extend>>
+p7 ..> p4 : <<extend>>
+p7 -- openai
+@enduml
 
-UC9 --> camera
+@startuml fitflow-usecase-training-form-check
+title FitFlow — Training & AI form check
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #EFEDFB
+  BorderColor #6558D3
+}
+actor "User" as user
+actor "Camera +\nML Kit Pose" as camera <<system>>
+actor "OpenAI" as openai <<system>>
+rectangle "Mobile app + FitFlow API" {
+  usecase "Do a guided workout" as t1
+  usecase "See progressive-overload hint" as t2
+  usecase "Save session to history" as t3
+  usecase "Resume saved draft" as t4
+  usecase "Count sets with camera" as t5
+  usecase "Hands-free mode\n(spoken countdowns)" as t6
+  usecase "Check exercise form\n(7 exercises)" as f1
+  usecase "Count reps / hold\n& score form" as f3
+  usecase "Analyze pose in real time" as f2
+  usecase "Review squat set with AI" as f4
+}
+user -- t1
+user -- f1
+t1 ..> t2 : <<include>>
+t1 ..> t3 : <<include>>
+t4 ..> t1 : <<extend>>\n[draft saved]
+t5 ..> t1 : <<extend>>\n[camera-checkable set]
+t6 --|> t5
+t5 ..> f2 : <<include>>
+f1 ..> f3 : <<include>>
+f3 ..> f2 : <<include>>
+f2 -- camera
+f4 ..> f1 : <<extend>>\n[squat]
+f4 -- openai
+@enduml
+
+@startuml fitflow-usecase-nutrition-body-metrics
+title FitFlow — Nutrition & body metrics
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #EFEDFB
+  BorderColor #6558D3
+}
+actor "User" as user
+actor "OpenAI" as openai <<system>>
+rectangle "Mobile app + FitFlow API" {
+  usecase "View nutrition targets" as n1
+  usecase "Update body profile" as n2
+  usecase "Log body weight\n& view trend" as n3
+  usecase "Log a meal" as n5
+  usecase "Generate AI meal plan" as n4
+  usecase "Log from food photo" as n6
+  usecase "Log manually" as n7
+  usecase "Log from meal plan" as n8
+  usecase "Analyze food photo with AI" as n9
+}
+user -- n1
+user -- n2
+user -- n3
+user -- n5
+n4 ..> n1 : <<extend>>
+n4 -- openai
+n6 --|> n5
+n7 --|> n5
+n8 --|> n5
+n6 ..> n9 : <<include>>
+n9 -- openai
+note as n10
+  Targets follow safety limits: calorie floors, no deficit when underweight, none under 18.
+end note
+@enduml
+
+@startuml fitflow-usecase-progress-settings
+title FitFlow — Progress & settings
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #EFEDFB
+  BorderColor #6558D3
+}
+actor "User" as user
+actor "Device OS\n(notifications, share)" as os <<system>>
+rectangle "Mobile app + FitFlow API" {
+  usecase "View progress dashboard" as g1
+  usecase "View muscle map" as g2
+  usecase "View achievements & streak" as g3
+  usecase "View session history" as g4
+  usecase "Set workout reminders" as g6
+  usecase "Change theme & units" as g7
+  usecase "Share summary card" as g5
+  usecase "See exercises behind a muscle" as g9
+  usecase "Edit or delete a session" as g8
+}
+user -- g1
+user -- g2
+user -- g3
+user -- g4
+user -- g6
+user -- g7
+g5 ..> g1 : <<extend>>
+g9 ..> g2 : <<extend>>
+g8 ..> g4 : <<extend>>
+g5 -- os
+g6 -- os
+@enduml
+
+@startuml fitflow-usecase-admin-web
+title FitFlow — Admin web
+left to right direction
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #EFEDFB
+  BorderColor #6558D3
+}
+actor "Admin" as admin
+rectangle "Admin web (React) + admin API" {
+  usecase "Sign in (email & password)" as d0
+  usecase "View statistics dashboard" as d1
+  usecase "Monitor AI usage" as d2
+  usecase "Manage users" as m1
+  usecase "Manage workout templates" as t0
+  usecase "View chart as table" as d4
+  usecase "Choose date range" as d3
+  usecase "Search & filter users" as m2
+  usecase "View user details" as m3
+  usecase "Lock / unlock account" as m4
+  usecase "Delete account & data" as m5
+  usecase "Confirm by typing the email" as m6
+  usecase "Create template" as t1
+  usecase "Edit template" as t2
+  usecase "Reorder templates" as t3
+  usecase "Delete template" as t4
+}
+admin -- d0
+admin -- d1
+admin -- d2
+admin -- m1
+admin -- t0
+d4 ..> d1 : <<extend>>
+d1 ..> d3 : <<include>>
+d2 ..> d3 : <<include>>
+m1 ..> m2 : <<include>>
+m3 ..> m1 : <<extend>>
+m4 ..> m3 : <<extend>>
+m5 ..> m3 : <<extend>>
+m5 ..> m6 : <<include>>
+t1 --|> t0
+t2 --|> t0
+t3 --|> t0
+t4 --|> t0
+note as n1
+  Every admin use case needs a signed-in admin. Locking signs the user out everywhere and blocks sign-in, sync and AI.
+end note
 @enduml
