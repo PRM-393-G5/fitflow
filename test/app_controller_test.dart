@@ -88,6 +88,24 @@ void main() {
     expect(controller.schedule, {2: AppController.restDay});
   });
 
+  test('the weekly goal follows the schedule’s training days', () async {
+    final controller = await controllerWith({});
+    await controller.saveWorkout(plan);
+    await controller.setWeeklyGoal(5);
+    expect(controller.weeklyGoal, 5);
+
+    await controller.setScheduleDay(1, plan.id);
+    await controller.setScheduleDay(3, plan.id);
+    await controller.setScheduleDay(5, AppController.restDay);
+    await controller.setScheduleDay(6, 'custom-missing');
+    expect(controller.plannedDays, 2);
+    expect(controller.weeklyGoal, 2);
+
+    // No planned day left: back to the picked goal.
+    await controller.deleteWorkout(plan.id);
+    expect(controller.weeklyGoal, 5);
+  });
+
   test('rest day suggests no workout', () async {
     final controller = await controllerWith({});
     await controller.saveWorkout(plan);
