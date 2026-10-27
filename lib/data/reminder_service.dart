@@ -4,7 +4,8 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
-/// Schedules weekly repeating workout reminders as local notifications.
+/// Schedules weekly repeating workout reminders as local notifications,
+/// and the one-off alert when a rest or timed set ends in the background.
 class ReminderService {
   final _plugin = FlutterLocalNotificationsPlugin();
 
@@ -16,6 +17,24 @@ class ReminderService {
       importance: Importance.high,
     ),
     iOS: DarwinNotificationDetails(),
+  );
+
+  /// Weekly reminders use ids 1–7 (weekday); the timer alert sits apart.
+  static const _timerId = 100;
+
+  static const _timerChannel = NotificationDetails(
+    android: AndroidNotificationDetails(
+      'workout_timer',
+      'Workout timer',
+      channelDescription:
+          'When a rest or timed set ends while FitFlow is in the background',
+      importance: Importance.max,
+      priority: Priority.high,
+      category: AndroidNotificationCategory.alarm,
+    ),
+    iOS: DarwinNotificationDetails(
+      interruptionLevel: InterruptionLevel.timeSensitive,
+    ),
   );
 
   Future<void> init() async {
@@ -90,7 +109,10 @@ class ReminderService {
     required int minutes,
     required Set<int> days,
   }) async {
-    await _plugin.cancelAll();
+    // Only the weekly ids: a rest alert pending right now must survive.
+    for (var day = 1; day <= 7; day++) {
+      await _plugin.cancel(id: day);
+    }
     if (!enabled) return;
     final hour = minutes ~/ 60;
     final minute = minutes % 60;
@@ -111,6 +133,46 @@ class ReminderService {
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       );
+    }
+  }
+
+  /// Alerts at [at] that a rest or timed set is over. Replaces any earlier
+  /// one. Exact when Android allows it ("Alarms & reminders"); otherwise
+  /// inexact, which may come late but still comes.
+  Future<void> scheduleTimerAlert(
+    DateTime at, {
+    required String title,
+    required String body,
+  }) async {
+    await cancelTimerAlert();
+    if (!at.isAfter(DateTime.now())) return;
+    // A missing alert must never break the workout it belongs to.
+    try {
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      final exact = await android?.canScheduleExactNotifications() ?? true;
+      await _plugin.zonedSchedule(
+        id: _timerId,
+        title: title,
+        body: body,
+        scheduledDate: tz.TZDateTime.from(at, tz.local),
+        notificationDetails: _timerChannel,
+        androidScheduleMode: exact
+            ? AndroidScheduleMode.exactAllowWhileIdle
+            : AndroidScheduleMode.inexactAllowWhileIdle,
+      );
+    } catch (e) {
+      debugPrint('Could not schedule the timer alert: $e');
+    }
+  }
+
+  Future<void> cancelTimerAlert() async {
+    try {
+      await _plugin.cancel(id: _timerId);
+    } catch (e) {
+      debugPrint('Could not cancel the timer alert: $e');
     }
   }
 

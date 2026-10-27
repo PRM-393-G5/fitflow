@@ -68,7 +68,8 @@ class ActiveWorkoutPage extends StatefulWidget {
   State<ActiveWorkoutPage> createState() => _ActiveWorkoutPageState();
 }
 
-class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
+class _ActiveWorkoutPageState extends State<ActiveWorkoutPage>
+    with WidgetsBindingObserver {
   static const _maxReps = SetInput.maxReps;
   static const _maxSeconds = SetInput.maxSeconds;
   static const _maxSets = 20;
@@ -165,6 +166,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Any edit away from the camera's count overrides it: the verdict no
     // longer describes the set, even if the user types the number back.
     _amountCtrl.addListener(() {
@@ -174,7 +176,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       }
     });
     final storedDraft = widget.controller.activeDraft;
-    final draft = widget.initialDraft ??
+    final draft =
+        widget.initialDraft ??
         (storedDraft != null && storedDraft.workout.id == widget.workout.id
             ? storedDraft
             : null);
@@ -254,7 +257,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   }
 
   void _persistDraft() {
-    final hasExtraSets = _exercises.length == widget.workout.exercises.length &&
+    final hasExtraSets =
+        _exercises.length == widget.workout.exercises.length &&
         [
           for (var i = 0; i < _exercises.length; i++)
             _exercises[i].sets != widget.workout.exercises[i].sets,
@@ -283,8 +287,55 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     );
   }
 
+  bool _askedForAlerts = false;
+
+  /// The first rest is when the timer alert starts to matter, so that is
+  /// when notifications are asked for (no prompt once granted).
+  void _askForTimerAlerts() {
+    if (_askedForAlerts) return;
+    _askedForAlerts = true;
+    unawaited(widget.controller.reminders?.requestPermission());
+  }
+
+  /// In the background the ticker can't alert (and a locked phone can't
+  /// buzz from it), so a notification announces the end of a rest or timed
+  /// set; back in the app the ticker takes over again.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final reminders = widget.controller.reminders;
+    if (reminders == null) return;
+    if (state == AppLifecycleState.resumed) {
+      unawaited(reminders.cancelTimerAlert());
+      return;
+    }
+    // A dialog freezes the countdown: its end time isn't real yet.
+    if (state != AppLifecycleState.paused || _dialogOpen) return;
+    final restEnds = _restEndsAt;
+    final holdEnds = _holdEndsAt;
+    if (restEnds != null) {
+      // The position already moved on to the set after the rest.
+      unawaited(
+        reminders.scheduleTimerAlert(
+          restEnds,
+          title: 'Rest is over',
+          body: 'Next: ${_exercise.name}, set ${_setIndex + 1}',
+        ),
+      );
+    } else if (holdEnds != null) {
+      unawaited(
+        reminders.scheduleTimerAlert(
+          holdEnds,
+          title: 'Time is up',
+          body: '${_exercise.name}: set complete',
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(widget.controller.reminders?.cancelTimerAlert());
     _ticker?.cancel();
     _amountCtrl.dispose();
     _weightCtrl.dispose();
@@ -552,6 +603,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       _restEndsAt = widget.clock().add(Duration(seconds: rest));
       _persistDraft();
       _startTicker();
+      _askForTimerAlerts();
     } else {
       _persistDraft();
     }
