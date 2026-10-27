@@ -85,6 +85,10 @@ class CurlAnalyzer extends ArmRepAnalyzer {
       if (arm == null) continue;
       final drop = arm.elbow.y - arm.shoulder.y;
       if (drop <= 0) continue;
+      // Until tracking starts, the reference follows the current frame:
+      // one taken while stepping in close would make the arms never read
+      // as hanging from further back, and so never refresh.
+      if (phase == SquatPhase.findingBody) _hangingDrop[left] = drop;
       final reference = _hangingDrop[left] ?? drop;
       final forearm = reference * _forearmRatio;
       final rise = (arm.elbow.y - arm.wrist.y) / forearm;
