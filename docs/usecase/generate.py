@@ -116,6 +116,7 @@ PAGES.append({
         uc('s7', 'See “account locked” message', C2, 36, 220),
         uc('s5', 'Sync data with the cloud', C2, 150, 220),
         uc('s6', 'Re-authenticate with Google', C2, 330, 220),
+        uc('s10', 'Discard unsynced changes', C2, 262, 220, 46),
         uc('s8', 'Export data', C2, 430, 180, 46),
         uc('s9', 'Import data', C2, 520, 180, 46),
         box('note', 'n1', 'Sign-in is required. Data stays cached on the phone, so it works offline; edits wait in an outbox until they reach the server.', 600, 610, 300, 80),
@@ -131,6 +132,7 @@ PAGES.append({
         ('include', 's2', 's5', '«include»\nupload pending changes'),
         ('include', 's3', 's6', '«include»'),
         ('extend', 's7', 's1', '«extend»\n[locked by an admin]'),
+        ('extend', 's10', 's2', '«extend»\n[upload failed, user confirms]'),
         ('gen', 's8', 's4', ''),
         ('gen', 's9', 's4', ''),
         ('assoc', 's8', 'os', ''),
@@ -182,7 +184,7 @@ PAGES.append({
     'edges': [
         ('assoc', 'user', 't1', ''),
         ('assoc', 'user', 'f1', ''),
-        ('include', 't1', 't2', '«include»'),
+        ('extend', 't2', 't1', '«extend»\n[earlier sessions exist]'),
         ('include', 't1', 't3', '«include»'),
         ('extend', 't4', 't1', '«extend»\n[draft saved]'),
         ('extend', 't5', 't1', '«extend»\n[camera-checkable set]'),
@@ -232,7 +234,7 @@ PAGES.append({
     'shapes': [
         box('boundary', 'sys', 'Mobile app + FitFlow API', 220, 20, 660, 620),
         actor('user', 'User', 90, 300),
-        actor('os', 'Device OS\n(notifications, share)', 1000, 300, system=True),
+        actor('os', 'Device OS\n(notifications, share)', 1000, 480 + 23 - 36, system=True),
         uc('g1', 'View progress dashboard', C1, 60, 220),
         uc('g2', 'View muscle map', C1, 160, 220),
         uc('g3', 'View achievements & streak', C1, 260, 220),
@@ -283,7 +285,7 @@ PAGES.append({
         ('extend', 'd4', 'd2', '«extend»'),
         ('include', 'd1', 'd3', '«include»'),
         ('include', 'd2', 'd3', '«include»'),
-        ('include', 'm1', 'm2', '«include»'),
+        ('extend', 'm2', 'm1', '«extend»'),
         ('extend', 'm3', 'm1', '«extend»'),
         ('extend', 'm4', 'm3', '«extend»'),
         ('extend', 'm5', 'm3', '«extend»'),
@@ -300,7 +302,7 @@ def drawio(pages):
     for index, page in enumerate(pages):
         width = max(s[3] + s[5] for s in page['shapes']) + 60
         height = max(s[4] + s[6] for s in page['shapes']) + 80
-        out.append(f'  <diagram name="{escape(page["name"])}" id="fitflow-uc-{index + 1}">')
+        out.append(f'  <diagram name="{escape(page["name"], {chr(34): "&quot;"})}" id="fitflow-uc-{index + 1}">')
         out.append(f'    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="{width}" pageHeight="{height}" math="0" shadow="0">')
         out.append('      <root>')
         out.append('        <mxCell id="0" />')
@@ -345,14 +347,13 @@ def plantuml(pages):
         out.append('skinparam packageStyle rectangle')
         out.append('skinparam actorStyle awesome')
         out.append('skinparam usecase {\n  BackgroundColor #EFEDFB\n  BorderColor #6558D3\n}')
-        shapes = {s[1]: s for s in page['shapes']}
         plain = lambda label: label.replace('\n', '\\n')
         for kind, id, label, *_ in page['shapes']:
             if kind == 'actor':
                 out.append(f'actor "{plain(label)}" as {id}')
             elif kind == 'system':
                 out.append(f'actor "{plain(label)}" as {id} <<system>>')
-        containers = [s for s in page['shapes'] if s[0] in ('package',)]
+        containers = [s for s in page['shapes'] if s[0] == 'package']
 
         def inside(shape, box):
             _, _, _, x, y, w, h = shape
@@ -391,8 +392,8 @@ def plantuml(pages):
 
 
 if __name__ == '__main__':
-    with open(sys.argv[1], 'w') as f:
+    with open(sys.argv[1], 'w', encoding='utf-8') as f:
         f.write(drawio(PAGES))
-    with open(sys.argv[2], 'w') as f:
+    with open(sys.argv[2], 'w', encoding='utf-8') as f:
         f.write(plantuml(PAGES))
     print('pages:', len(PAGES), 'use cases:', sum(1 for p in PAGES for s in p['shapes'] if s[0] == 'uc'))
