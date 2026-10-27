@@ -15,7 +15,7 @@ import '../../../domain/muscle_volume.dart';
 class SchedulePage extends StatelessWidget {
   const SchedulePage({super.key});
 
-  static const _dayNames = [
+  static const dayNames = [
     'Monday',
     'Tuesday',
     'Wednesday',
@@ -203,7 +203,7 @@ class _DayRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  SchedulePage._dayNames[weekday - 1],
+                  SchedulePage.dayNames[weekday - 1],
                   style: Theme.of(sheetContext).textTheme.titleLarge
                       ?.copyWith(fontWeight: FontWeight.bold),
                 ),
@@ -297,7 +297,7 @@ class _DayRow extends StatelessWidget {
     return Semantics(
       button: true,
       label:
-          '${SchedulePage._dayNames[weekday - 1]}'
+          '${SchedulePage.dayNames[weekday - 1]}'
           '${isToday ? ', today' : ''}: $title',
       excludeSemantics: true,
       child: DecoratedBox(
