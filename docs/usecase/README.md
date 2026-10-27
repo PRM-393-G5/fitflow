@@ -21,3 +21,6 @@ generalization (hollow triangle) for kinds of a use case.
 `docs/usecase.puml` has the same model as PlantUML (automatic layout).
 Both files are generated from `generate.py`: edit the model there and run
 `python3 docs/usecase/generate.py docs/usecase.drawio docs/usecase.puml`.
+Then refresh the PNGs: open `docs/usecase.drawio` in draw.io and, for each
+page, File → Export as → PNG (border 10, transparent background off),
+saving over the matching file here.
