@@ -221,8 +221,9 @@ class AppController extends ChangeNotifier {
     if (lastUid == uid) return;
     if (lastUid != null) await _clearUserData();
     // lastUid == null → data from before sign-in was required (the old
-    // guest mode): keep it so it uploads to this account. Its sessions/plans/weights merge by id; an
-    // existing cloud profile wins (see [_mergeMeta]).
+    // guest mode): keep it so it uploads to this account. Its sessions,
+    // plans and weights merge by id; an existing cloud profile wins (see
+    // [_mergeMeta]).
     await preferences.setString(_syncUidKey, uid);
   }
 
