@@ -431,33 +431,25 @@ class _AccountSection extends StatelessWidget {
       action: 'Delete account',
     );
     if (!confirmed || !context.mounted) return;
-    // Deleting signs out, which replaces this page with the login page:
-    // keep the app-wide toaster to confirm on.
+    // Deleting signs out, which can replace this page with the login page
+    // before it returns: report on the app-wide toaster instead.
     final toaster = FToaster.of(context);
+    void toast(String title, [String? description]) => toaster.show(
+      builder: (_, _) => FToast(
+        title: Text(title),
+        description: description == null ? null : Text(description),
+      ),
+    );
     try {
       await controller.deleteAccount();
-      toaster.show(
-        builder: (_, _) => const FToast(title: Text('Account deleted.')),
-      );
+      toast('Account deleted.');
     } on GoogleSignInException catch (e) {
       // Cancelled the confirmation login: nothing was deleted.
       if (e.code == GoogleSignInExceptionCode.canceled) return;
-      if (context.mounted) {
-        showFToast(
-          context: context,
-          title: const Text('Could not delete the account'),
-          description: Text(describeAuthError(e)),
-        );
-      }
+      toast('Could not delete the account', describeAuthError(e));
     } catch (e) {
       debugPrint('Delete account failed: $e');
-      if (context.mounted) {
-        showFToast(
-          context: context,
-          title: const Text('Could not delete the account'),
-          description: Text(describeDeleteError(e)),
-        );
-      }
+      toast('Could not delete the account', describeDeleteError(e));
     }
   }
 

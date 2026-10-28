@@ -101,6 +101,22 @@ void main() {
     expect(find.byType(LoginPage), findsOneWidget);
   });
 
+  testWidgets('routes over the login page survive app updates', (tester) async {
+    final controller = await signedOutApp({});
+    await pumpGate(tester, controller);
+    tester
+        .state<NavigatorState>(find.byType(Navigator))
+        .push(
+          MaterialPageRoute<void>(builder: (_) => const Text('over login')),
+        );
+    await tester.pumpAndSettle();
+
+    await controller.setThemeMode(ThemeMode.dark);
+    await tester.pumpAndSettle();
+
+    expect(find.text('over login'), findsOneWidget);
+  });
+
   test('delete errors explain a wrong Google account', () {
     expect(
       describeDeleteError(
