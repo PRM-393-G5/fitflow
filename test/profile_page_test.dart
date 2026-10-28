@@ -69,14 +69,16 @@ void main() {
       'reminder_v1': '{"enabled":true,"minutes":1080,"days":[5,1,3]}',
     });
 
-    for (final label in ['TRAINING', 'PREFERENCES', 'DATA', 'ACCOUNT']) {
+    for (final label in ['TRAINING', 'PREFERENCES', 'DATA']) {
       expect(find.text(label), findsOneWidget);
     }
+    // No auth service here, so no account to show.
+    expect(find.text('ACCOUNT'), findsNothing);
     expect(find.text('172 cm · 22 y · 72.5 kg · Moderate'), findsOneWidget);
     expect(find.text('Build muscle · Intermediate'), findsOneWidget);
     expect(find.text('2 workout days · Mon, Wed'), findsOneWidget);
     expect(find.text('18:00 · Mon, Wed, Fri'), findsOneWidget);
-    expect(find.text('Guest · data stays on this device'), findsOneWidget);
+    expect(find.textContaining('Guest'), findsNothing);
   });
 
   testWidgets('edits goal and level in place', (tester) async {
