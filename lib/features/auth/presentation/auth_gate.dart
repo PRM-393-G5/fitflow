@@ -23,7 +23,16 @@ class AuthGate extends StatelessWidget {
       stream: auth.userChanges,
       initialData: auth.currentUser,
       builder: (context, snapshot) {
-        return snapshot.data != null ? const AppShell() : const LoginPage();
+        if (snapshot.data != null) return const AppShell();
+        // Signed out (an expired session, sign-out, account deletion):
+        // close pages pushed over the shell too, or they would stay on top
+        // of the login page with no account to save to.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (context.mounted) {
+            Navigator.of(context).popUntil((route) => route.isFirst);
+          }
+        });
+        return const LoginPage();
       },
     );
   }
