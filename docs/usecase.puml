@@ -43,7 +43,7 @@ rectangle "FitFlow App" {
     usecase "Set workout reminders" as UC17
     usecase "Theme / units" as UC18
     usecase "Export data (JSON)" as UC19
-    usecase "Sign in & sync\n(optional)" as UC20
+    usecase "Sign in & sync\n(required)" as UC20
   }
 }
 

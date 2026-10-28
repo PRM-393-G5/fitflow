@@ -31,7 +31,6 @@ class AppController extends ChangeNotifier {
   static const _metaTsKey = 'meta_updated_at';
   static const _syncUidKey = 'sync_uid';
   static const _metaPulledKey = 'meta_pulled_uid';
-  static const _skipSignInKey = 'sign_in_skipped_v1';
 
   /// Feature-owned keys holding per-user data (nutrition cache, food
   /// log, and active workout draft); wiped with the rest of the user's
@@ -104,9 +103,6 @@ class AppController extends ChangeNotifier {
   String? level;
 
   int weeklyGoal = 3;
-
-  /// The user chose to use the app without an account.
-  bool get signInSkipped => preferences.getBool(_skipSignInKey) ?? false;
 
   bool get signedIn {
     final repo = repository;
@@ -224,8 +220,8 @@ class AppController extends ChangeNotifier {
     final lastUid = preferences.getString(_syncUidKey);
     if (lastUid == uid) return;
     if (lastUid != null) await _clearUserData();
-    // lastUid == null → data created signed out (guest): keep it so it
-    // uploads to this account. Its sessions/plans/weights merge by id; an
+    // lastUid == null → data from before sign-in was required (the old
+    // guest mode): keep it so it uploads to this account. Its sessions/plans/weights merge by id; an
     // existing cloud profile wins (see [_mergeMeta]).
     await preferences.setString(_syncUidKey, uid);
   }
@@ -954,12 +950,6 @@ class AppController extends ChangeNotifier {
     return imported.length + plans.length + weights.length;
   }
 
-  /// Marks that the user continues without an account (local-only).
-  Future<void> skipSignIn() async {
-    await preferences.setBool(_skipSignInKey, true);
-    notifyListeners();
-  }
-
   /// Signs out and removes the account's data from this device (it stays
   /// in the cloud). Returns false without signing out when some changes
   /// have not reached the server yet, unless [force] — signing out would
@@ -977,7 +967,6 @@ class AppController extends ChangeNotifier {
     await auth?.signOut();
     await _clearUserData();
     await preferences.remove(_syncUidKey);
-    await preferences.remove(_skipSignInKey);
     await load();
     return true;
   }
@@ -998,11 +987,11 @@ class AppController extends ChangeNotifier {
     if (repo is RemoteWorkoutRepository) await repo.discardPendingWrites(uid);
     await _clearUserData();
     await preferences.remove(_syncUidKey);
-    await preferences.remove(_skipSignInKey);
     await load();
   }
 
-  /// Deletes all data on this device while signed out (guest mode).
+  /// Wipes this device's user data, as a sign-out does (tests only).
+  @visibleForTesting
   Future<void> clearLocalData() async {
     await _clearUserData();
     await load();
