@@ -63,6 +63,14 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  patrol: ^4.10.0
+
+# End-to-end tests on a real Android device (patrol_test/, run with
+# `patrol test`). See README → End-to-end tests.
+patrol:
+  app_name: FitFlow
+  android:
+    package_name: com.zcode9211.prm
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
