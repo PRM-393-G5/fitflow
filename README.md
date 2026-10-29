@@ -50,6 +50,8 @@ The debug Android APK is generated at:
 build/app/outputs/flutter-apk/app-debug.apk
 ```
 
+End-to-end tests on a real phone are separate: see **End-to-end tests**.
+
 For a distributable Android release, configure a production application ID and release signing before running `flutter build apk --release` or `flutter build appbundle --release`.
 
 ## MVP features
@@ -100,6 +102,46 @@ first and go out through a persisted outbox, so offline edits are not
 lost. Access rules (public templates, each user limited to their own
 data) are enforced by the API. Details and the migration history:
 [`docs/backend-migration.md`](docs/backend-migration.md).
+
+## End-to-end tests
+
+`patrol_test/` drives the real app on an Android phone with
+[Patrol](https://patrol.leancode.co): it taps through the screens, handles
+native UI (Google's account picker, permission dialogs), and checks with
+the API that the data really reached the server.
+
+| Test | Covers |
+| --- | --- |
+| `auth_test.dart` | Google sign-in, the account shown in Profile, sign-out revoking the session |
+| `workout_test.dart` | Full Body Foundation: log a set, finish, session synced, shown in History, deleted |
+| `nutrition_test.dart` | The meal form refuses bad input; a two-dish meal with macros adds up on the day card and syncs; editing the portion, moving it to another meal, re-logging it from recent foods; removed |
+| `body_metrics_test.dart` | Log today's weight, synced, deleted (a real weigh-in for today is put back) |
+| `form_check_test.dart` | AI Form Check: camera permission, camera preview opens and closes |
+| `planning_test.dart` | Onboarding as a new account (goal and level, Home's plan follows); the weekly schedule shown the same on Schedule, Workouts, Home, the weekly goal and Profile, and synced |
+| `settings_test.dart` | Goal & level, kg/lb and theme from Profile; reminders scheduled on the chosen days; Sync pulling a meal logged elsewhere; export, and import refusing a bad file |
+
+Before running:
+
+1. The API is running with its templates seeded (see **Backend API**) and
+   `API_BASE_URL` in `.env` is the computer's LAN address.
+2. The phone is connected (`adb devices`) and signed in to a Google
+   account. Every test clears the app's data first, so afterwards the app
+   on the phone is signed out.
+3. Patrol CLI is installed: `flutter pub global activate patrol_cli`, with
+   `~/.pub-cache/bin` on `PATH`.
+
+```sh
+patrol test --device <adb-id> --dart-define=E2E_GOOGLE_ACCOUNT=you@gmail.com
+patrol test --device <adb-id> -t patrol_test/workout_test.dart   # one file
+```
+
+Without `E2E_GOOGLE_ACCOUNT` the first account in Google's picker is
+used. The tests run against that account's real data: they only touch
+entries they create (names like `E2E dish 123456`) and delete them
+again — through the API if a test fails after the entry reached the
+server. Tests that change the goal, onboarding or weekly schedule put
+the account's originals back when they end, pass or fail. Keep people
+out of the camera's view during the form check, or it may count a rep.
 
 ## Architecture and directories
 
