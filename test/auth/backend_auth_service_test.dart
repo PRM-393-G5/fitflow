@@ -338,5 +338,16 @@ void main() {
       );
       expect(describeAuthError(StateError('?')), 'Sign-in failed — try again.');
     });
+
+    test('tells a locked account apart from a rejected Google token', () {
+      expect(
+        describeAuthError(const ApiException(403, 'Account is locked')),
+        'This account has been locked by an administrator.',
+      );
+      expect(
+        describeAuthError(const ApiException(401, 'Invalid Google ID token')),
+        contains('Google could not confirm'),
+      );
+    });
   });
 }

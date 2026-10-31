@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prm/data/api/api_client.dart';
+import 'package:prm/data/api/token_store.dart';
 import 'package:prm/data/openai_service.dart';
 
 void main() {
@@ -11,13 +13,23 @@ void main() {
   Object nextBody = <String, dynamic>{};
   Map<String, dynamic>? lastPayload;
   String? lastPath;
+  String? lastAuthorization;
+  late MemoryTokenStore tokens;
+
+  OpenAiService service_() => OpenAiService(
+    api: ApiClient(baseUrl: baseUrl, tokens: tokens),
+  );
 
   setUp(() async {
     OpenAiService.debugConfiguredOverride = true;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     baseUrl = Uri.parse('http://127.0.0.1:${server.port}/api/');
+    tokens = MemoryTokenStore(
+      const ApiTokens(accessToken: 'access-1', refreshToken: 'refresh-1'),
+    );
     server.listen((HttpRequest req) async {
       lastPath = req.uri.path;
+      lastAuthorization = req.headers.value('authorization');
       final raw = await utf8.decoder.bind(req).join();
       lastPayload = raw.isEmpty
           ? null
@@ -41,7 +53,7 @@ void main() {
       'tips': ['Brace core before descent'],
     };
 
-    final service = OpenAiService(baseUrl: baseUrl);
+    final service = service_();
     final result = await service.generateJson(
       system: 'sys',
       user: 'usr',
@@ -51,6 +63,7 @@ void main() {
     );
 
     expect(lastPath, '/api/ai/generate');
+    expect(lastAuthorization, 'Bearer access-1');
     expect(lastPayload?['schemaName'], 'form_review');
     expect(lastPayload?['imageMimeType'], 'image/png');
     expect(result['summary'], 'Consistent depth across reps.');
@@ -59,7 +72,7 @@ void main() {
   test(
     'domain helpers call workout-plan, meal-plan, food-photo and form-review',
     () async {
-      final service = OpenAiService(baseUrl: baseUrl);
+      final service = service_();
 
       nextStatus = 200;
       nextBody = {'name': 'Upper Push'};
@@ -103,7 +116,7 @@ void main() {
   );
 
   test('maps backend error bodies to OpenAiException codes', () async {
-    final service = OpenAiService(baseUrl: baseUrl);
+    final service = service_();
 
     nextStatus = 422;
     nextBody = {
@@ -138,5 +151,28 @@ void main() {
         isA<OpenAiException>().having((e) => e.code, 'code', 'not-configured'),
       ),
     );
+  });
+
+  test('a signed-out user is told to sign in, without a request', () async {
+    await tokens.clear();
+    lastPath = null;
+    await expectLater(
+      service_().generateWorkoutPlan(request: 'legs'),
+      throwsA(
+        isA<OpenAiException>().having((e) => e.code, 'code', 'signed-out'),
+      ),
+    );
+    expect(lastPath, isNull);
+  });
+
+  test('derives codes from the status when the backend sent none', () {
+    String code(ApiException e) => OpenAiService.errorCodeFor(e);
+    expect(code(const ApiException(null, 'x', timedOut: true)), 'timeout');
+    expect(code(const ApiException(null, 'No connection')), 'offline');
+    expect(code(const ApiException(401, 'Unauthorized')), 'signed-out');
+    expect(code(const ApiException(429, 'Too Many')), 'rate-limited');
+    expect(code(const ApiException(502, 'unauthorized')), 'unauthorized');
+    expect(code(const ApiException(500, 'boom')), 'server-error');
+    expect(code(const ApiException(418, 'teapot')), 'http-418');
   });
 }
