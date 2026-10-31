@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app/app_controller.dart';
@@ -11,6 +14,7 @@ import 'data/api/token_store.dart';
 import 'data/backend_auth_service.dart';
 import 'data/google_id_tokens.dart';
 import 'data/local_workout_repository.dart';
+import 'data/openai_service.dart';
 import 'data/reminder_service.dart';
 import 'data/remote_workout_repository.dart';
 import 'data/sync_outbox.dart';
@@ -36,7 +40,16 @@ Future<void> main() async {
 
   // One API client for the whole app: refresh tokens are single-use.
   final tokens = SecureTokenStore();
-  final api = ApiClient(baseUrl: ApiConfig.baseUrl, tokens: tokens);
+  final api = ApiClient(
+    baseUrl: ApiConfig.baseUrl,
+    tokens: tokens,
+    // Give up connecting after 15 s, even on slow AI calls (95 s budget).
+    httpClient: IOClient(
+      HttpClient()..connectionTimeout = const Duration(seconds: 15),
+    ),
+  );
+  // AI calls send the user's token too, so the server knows who used them.
+  OpenAiService.defaultApi = api;
   final auth = BackendAuthService(
     api: api,
     tokens: tokens,

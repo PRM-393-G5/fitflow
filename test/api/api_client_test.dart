@@ -132,6 +132,42 @@ void main() {
     );
   });
 
+  test('TLS failures are network errors too', () async {
+    final client = clientWith(
+      (_) async => throw const HandshakeException('captive portal'),
+    );
+    await expectLater(
+      client.get('templates', auth: false),
+      throwsA(isA<ApiException>().having((e) => e.isNetwork, 'network', true)),
+    );
+  });
+
+  test('a per-call timeout overrides the client one', () async {
+    final client = ApiClient(
+      baseUrl: Uri.parse('http://api.test/api/'),
+      tokens: MemoryTokenStore(),
+      httpClient: MockClient(
+        (_) => Future.delayed(
+          const Duration(milliseconds: 100),
+          () => http.Response('{}', 200),
+        ),
+      ),
+      timeout: const Duration(milliseconds: 20),
+    );
+    expect(
+      await client.post(
+        'ai/generate',
+        auth: false,
+        timeout: const Duration(seconds: 2),
+      ),
+      <String, dynamic>{},
+    );
+    await expectLater(
+      client.post('ai/generate', auth: false),
+      throwsA(isA<ApiException>().having((e) => e.timedOut, 'timedOut', true)),
+    );
+  });
+
   test('a hung server times out as a network error', () async {
     final client = ApiClient(
       baseUrl: Uri.parse('http://api.test/api/'),
