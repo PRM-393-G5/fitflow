@@ -174,5 +174,38 @@ void main() {
     expect(code(const ApiException(502, 'unauthorized')), 'unauthorized');
     expect(code(const ApiException(500, 'boom')), 'server-error');
     expect(code(const ApiException(418, 'teapot')), 'http-418');
+    expect(code(const ApiException(200, 'Malformed')), 'invalid-response');
+    expect(code(const ApiException(403, 'Forbidden')), 'unauthorized');
   });
+
+  test(
+    'a failure outside ApiClient still becomes an OpenAiException',
+    () async {
+      final service = OpenAiService(
+        api: ApiClient(baseUrl: baseUrl, tokens: _BrokenTokenStore()),
+      );
+      await expectLater(
+        service.generateWorkoutPlan(request: 'legs'),
+        throwsA(
+          isA<OpenAiException>().having(
+            (e) => e.code,
+            'code',
+            'invalid-response',
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// Secure storage that fails, like a keystore error on some devices.
+class _BrokenTokenStore implements TokenStore {
+  @override
+  Future<ApiTokens?> read() => Future.error(StateError('keystore'));
+
+  @override
+  Future<void> write(ApiTokens tokens) async {}
+
+  @override
+  Future<void> clear() async {}
 }
