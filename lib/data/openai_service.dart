@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -121,10 +120,6 @@ class OpenAiService {
     } on ApiException catch (e) {
       debugPrint('Backend AI ${e.statusCode}: ${e.message}');
       throw OpenAiException(errorCodeFor(e));
-    } on IOException catch (e) {
-      // TLS failures (captive portals, …) are not wrapped by ApiClient.
-      debugPrint('Backend AI unreachable: $e');
-      throw const OpenAiException('offline');
     } catch (e) {
       // e.g. secure storage failing to read the token.
       debugPrint('Backend AI unexpected: $e');

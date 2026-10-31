@@ -198,6 +198,9 @@ class ApiClient {
       throw ApiException(null, 'No connection to the server: ${e.message}');
     } on http.ClientException catch (e) {
       throw ApiException(null, 'No connection to the server: ${e.message}');
+    } on TlsException catch (e) {
+      // e.g. a captive portal answering instead of the server.
+      throw ApiException(null, 'No secure connection to the server: $e');
     }
   }
 
