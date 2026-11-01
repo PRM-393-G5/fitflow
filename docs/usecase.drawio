@@ -177,6 +177,9 @@
         <mxCell id="s6" value="Re-authenticate with Google" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="600" y="330" width="220" height="56" as="geometry" />
         </mxCell>
+        <mxCell id="s10" value="Discard unsynced changes" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="600" y="262" width="220" height="46" as="geometry" />
+        </mxCell>
         <mxCell id="s8" value="Export data" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="600" y="430" width="180" height="46" as="geometry" />
         </mxCell>
@@ -216,13 +219,16 @@
         <mxCell id="e9" value="«extend»&lt;br&gt;[locked by an admin]" style="endArrow=open;endSize=10;dashed=1;html=1;strokeColor=#c0562a;fontColor=#c0562a;fontSize=11;" edge="1" parent="1" source="s7" target="s1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e10" value="" style="endArrow=block;endFill=0;endSize=12;html=1;strokeColor=#333333;" edge="1" parent="1" source="s8" target="s4">
+        <mxCell id="e10" value="«extend»&lt;br&gt;[upload failed, user confirms]" style="endArrow=open;endSize=10;dashed=1;html=1;strokeColor=#c0562a;fontColor=#c0562a;fontSize=11;" edge="1" parent="1" source="s10" target="s2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e11" value="" style="endArrow=block;endFill=0;endSize=12;html=1;strokeColor=#333333;" edge="1" parent="1" source="s9" target="s4">
+        <mxCell id="e11" value="" style="endArrow=block;endFill=0;endSize=12;html=1;strokeColor=#333333;" edge="1" parent="1" source="s8" target="s4">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e12" value="" style="endArrow=none;html=1;strokeColor=#555555;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="s8" target="os">
+        <mxCell id="e12" value="" style="endArrow=block;endFill=0;endSize=12;html=1;strokeColor=#333333;" edge="1" parent="1" source="s9" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" value="" style="endArrow=none;html=1;strokeColor=#555555;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="s8" target="os">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
@@ -343,7 +349,7 @@
         <mxCell id="e1" value="" style="endArrow=none;html=1;strokeColor=#555555;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="user" target="f1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e2" value="«include»" style="endArrow=open;endSize=10;dashed=1;html=1;strokeColor=#6558D3;fontColor=#6558D3;fontSize=11;" edge="1" parent="1" source="t1" target="t2">
+        <mxCell id="e2" value="«extend»&lt;br&gt;[earlier sessions exist]" style="endArrow=open;endSize=10;dashed=1;html=1;strokeColor=#c0562a;fontColor=#c0562a;fontSize=11;" edge="1" parent="1" source="t2" target="t1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e3" value="«include»" style="endArrow=open;endSize=10;dashed=1;html=1;strokeColor=#6558D3;fontColor=#6558D3;fontSize=11;" edge="1" parent="1" source="t1" target="t3">
@@ -471,7 +477,7 @@
           <mxGeometry x="90" y="300" width="36" height="72" as="geometry" />
         </mxCell>
         <mxCell id="os" value="Device OS&lt;br&gt;(notifications, share)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#f5f5f5;strokeColor=#888888;fontColor=#555555;" vertex="1" parent="1">
-          <mxGeometry x="1000" y="300" width="36" height="72" as="geometry" />
+          <mxGeometry x="1000" y="467" width="36" height="72" as="geometry" />
         </mxCell>
         <mxCell id="g1" value="View progress dashboard" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EFEDFB;strokeColor=#6558D3;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="280" y="60" width="220" height="56" as="geometry" />
@@ -625,7 +631,7 @@
         <mxCell id="e8" value="«include»" style="endArrow=open;endSize=10;dashed=1;html=1;strokeColor=#6558D3;fontColor=#6558D3;fontSize=11;" edge="1" parent="1" source="d2" target="d3">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e9" value="«include»" style="endArrow=open;endSize=10;dashed=1;html=1;strokeColor=#6558D3;fontColor=#6558D3;fontSize=11;" edge="1" parent="1" source="m1" target="m2">
+        <mxCell id="e9" value="«extend»" style="endArrow=open;endSize=10;dashed=1;html=1;strokeColor=#c0562a;fontColor=#c0562a;fontSize=11;" edge="1" parent="1" source="m2" target="m1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e10" value="«extend»" style="endArrow=open;endSize=10;dashed=1;html=1;strokeColor=#c0562a;fontColor=#c0562a;fontSize=11;" edge="1" parent="1" source="m3" target="m1">
