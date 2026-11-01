@@ -16,14 +16,13 @@ actor "Device OS\n(notifications, share)" as os <<system>>
 rectangle "FitFlow system" {
   package "Mobile app (Flutter) + FitFlow API" {
     usecase "Sign in with Google" as o1
-    usecase "Plan workouts" as o2
-    usecase "Do a guided workout" as o3
-    usecase "Check exercise form" as o4
-    usecase "Get AI coaching" as o5
-    usecase "Plan nutrition & log meals" as o6
-    usecase "Track progress & body metrics" as o7
-    usecase "Manage settings & reminders" as o8
-    usecase "Back up & sync data" as o9
+    usecase "Do a guided workout" as o2
+    usecase "Check exercise form" as o3
+    usecase "Plan workouts" as o4
+    usecase "Plan nutrition & log meals" as o5
+    usecase "Track progress & body metrics" as o6
+    usecase "Manage settings & reminders" as o7
+    usecase "Back up & sync data" as o8
   }
   package "Admin web (React) + admin API" {
     usecase "Sign in (email & password)" as a1
@@ -41,16 +40,19 @@ user -- o5
 user -- o6
 user -- o7
 user -- o8
-user -- o9
 admin -- a1
 admin -- a2
 admin -- a3
 admin -- a4
 admin -- a5
 o1 -- google
-o4 -- camera
+o2 -- camera
+o3 -- camera
+o3 -- openai
+o4 -- openai
 o5 -- openai
-o6 -- openai
+o6 -- os
+o7 -- os
 o8 -- os
 @enduml
 
@@ -65,6 +67,7 @@ skinparam usecase {
 }
 actor "User" as user
 actor "Google\nSign-In" as google <<system>>
+actor "Device OS\n(share sheet)" as os <<system>>
 rectangle "Mobile app + FitFlow API" {
   usecase "Sign in with Google" as s1
   usecase "Sign out" as s2
@@ -88,6 +91,7 @@ s3 ..> s6 : <<include>>
 s7 ..> s1 : <<extend>>\n[locked by an admin]
 s8 --|> s4
 s9 --|> s4
+s8 -- os
 note as n1
   Sign-in is required. Data stays cached on the phone, so it works offline; edits wait in an outbox until they reach the server.
 end note
@@ -142,10 +146,10 @@ rectangle "Mobile app + FitFlow API" {
   usecase "Resume saved draft" as t4
   usecase "Count sets with camera" as t5
   usecase "Hands-free mode\n(spoken countdowns)" as t6
-  usecase "Check exercise form\n(7 exercises)" as f1
+  usecase "Check exercise form\n(every analyzed exercise)" as f1
   usecase "Count reps / hold\n& score form" as f3
   usecase "Analyze pose in real time" as f2
-  usecase "Review squat set with AI" as f4
+  usecase "Review the set with AI" as f4
 }
 user -- t1
 user -- f1
@@ -154,11 +158,11 @@ t1 ..> t3 : <<include>>
 t4 ..> t1 : <<extend>>\n[draft saved]
 t5 ..> t1 : <<extend>>\n[camera-checkable set]
 t6 --|> t5
-t5 ..> f2 : <<include>>
+t5 ..> f3 : <<include>>
 f1 ..> f3 : <<include>>
 f3 ..> f2 : <<include>>
 f2 -- camera
-f4 ..> f1 : <<extend>>\n[squat]
+f4 ..> f1 : <<extend>>\n[after a set]
 f4 -- openai
 @enduml
 
@@ -269,6 +273,7 @@ admin -- d2
 admin -- m1
 admin -- t0
 d4 ..> d1 : <<extend>>
+d4 ..> d2 : <<extend>>
 d1 ..> d3 : <<include>>
 d2 ..> d3 : <<include>>
 m1 ..> m2 : <<include>>

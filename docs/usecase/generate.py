@@ -53,17 +53,16 @@ def cases_in_column(ids_labels, x, y0, step, w=240, h=46):
 
 APP_CASES = [
     ('o1', 'Sign in with Google'),
-    ('o2', 'Plan workouts'),
-    ('o3', 'Do a guided workout'),
-    ('o4', 'Check exercise form'),
-    ('o5', 'Get AI coaching'),
-    ('o6', 'Plan nutrition &amp; log meals'),
-    ('o7', 'Track progress &amp; body metrics'),
-    ('o8', 'Manage settings &amp; reminders'),
-    ('o9', 'Back up &amp; sync data'),
+    ('o2', 'Do a guided workout'),
+    ('o3', 'Check exercise form'),
+    ('o4', 'Plan workouts'),
+    ('o5', 'Plan nutrition & log meals'),
+    ('o6', 'Track progress & body metrics'),
+    ('o7', 'Manage settings & reminders'),
+    ('o8', 'Back up & sync data'),
 ]
 ADMIN_CASES = [
-    ('a1', 'Sign in (email &amp; password)'),
+    ('a1', 'Sign in (email & password)'),
     ('a2', 'View statistics dashboard'),
     ('a3', 'Manage users'),
     ('a4', 'Manage workout templates'),
@@ -75,25 +74,29 @@ PAGES.append({
     'name': 'Overview',
     'title': 'FitFlow — Use cases (overview)',
     'shapes': [
-        box('boundary', 'sys', 'FitFlow system', 220, 20, 620, 1050),
-        box('package', 'pkgApp', 'Mobile app (Flutter) + FitFlow API', 240, 60, 580, 610),
-        box('package', 'pkgAdmin', 'Admin web (React) + admin API', 240, 700, 580, 350),
-        actor('user', 'User\n(trainee)', 90, 330),
-        actor('admin', 'Admin', 90, 840),
-        actor('google', 'Google\nSign-In', 960, row(0), system=True),
-        actor('camera', 'Camera +\nML Kit Pose', 960, row(2.5), system=True),
-        actor('openai', 'OpenAI\n(GPT models)', 960, row(4.6), system=True),
-        actor('os', 'Device OS\n(notifications, share)', 960, row(7), system=True),
+        box('boundary', 'sys', 'FitFlow system', 220, 20, 620, 990),
+        box('package', 'pkgApp', 'Mobile app (Flutter) + FitFlow API', 240, 60, 580, 550),
+        box('package', 'pkgAdmin', 'Admin web (React) + admin API', 240, 640, 580, 350),
+        actor('user', 'User\n(trainee)', 90, 300),
+        actor('admin', 'Admin', 90, 780),
+        actor('google', 'Google\nSign-In', 960, row(-0.4), system=True),
+        actor('camera', 'Camera +\nML Kit Pose', 960, row(1.7), system=True),
+        actor('openai', 'OpenAI\n(GPT models)', 960, row(3.6), system=True),
+        actor('os', 'Device OS\n(notifications, share)', 960, row(6), system=True),
         *cases_in_column(APP_CASES, 330, 100, 62),
-        *cases_in_column(ADMIN_CASES, 330, 750, 62),
+        *cases_in_column(ADMIN_CASES, 330, 690, 62),
     ],
     'edges': [
         *[('assoc', 'user', id, '') for id, _ in APP_CASES],
         *[('assoc', 'admin', id, '') for id, _ in ADMIN_CASES],
         ('assoc', 'o1', 'google', ''),
-        ('assoc', 'o4', 'camera', ''),
+        ('assoc', 'o2', 'camera', ''),
+        ('assoc', 'o3', 'camera', ''),
+        ('assoc', 'o3', 'openai', ''),
+        ('assoc', 'o4', 'openai', ''),
         ('assoc', 'o5', 'openai', ''),
-        ('assoc', 'o6', 'openai', ''),
+        ('assoc', 'o6', 'os', ''),
+        ('assoc', 'o7', 'os', ''),
         ('assoc', 'o8', 'os', ''),
     ],
 })
@@ -102,9 +105,10 @@ PAGES.append({
     'name': 'Account & data',
     'title': 'FitFlow — Account & data',
     'shapes': [
-        box('boundary', 'sys', 'Mobile app + FitFlow API', 220, 20, 860, 620),
+        box('boundary', 'sys', 'Mobile app + FitFlow API', 220, 20, 860, 720),
         actor('user', 'User', 90, 260),
         actor('google', 'Google\nSign-In', 1160, 72, system=True),
+        actor('os', 'Device OS\n(share sheet)', 1160, 453 - 36, system=True),
         uc('s1', 'Sign in with Google', C1, 80, 200),
         uc('s2', 'Sign out', C1, 200, 200),
         uc('s3', 'Delete account', C1, 330, 200),
@@ -114,7 +118,7 @@ PAGES.append({
         uc('s6', 'Re-authenticate with Google', C2, 330, 220),
         uc('s8', 'Export data', C2, 430, 180, 46),
         uc('s9', 'Import data', C2, 520, 180, 46),
-        box('note', 'n1', 'Sign-in is required. Data stays cached on the phone, so it works offline; edits wait in an outbox until they reach the server.', 860, 440, 200, 110),
+        box('note', 'n1', 'Sign-in is required. Data stays cached on the phone, so it works offline; edits wait in an outbox until they reach the server.', 600, 610, 300, 80),
     ],
     'edges': [
         ('assoc', 'user', 's1', ''),
@@ -129,6 +133,7 @@ PAGES.append({
         ('extend', 's7', 's1', '«extend»\n[locked by an admin]'),
         ('gen', 's8', 's4', ''),
         ('gen', 's9', 's4', ''),
+        ('assoc', 's8', 'os', ''),
     ],
 })
 
@@ -169,10 +174,10 @@ PAGES.append({
         uc('t4', 'Resume saved draft', C2 + 40, 270, 230),
         uc('t5', 'Count sets with camera', C2 + 40, 380, 230),
         uc('t6', 'Hands-free mode\n(spoken countdowns)', C3 + 120, 380, 230),
-        uc('f1', 'Check exercise form\n(7 exercises)', C1, 560, 210),
-        uc('f3', 'Count reps / hold\n&amp; score form', C2 + 40, 560, 230),
+        uc('f1', 'Check exercise form\n(every analyzed exercise)', C1, 560, 210),
+        uc('f3', 'Count reps / hold\n& score form', C2 + 40, 560, 230),
         uc('f2', 'Analyze pose in real time', C3 + 120, 470, 230),
-        uc('f4', 'Review squat set with AI', C2 + 40, 680, 230),
+        uc('f4', 'Review the set with AI', C2 + 40, 680, 230),
     ],
     'edges': [
         ('assoc', 'user', 't1', ''),
@@ -182,11 +187,11 @@ PAGES.append({
         ('extend', 't4', 't1', '«extend»\n[draft saved]'),
         ('extend', 't5', 't1', '«extend»\n[camera-checkable set]'),
         ('gen', 't6', 't5', ''),
-        ('include', 't5', 'f2', '«include»'),
+        ('include', 't5', 'f3', '«include»'),
         ('include', 'f1', 'f3', '«include»'),
         ('include', 'f3', 'f2', '«include»'),
         ('assoc', 'f2', 'camera', ''),
-        ('extend', 'f4', 'f1', '«extend»\n[squat]'),
+        ('extend', 'f4', 'f1', '«extend»\n[after a set]'),
         ('assoc', 'f4', 'openai', ''),
     ],
 })
@@ -200,7 +205,7 @@ PAGES.append({
         actor('openai', 'OpenAI', 1260, 190, system=True),
         uc('n1', 'View nutrition targets', C1, 60, 220),
         uc('n2', 'Update body profile', C1, 150, 220),
-        uc('n3', 'Log body weight\n&amp; view trend', C1, 240, 220),
+        uc('n3', 'Log body weight\n& view trend', C1, 240, 220),
         uc('n5', 'Log a meal', C1, 420, 220),
         uc('n4', 'Generate AI meal plan', C2, 60, 220),
         uc('n6', 'Log from food photo', C2, 330, 220, 46),
@@ -230,10 +235,10 @@ PAGES.append({
         actor('os', 'Device OS\n(notifications, share)', 1000, 300, system=True),
         uc('g1', 'View progress dashboard', C1, 60, 220),
         uc('g2', 'View muscle map', C1, 160, 220),
-        uc('g3', 'View achievements &amp; streak', C1, 260, 220),
+        uc('g3', 'View achievements & streak', C1, 260, 220),
         uc('g4', 'View session history', C1, 360, 220),
         uc('g6', 'Set workout reminders', C1, 480, 220),
-        uc('g7', 'Change theme &amp; units', C1, 570, 220, 46),
+        uc('g7', 'Change theme & units', C1, 570, 220, 46),
         uc('g5', 'Share summary card', C2, 60, 220),
         uc('g9', 'See exercises behind a muscle', C2, 160, 220),
         uc('g8', 'Edit or delete a session', C2, 360, 220),
@@ -254,17 +259,17 @@ PAGES.append({
     'shapes': [
         box('boundary', 'sys', 'Admin web (React) + admin API', 220, 20, 1220, 820),
         actor('admin', 'Admin', 90, 360),
-        uc('d0', 'Sign in (email &amp; password)', C1, 40, 220),
+        uc('d0', 'Sign in (email & password)', C1, 40, 220),
         uc('d1', 'View statistics dashboard', C1, 140, 220),
         uc('d2', 'Monitor AI usage', C1, 240, 220),
         uc('m1', 'Manage users', C1, 380, 220),
         uc('t0', 'Manage workout templates', C1, 620, 220),
         uc('d4', 'View chart as table', C2, 90, 200, 46),
         uc('d3', 'Choose date range', C2, 190, 200, 46),
-        uc('m2', 'Search &amp; filter users', C2, 330, 220, 46),
+        uc('m2', 'Search & filter users', C2, 330, 220, 46),
         uc('m3', 'View user details', C2, 430, 220, 46),
         uc('m4', 'Lock / unlock account', C3, 400, 220, 46),
-        uc('m5', 'Delete account &amp; data', C3, 480, 220, 46),
+        uc('m5', 'Delete account & data', C3, 480, 220, 46),
         uc('m6', 'Confirm by typing the email', C4, 480, 220, 46),
         uc('t1', 'Create template', C2, 550, 200, 44),
         uc('t2', 'Edit template', C2, 615, 200, 44),
@@ -275,6 +280,7 @@ PAGES.append({
     'edges': [
         *[('assoc', 'admin', id, '') for id in ('d0', 'd1', 'd2', 'm1', 't0')],
         ('extend', 'd4', 'd1', '«extend»'),
+        ('extend', 'd4', 'd2', '«extend»'),
         ('include', 'd1', 'd3', '«include»'),
         ('include', 'd2', 'd3', '«include»'),
         ('include', 'm1', 'm2', '«include»'),
@@ -300,7 +306,7 @@ def drawio(pages):
         out.append('        <mxCell id="0" />')
         out.append('        <mxCell id="1" parent="0" />')
         for kind, id, label, x, y, w, h in page['shapes']:
-            value = escape(label.replace('&amp;', '&').replace('\n', '<br>'), {'"': '&quot;'})
+            value = escape(label.replace('\n', '<br>'), {'"': '&quot;'})
             out.append(f'        <mxCell id="{id}" value="{value}" style="{STYLE[kind]}" vertex="1" parent="1">')
             out.append(f'          <mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry" />')
             out.append('        </mxCell>')
@@ -340,7 +346,7 @@ def plantuml(pages):
         out.append('skinparam actorStyle awesome')
         out.append('skinparam usecase {\n  BackgroundColor #EFEDFB\n  BorderColor #6558D3\n}')
         shapes = {s[1]: s for s in page['shapes']}
-        plain = lambda label: label.replace('&amp;', '&').replace('\n', '\\n')
+        plain = lambda label: label.replace('\n', '\\n')
         for kind, id, label, *_ in page['shapes']:
             if kind == 'actor':
                 out.append(f'actor "{plain(label)}" as {id}')
