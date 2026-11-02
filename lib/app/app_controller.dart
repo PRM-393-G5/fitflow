@@ -102,7 +102,20 @@ class AppController extends ChangeNotifier {
   String? goal;
   String? level;
 
-  int weeklyGoal = 3;
+  /// The goal picked by hand; only used while the schedule plans no day.
+  int _pickedWeeklyGoal = 3;
+
+  /// Sessions per week: the schedule's training days, or the picked goal
+  /// when no day has a plan.
+  int get weeklyGoal {
+    final planned = plannedDays;
+    return planned > 0 ? planned : _pickedWeeklyGoal;
+  }
+
+  /// Weekdays with an existing plan assigned.
+  int get plannedDays => [
+    for (var weekday = 1; weekday <= 7; weekday++) ?scheduledWorkout(weekday),
+  ].length;
 
   bool get signedIn {
     final repo = repository;
@@ -183,7 +196,7 @@ class AppController extends ChangeNotifier {
     }
     // Imports and remote meta store whatever they carry; read it back
     // within the range the picker offers.
-    weeklyGoal = (preferences.getInt(_weeklyGoalKey) ?? 3).clamp(1, 7);
+    _pickedWeeklyGoal = (preferences.getInt(_weeklyGoalKey) ?? 3).clamp(1, 7);
     activeDraft = ActiveWorkoutDraft.tryDecode(
       preferences.getString(_activeDraftKey),
     );
@@ -709,10 +722,10 @@ class AppController extends ChangeNotifier {
     return granted;
   }
 
-  /// Sessions per week, 1–7.
+  /// Sessions per week, 1–7, for when the schedule plans no day.
   Future<void> setWeeklyGoal(int value) async {
-    weeklyGoal = value.clamp(1, 7);
-    await preferences.setInt(_weeklyGoalKey, weeklyGoal);
+    _pickedWeeklyGoal = value.clamp(1, 7);
+    await preferences.setInt(_weeklyGoalKey, _pickedWeeklyGoal);
     await _pushMeta();
     notifyListeners();
   }
