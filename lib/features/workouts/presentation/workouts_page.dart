@@ -8,8 +8,6 @@ import '../../../core/theme/workout_category_style.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/muscle_volume.dart';
 import '../../../domain/training_options.dart';
-import 'ai_workout_page.dart';
-import 'workout_builder_page.dart';
 import 'workout_detail_page.dart';
 import '../../../core/widgets/app_sheet.dart';
 
@@ -56,28 +54,8 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
     if (picked != null && mounted) setState(() => _filter = picked);
   }
 
-  bool _matchesQuery(Workout workout) {
-    final query = _query;
-    if (query.isEmpty) return true;
-    return [
-      workout.name,
-      workout.category,
-      workout.level,
-      for (final exercise in workout.exercises) ...[
-        exercise.name,
-        exercise.muscleGroup,
-      ],
-    ].any((text) => text.toLowerCase().contains(query));
-  }
-
-  /// Opens the builder or AI page; a newly saved plan comes back as the
-  /// result, so show it instead of letting the filters hide it.
-  Future<void> _create(Widget page) async {
-    final saved = await Navigator.of(context)
-        .push(MaterialPageRoute<Workout>(builder: (_) => page));
-    if (saved == null || !mounted) return;
-    _clearFilters();
-  }
+  bool _matchesQuery(Workout workout) =>
+      workout.name.toLowerCase().contains(_query);
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +77,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
               Expanded(
                 child: FTextField(
                   key: const Key('workout-search'),
-                  hint: 'Search plans, exercises, muscles',
+                  hint: 'Search plans by name',
                   control: .managed(controller: _searchCtrl),
                   prefixBuilder: (context, style, variants) =>
                       FTextField.prefixIconBuilder(
@@ -116,19 +94,6 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
                 variant: _filter.active ? .primary : .outline,
                 onPress: () => _openFilters(searched),
                 child: const Icon(FLucideIcons.slidersHorizontal),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              FButton.icon(
-                key: const Key('open-ai-workout'),
-                variant: .secondary,
-                onPress: () => _create(const AiWorkoutPage()),
-                child: const Icon(FLucideIcons.sparkles),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              FButton.icon(
-                key: const Key('open-workout-builder'),
-                onPress: () => _create(const WorkoutBuilderPage()),
-                child: const Icon(FLucideIcons.plus),
               ),
             ],
           ),

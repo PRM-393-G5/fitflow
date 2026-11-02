@@ -45,7 +45,8 @@ class SchedulePage extends StatelessWidget {
             _WeekSummary(controller: controller),
             const SizedBox(height: AppSpacing.md),
             Text(
-              'Tap a day to change it. Home shows today’s pick.',
+              'Tap a day to change it. Home shows today’s pick, and your '
+              'training days set the weekly goal.',
               style: textTheme.bodySmall?.copyWith(
                 color: colors.mutedForeground,
               ),
