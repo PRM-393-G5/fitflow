@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:forui/forui.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -5,9 +6,11 @@ import '../../../app/app_scope.dart';
 import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/workout_category_style.dart';
+import '../../../core/widgets/section_header.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/muscle_volume.dart';
 import '../../../domain/training_options.dart';
+import 'schedule_page.dart';
 import 'workout_detail_page.dart';
 import '../../../core/widgets/app_sheet.dart';
 
@@ -71,7 +74,13 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
           Text('Workouts', style: textTheme.headlineMedium),
           const SizedBox(height: AppSpacing.sm),
           const Text('Choose a plan that fits your time and energy.'),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
+          if (controller.workouts.isNotEmpty) ...[
+            const _TodaySection(),
+            const SizedBox(height: AppSpacing.lg),
+            const SectionHeader(title: 'All plans'),
+            const SizedBox(height: AppSpacing.sm),
+          ],
           Row(
             children: [
               Expanded(
@@ -252,6 +261,102 @@ class _WorkoutCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Today's slot in the weekly schedule: its plan, a rest day, or a nudge
+/// to plan the day.
+class _TodaySection extends StatelessWidget {
+  const _TodaySection();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = AppScope.of(context);
+    final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
+    final weekday = clock.now().weekday;
+    final workout = controller.scheduledWorkout(weekday);
+    final rest = controller.isRestDay(weekday);
+    void openSchedule() => Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const SchedulePage()));
+
+    return Column(
+      key: const Key('workouts-today'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionHeader(
+          title: 'Today · ${SchedulePage.dayNames[weekday - 1]}',
+          action: FButton(
+            key: const Key('workouts-open-schedule'),
+            variant: .ghost,
+            size: .sm,
+            mainAxisSize: .min,
+            onPress: openSchedule,
+            prefix: const Icon(FLucideIcons.calendarDays),
+            child: const Text('Schedule'),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        if (workout != null)
+          _WorkoutCard(workout: workout)
+        else
+          FCard(
+            clipBehavior: Clip.antiAlias,
+            child: FTappable(
+              onPress: openSchedule,
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: colors.muted,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        rest ? FLucideIcons.moon : FLucideIcons.calendarPlus,
+                        size: 24,
+                        color: colors.mutedForeground,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            rest ? 'Rest day' : 'Nothing planned',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            rest
+                                ? 'Recover for the next session'
+                                : 'Tap to pick a plan for today',
+                            style: textTheme.bodyMedium?.copyWith(
+                              color: colors.mutedForeground,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Icon(
+                      FLucideIcons.chevronRight,
+                      size: 20,
+                      color: colors.mutedForeground,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

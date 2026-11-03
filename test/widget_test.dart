@@ -10,6 +10,7 @@ import 'package:prm/data/local_workout_repository.dart';
 import 'package:prm/domain/models/exercise.dart';
 import 'package:prm/domain/models/workout.dart';
 import 'package:prm/features/navigation/presentation/app_shell.dart';
+import 'package:prm/features/workouts/presentation/schedule_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -145,6 +146,71 @@ void main() {
     expect(find.textContaining('450'), findsWidgets);
     expect(find.textContaining('eaten today'), findsOneWidget);
     expect(preferences.getString('food_log_v1'), contains('Phở bò'));
+  });
+
+  testWidgets("workouts shows today's slot of the weekly schedule", (
+    tester,
+  ) async {
+    const workout = Workout(
+      id: 'w1',
+      name: 'Leg Day',
+      duration: Duration(minutes: 30),
+      level: 'Beginner',
+      category: 'Strength',
+      description: '',
+      exercises: [],
+    );
+    SharedPreferences.setMockInitialValues({
+      'onboarding_v1': '{"done":true}',
+      'workouts_v1': jsonEncode([workout.toJson()]),
+    });
+    final preferences = await SharedPreferences.getInstance();
+    final controller = AppController(
+      LocalWorkoutRepository(preferences, templates: const []),
+      preferences,
+    );
+    await controller.load();
+    final weekday = DateTime.now().weekday;
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          theme: AppTheme.light.toApproximateMaterialTheme(),
+          builder: (context, child) => FTheme(
+            data: AppTheme.light,
+            child: FToaster(child: child!),
+          ),
+          home: const AppShell(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Workouts'));
+    await tester.pumpAndSettle();
+    final today = find.byKey(const Key('workouts-today'));
+    expect(
+      find.text('Today · ${SchedulePage.dayNames[weekday - 1]}'),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: today, matching: find.text('Nothing planned')),
+      findsOneWidget,
+    );
+
+    await controller.setScheduleDay(weekday, workout.id);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: today, matching: find.text('Leg Day')),
+      findsOneWidget,
+    );
+
+    await controller.setScheduleDay(weekday, AppController.restDay);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: today, matching: find.text('Rest day')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('filters plans by muscle group', (tester) async {
