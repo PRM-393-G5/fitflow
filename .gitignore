@@ -57,3 +57,7 @@ test/failures/
 
 # Backend now lives in PRM-393-G5/fitflow-api
 /backend/
+
+# Patrol e2e tests (generated)
+**/test_bundle.dart
+.patrol.env
