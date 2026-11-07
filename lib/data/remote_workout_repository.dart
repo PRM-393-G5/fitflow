@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../domain/models/exercise_motion.dart';
 import '../domain/models/workout.dart';
 import '../domain/models/workout_session.dart';
 import '../domain/repositories/workout_repository.dart';
@@ -16,7 +17,8 @@ import 'sync_merge.dart';
 /// Workout data backed by the FitFlow API, local-first.
 ///
 /// Templates come from `GET /api/templates` (cached in SharedPreferences,
-/// bundled seeds before the first fetch). Per-user data syncs through
+/// bundled seeds before the first fetch), exercise demos likewise from
+/// `GET /api/motions`. Per-user data syncs through
 /// `/api/me/docs/{sessions,workouts,weights}` and `/api/me/meta`. Reads
 /// never wait for the network: writes land locally first and are sent in
 /// the background.
@@ -32,6 +34,7 @@ class RemoteWorkoutRepository implements WorkoutRepository {
   }
 
   static const _cacheKey = 'workouts_remote_v1';
+  static const _motionsKey = 'motions_remote_v1';
 
   final ApiClient _api;
   final LocalWorkoutRepository _local;
@@ -231,6 +234,47 @@ class RemoteWorkoutRepository implements WorkoutRepository {
     } catch (e) {
       // Offline or server trouble — keep the cached (or bundled) templates.
       debugPrint('Template refresh failed: $e');
+    }
+  }
+
+  /// The exercise demos last fetched from the API; empty before the first
+  /// fetch (the app's bundled ones apply).
+  List<ExerciseMotion> cachedMotions() {
+    final raw = _preferences.getString(_motionsKey);
+    if (raw == null) return const [];
+    try {
+      return [
+        for (final item in jsonDecode(raw) as List)
+          ?ExerciseMotion.tryParse(item),
+      ];
+    } catch (e) {
+      debugPrint('Dropping malformed motion cache: $e');
+      return const [];
+    }
+  }
+
+  /// Re-fetches the public exercise demos into the cache, skipping
+  /// malformed ones; no-op offline. An empty list is stored too: the
+  /// server's copies were all removed, so the bundled ones apply again.
+  Future<void> refreshMotions() async {
+    try {
+      final json = await _api.get('motions', auth: false);
+      if (json is! List) return;
+      final motions = <ExerciseMotion>[];
+      for (final item in json) {
+        final motion = ExerciseMotion.tryParse(item);
+        if (motion == null) {
+          debugPrint('Skipping malformed motion: $item');
+        } else {
+          motions.add(motion);
+        }
+      }
+      await _preferences.setString(
+        _motionsKey,
+        jsonEncode(motions.map((item) => item.toJson()).toList()),
+      );
+    } catch (e) {
+      debugPrint('Motion refresh failed: $e');
     }
   }
 
