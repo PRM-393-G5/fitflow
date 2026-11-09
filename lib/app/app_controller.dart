@@ -10,6 +10,7 @@ import '../data/sync_merge.dart';
 import '../data/local_workout_repository.dart';
 import '../data/reminder_service.dart';
 import '../data/remote_workout_repository.dart';
+import '../domain/exercise_motions.dart';
 import '../domain/meal_plan.dart';
 import '../domain/models/active_workout_draft.dart';
 import '../domain/models/body_weight_entry.dart';
@@ -61,6 +62,9 @@ class AppController extends ChangeNotifier {
   List<Workout> workouts = [];
   List<WorkoutSession> sessions = [];
   List<BodyWeightEntry> weightEntries = [];
+
+  /// Exercise demos: the bundled ones, replaced by the API's copies.
+  MotionLibrary motions = MotionLibrary();
 
   /// Meals logged per day (last [FoodLog.keepDays] days), each synced
   /// as one `meals` doc.
@@ -159,10 +163,19 @@ class AppController extends ChangeNotifier {
     }
     _decodeSyncedLists();
     _decodeUserState();
+    _loadMotions();
     loading = false;
     notifyListeners();
     unawaited(_restoreReminders());
     unawaited(sync());
+  }
+
+  /// Public data, so kept across accounts: only a fetch changes it.
+  void _loadMotions() {
+    final repo = repository;
+    if (repo is RemoteWorkoutRepository) {
+      motions = MotionLibrary(repo.cachedMotions());
+    }
   }
 
   /// Reads the synced per-entry lists (weights, food log) from storage.
@@ -260,6 +273,8 @@ class AppController extends ChangeNotifier {
     notifyListeners();
     try {
       await repo.refreshTemplates();
+      await repo.refreshMotions();
+      _loadMotions();
       if (stale()) return;
 
       final customBefore = workouts.where(isCustomWorkout).toList();

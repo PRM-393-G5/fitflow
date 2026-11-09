@@ -14,9 +14,11 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_sheet.dart';
 import '../../../data/openai_service.dart';
 import '../../../domain/models/exercise.dart';
+import '../../../domain/models/exercise_motion.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../../domain/workout_stats.dart';
 import '../../../domain/models/form_result.dart';
+import '../../exercise_demo/presentation/exercise_demo.dart';
 import '../domain/adaptive_inference_scheduler.dart';
 import '../domain/form_feedback.dart';
 import '../domain/form_record.dart';
@@ -1091,6 +1093,7 @@ class _SquatFormCheckPageState extends State<SquatFormCheckPage>
                   top: 72,
                   child: _SetupGuide(
                     exercise: _exercise,
+                    motion: widget.controller.motions.forForm(_exercise),
                     onDismiss: () => setState(() => _setupDismissed = true),
                   ),
                 ),
@@ -1248,12 +1251,18 @@ class _PermissionView extends StatelessWidget {
   );
 }
 
-/// Camera placement for each exercise. The analyzers read joint angles in
-/// 2D, so the angle to the camera decides whether reps count at all.
+/// Camera placement for each exercise, under a demo of the movement
+/// ([motion]). The analyzers read joint angles in 2D, so the angle to the
+/// camera decides whether reps count at all.
 class _SetupGuide extends StatelessWidget {
-  const _SetupGuide({required this.exercise, required this.onDismiss});
+  const _SetupGuide({
+    required this.exercise,
+    required this.motion,
+    required this.onDismiss,
+  });
 
   final FormExercise exercise;
+  final ExerciseMotion? motion;
   final VoidCallback onDismiss;
 
   @override
@@ -1325,6 +1334,15 @@ class _SetupGuide extends StatelessWidget {
                 ),
               ],
             ),
+            if (motion case final motion?)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, right: 12, bottom: 4),
+                child: SizedBox(
+                  key: const Key('setup-guide-demo'),
+                  height: 150,
+                  child: ExerciseDemo(motion: motion, onDark: true),
+                ),
+              ),
             for (final (icon, text) in tips)
               Padding(
                 padding: const EdgeInsets.only(top: 8, right: 12),

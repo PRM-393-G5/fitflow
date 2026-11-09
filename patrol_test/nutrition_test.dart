@@ -51,10 +51,9 @@ void main() {
     await waitUntilGone($, $(LogMealPage), 'the meal form to close');
 
     // One Breakfast entry with both dishes; the day grew by the meal.
-    expect(
-      loggedMeal($, 'Breakfast', oats).containing(eggs).containing('450 kcal'),
-      findsOneWidget,
-    );
+    final logged = loggedMeal($, 'Breakfast', oats);
+    expect(logged.$(eggs), findsOneWidget);
+    expect(logged.$('450 kcal'), findsOneWidget);
     await _expectTotals($, before, kcal: 450, protein: 22, carbs: 51, fat: 15);
 
     final meal = await cloud.waitForDoc(
@@ -107,10 +106,7 @@ void main() {
     expect($(FDialog).$(FTextField).containing('300'), findsOneWidget);
     await $(FDialog).$('Save').tap();
     await $.pumpAndTrySettle();
-    expect(
-      loggedMeal($, 'Breakfast', soup).containing('300 kcal'),
-      findsOneWidget,
-    );
+    expect(loggedMeal($, 'Breakfast', soup).$('300 kcal'), findsOneWidget);
     await _expectTotals($, before, kcal: 300, protein: 15, carbs: 30, fat: 9);
     await cloud.waitForDoc(
       'meals',
@@ -191,9 +187,9 @@ Future<void> _enterMacros(
   await _macro($, 'Fat g').enterText(fat);
 }
 
-/// The meal form's footer showing [text] next to the log button.
+/// [text] in the meal form's footer, next to the log button.
 PatrolFinder _footer(PatrolIntegrationTester $, String text) =>
-    $(Row).containing(const Key('log-meal-submit')).containing(text);
+    enclosing<Row>($, find.byKey(const Key('log-meal-submit'))).$(text);
 
 /// The first dish of a meal document, as the API returns it.
 Map<String, dynamic> _item(Map<String, dynamic> doc) =>
@@ -214,9 +210,10 @@ Future<void> _expectTotals(
 }) async {
   await reveal($, $(const Key('nutrition-eaten')));
   expect(
-    $(Row)
-        .containing(const Key('nutrition-eaten'))
-        .containing(thousands(before.kcal + kcal)),
+    enclosing<Row>(
+      $,
+      find.byKey(const Key('nutrition-eaten')),
+    ).$(thousands(before.kcal + kcal)),
     findsOneWidget,
     reason: 'kcal eaten today',
   );
@@ -226,10 +223,10 @@ Future<void> _expectTotals(
     ('Fat', before.fatG + fat),
   ]) {
     expect(
-      $(const Key('nutrition-macros'))
-          .$(Column)
-          .containing(label)
-          .containing(RegExp('^${grams.round()}( / \\d+)? g\$')),
+      enclosing<Column>(
+        $,
+        $(const Key('nutrition-macros')).$(label),
+      ).$(RegExp('^${grams.round()}( / \\d+)? g\$')),
       findsOneWidget,
       reason: '$label eaten today',
     );

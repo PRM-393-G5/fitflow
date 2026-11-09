@@ -7,9 +7,11 @@ import '../../../app/app_scope.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../domain/models/exercise.dart';
 import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../../domain/muscle_volume.dart';
+import '../../exercise_demo/presentation/exercise_demo_sheet.dart';
 import '../../squat_form/presentation/squat_form_check_page.dart';
 import 'active_workout_page.dart';
 import 'weight_units.dart';
@@ -115,6 +117,49 @@ class WorkoutDetailPage extends StatelessWidget {
         title: Text('Scheduled for ${_weekdayNames[weekday - 1]}.'),
       );
     }
+  }
+
+  /// An exercise of the plan; tapping one with a demo opens it.
+  static FTile _exerciseTile(
+    BuildContext context,
+    AppController controller,
+    int index,
+    Exercise exercise,
+  ) {
+    final metric = controller.useMetric;
+    final motion = controller.motions.forExercise(
+      exercise.name,
+      timed: exercise.isTimed,
+    );
+    return FTile(
+      key: Key('exercise-tile-${exercise.id}'),
+      prefix: FAvatar.raw(child: Text('${index + 1}')),
+      title: Text(exercise.name),
+      subtitle: Text(
+        [
+          exercise.muscleGroup,
+          exercise.prescription,
+          if (exercise.weightKg > 0)
+            '${WeightUnits.format(exercise.weightKg, metric)} '
+                '${WeightUnits.label(metric)}',
+          '${exercise.restSeconds}s rest',
+        ].join(' • '),
+      ),
+      suffix: motion == null
+          ? null
+          : Icon(
+              FLucideIcons.circlePlay,
+              color: context.theme.colors.primary,
+              semanticLabel: 'Show demo',
+            ),
+      onPress: motion == null
+          ? null
+          : () => showExerciseDemoSheet(
+              context,
+              exercise: exercise,
+              motion: motion,
+            ),
+    );
   }
 
   static String _dayLabel(AppController controller, int weekday) {
@@ -247,20 +292,7 @@ class WorkoutDetailPage extends StatelessWidget {
             FTileGroup(
               children: [
                 for (final (index, exercise) in current.exercises.indexed)
-                  FTile(
-                    prefix: FAvatar.raw(child: Text('${index + 1}')),
-                    title: Text(exercise.name),
-                    subtitle: Text(
-                      [
-                        exercise.muscleGroup,
-                        exercise.prescription,
-                        if (exercise.weightKg > 0)
-                          '${WeightUnits.format(exercise.weightKg, metric)} '
-                              '${WeightUnits.label(metric)}',
-                        '${exercise.restSeconds}s rest',
-                      ].join(' • '),
-                    ),
-                  ),
+                  _exerciseTile(context, controller, index, exercise),
               ],
             ),
           const SizedBox(height: AppSpacing.lg),

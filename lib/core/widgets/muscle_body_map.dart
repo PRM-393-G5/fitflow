@@ -149,6 +149,12 @@ _View _parse(String outline, List<_BodyPath> paths) {
 final _front = _parse(_frontOutline, _frontPaths);
 final _back = _parse(_backOutline, _backPaths);
 
+/// The front or back body art (outline, each path's muscle, bounds) in
+/// art units, for the exercise demos to cut into moving parts.
+({Path outline, List<(Muscle?, Path)> parts, Rect bounds}) muscleArt({
+  required bool front,
+}) => front ? _front : _back;
+
 /// Maps art coordinates of [view] into a [size] box, centred.
 Matrix4 _fit(_View view, Size size) {
   final bounds = view.bounds;

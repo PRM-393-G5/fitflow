@@ -16,6 +16,8 @@ import '../../../domain/models/workout.dart';
 import '../../../domain/models/workout_session.dart';
 import '../../../domain/personal_records.dart';
 import '../../../domain/progression.dart';
+import '../../exercise_demo/presentation/exercise_demo.dart';
+import '../../exercise_demo/presentation/exercise_demo_sheet.dart';
 import '../../squat_form/domain/squat_analyzer.dart';
 import '../../squat_form/domain/hands_free_session.dart';
 import '../../squat_form/presentation/squat_form_check_page.dart';
@@ -1123,6 +1125,29 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage>
       textAlign: TextAlign.center,
       style: TextStyle(color: context.theme.colors.mutedForeground),
     ),
+    if (widget.controller.motions.forExercise(
+          _exercise.name,
+          timed: _exercise.isTimed,
+        )
+        case final motion?) ...[
+      const SizedBox(height: AppSpacing.md),
+      Center(
+        child: FTappable(
+          key: const Key('up-next-demo'),
+          semanticsLabel: 'Show how to do ${_exercise.name}',
+          onPress: () => showExerciseDemoSheet(
+            context,
+            exercise: _exercise,
+            motion: motion,
+          ),
+          child: SizedBox(
+            width: 200,
+            height: 150,
+            child: ExerciseDemo(motion: motion, showCue: false),
+          ),
+        ),
+      ),
+    ],
     const SizedBox(height: AppSpacing.lg),
     FButton(
       key: const Key('skip-rest'),

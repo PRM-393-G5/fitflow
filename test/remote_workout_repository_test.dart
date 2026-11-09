@@ -35,6 +35,62 @@ void main() {
     currentUserId: () => userId,
   );
 
+  group('motions', () {
+    Map<String, dynamic> lunge() => {
+      'id': 'lunge',
+      'name': 'Lunge',
+      'keywords': ['lunge'],
+      'keyframes': [
+        {
+          'pose': {'hipL': 90},
+          'holdMs': 0,
+          'moveMs': 1000,
+        },
+      ],
+    };
+
+    test(
+      'caches the motions served by the API, skipping broken ones',
+      () async {
+        final backend = FakeBackend({
+          'GET /api/motions': (_) => FakeBackend.json([
+            lunge(),
+            {'id': 'broken', 'name': 'Broken', 'keyframes': []},
+          ]),
+        });
+        final repo = repositoryFor(backend);
+        expect(repo.cachedMotions(), isEmpty);
+
+        await repo.refreshMotions();
+
+        expect(repo.cachedMotions().map((motion) => motion.id), ['lunge']);
+        expect(backend.requests.single.headers['Authorization'], isNull);
+      },
+    );
+
+    test('keeps the cache offline; an empty list clears it', () async {
+      await repositoryFor(
+        FakeBackend({
+          'GET /api/motions': (_) => FakeBackend.json([lunge()]),
+        }),
+      ).refreshMotions();
+
+      final offline = repositoryFor(
+        FakeBackend({
+          'GET /api/motions': (_) => throw http.ClientException('offline'),
+        }),
+      );
+      await offline.refreshMotions();
+      expect(offline.cachedMotions(), hasLength(1));
+
+      final emptied = repositoryFor(
+        FakeBackend({'GET /api/motions': (_) => FakeBackend.json([])}),
+      );
+      await emptied.refreshMotions();
+      expect(emptied.cachedMotions(), isEmpty);
+    });
+  });
+
   group('templates', () {
     test('uses the bundled seeds until the first fetch', () async {
       final repo = repositoryFor(FakeBackend({}));
