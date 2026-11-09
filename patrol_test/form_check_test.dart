@@ -15,7 +15,9 @@ void main() {
     await $(const Key('open-squat-form-check-home')).scrollTo();
     await $(const Key('open-squat-form-check-home')).tap();
     await grantPermissionIfAsked($);
-    await $(CameraPreview).waitUntilVisible();
+    // Built once the camera is initialized. Never "visible": the pose
+    // overlay painted over it takes the hit test.
+    await $(CameraPreview).waitUntilExists();
     expect($(RegExp('^Could not open the camera')), findsNothing);
 
     await $(find.bySemanticsLabel('Close')).tap();

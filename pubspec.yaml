@@ -71,6 +71,7 @@ patrol:
   app_name: FitFlow
   android:
     package_name: com.zcode9211.prm
+  emit_test_manifest: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

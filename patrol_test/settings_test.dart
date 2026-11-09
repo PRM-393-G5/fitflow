@@ -1,11 +1,12 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart' show Theme;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
+// The app's Theme: flutter/material's is a different widget it never builds.
+import 'package:material_ui/material_ui.dart' show Theme;
 import 'package:patrol/patrol.dart';
 import 'package:prm/domain/body_metrics.dart';
 import 'package:prm/domain/meal_plan.dart';
@@ -165,7 +166,7 @@ void main() {
     expect(sync.containing('Synced just now'), findsOneWidget);
 
     await openTab($, 'Nutrition');
-    expect(loggedMeal($, 'Lunch', dish).containing('222 kcal'), findsOneWidget);
+    expect(loggedMeal($, 'Lunch', dish).$('222 kcal'), findsOneWidget);
     // Removing it here removes it on the server too.
     await openMealActions($, 'Lunch', dish);
     await $(const Key('nutrition-meal-remove')).tap();

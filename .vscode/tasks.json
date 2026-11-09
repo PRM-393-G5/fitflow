@@ -1,0 +1,44 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1. Run Automated Tests (Unit & Widget - Siêu nhanh 8s)",
+      "type": "shell",
+      "command": "./run_demo_test.sh",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "2. Run E2E Instant (Điện thoại thật - Không cần build)",
+      "type": "shell",
+      "command": "./run_e2e_instant.sh",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "3. Pre-build E2E APK (Chạy ở nhà tối nay)",
+      "type": "shell",
+      "command": "./build_at_home.sh",
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "clear": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}

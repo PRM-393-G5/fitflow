@@ -16,10 +16,12 @@ import 'package:prm/features/navigation/presentation/app_shell.dart';
 import 'package:prm/features/onboarding/presentation/onboarding_page.dart';
 import 'package:prm/main.dart' as app;
 
-/// The Google account to sign in with when the phone has several:
-/// `--dart-define=E2E_GOOGLE_ACCOUNT=you@gmail.com`. Without it the first
-/// account in Google's picker is used.
-const googleAccount = String.fromEnvironment('E2E_GOOGLE_ACCOUNT');
+/// The Google account to sign in with when the phone has several.
+/// Mặc định fix cứng tài khoản tu719719@gmail.com cho demo.
+const googleAccount = String.fromEnvironment(
+  'E2E_GOOGLE_ACCOUNT',
+  defaultValue: 'tu719719@gmail.com',
+);
 
 /// The app package; Google's sheets and system dialogs are anything else.
 const _appPackage = 'com.zcode9211.prm';
@@ -60,7 +62,7 @@ Future<void> signIn(
 }) async {
   await $('Continue with Google').tap();
   await $.platform.android.tap(
-    AndroidSelector(textContains: googleAccount.isEmpty ? '@' : googleAccount),
+    AndroidSelector(textContains: googleAccount.isEmpty ? '@' : googleAccount.split('@').first),
     timeout: const Duration(seconds: 30),
   );
   // The first sign-in to FitFlow with an account asks to share the
@@ -181,12 +183,54 @@ bool isEnabled(PatrolIntegrationTester $, PatrolFinder button) =>
 PatrolFinder mealSlot(PatrolIntegrationTester $, String type) =>
     $(AppCard).containing(Key('nutrition-add-$type'));
 
-/// The logged entry in slot [type] whose dishes include [dish].
+/// The closest [T] around [of], to check what else it shows with `.$`.
+///
+/// Use this rather than chaining `containing`: Flutter re-runs an
+/// ancestor finder's inner finder for every candidate, so each extra level
+/// multiplies the work by the tree's depth. Four levels froze the app
+/// until Android killed it as not responding.
+PatrolFinder enclosing<T extends Widget>(
+  PatrolIntegrationTester $,
+  Finder of,
+) => $(_Enclosing<T>(of));
+
+/// Finds nothing when [of] does, where `find.ancestor(…).first` throws.
+class _Enclosing<T extends Widget> extends Finder {
+  _Enclosing(this.of) : super(skipOffstage: false);
+
+  final Finder of;
+
+  @override
+  String describeMatch(Plurality plurality) =>
+      'the closest $T around ${of.describeMatch(Plurality.one)}';
+
+  @override
+  String get description => describeMatch(Plurality.many);
+
+  @override
+  Iterable<Element> get allCandidates => {
+    for (final element in of.evaluate()) ?_closest(element),
+  };
+
+  @override
+  Iterable<Element> findInCandidates(Iterable<Element> candidates) =>
+      candidates;
+
+  Element? _closest(Element element) {
+    Element? closest;
+    element.visitAncestorElements((ancestor) {
+      if (ancestor.widget is! T) return true;
+      closest = ancestor;
+      return false;
+    });
+    return closest;
+  }
+}
+
+/// The logged entry in slot [type] whose dishes include [dish]: the row
+/// with its dish names, kcal and actions button.
 PatrolFinder loggedMeal(PatrolIntegrationTester $, String type, String dish) =>
-    mealSlot(
-      $,
-      type,
-    ).$(Row).containing(dish).containing(const Key('nutrition-meal-more'));
+    enclosing<Row>($, mealSlot($, type).$(dish));
 
 /// Opens the actions (edit portion, move, remove) of a logged meal.
 Future<void> openMealActions(
