@@ -41,13 +41,7 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
-  static const _pages = [
-    HomePage(),
-    WorkoutsPage(),
-    NutritionPage(),
-    ProgressPage(),
-    ProfilePage(),
-  ];
+  static const _nutritionTab = 2;
   static const _destinations = [
     (icon: FLucideIcons.house, label: 'Home'),
     (icon: FLucideIcons.dumbbell, label: 'Workouts'),
@@ -59,7 +53,16 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 840;
-    final body = IndexedStack(index: _index, children: _pages);
+    final body = IndexedStack(
+      index: _index,
+      children: [
+        HomePage(onOpenNutrition: () => setState(() => _index = _nutritionTab)),
+        const WorkoutsPage(),
+        const NutritionPage(),
+        const ProgressPage(),
+        const ProfilePage(),
+      ],
+    );
     return FScaffold(
       childPad: false,
       sidebar: wide

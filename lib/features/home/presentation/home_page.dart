@@ -20,7 +20,10 @@ import '../../workouts/presentation/workout_detail_page.dart';
 import '../../../core/widgets/app_card.dart';
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.onOpenNutrition});
+
+  /// Switches the shell to the Nutrition tab; null outside the shell.
+  final VoidCallback? onOpenNutrition;
 
   @override
   Widget build(BuildContext context) {
