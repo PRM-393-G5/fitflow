@@ -248,8 +248,10 @@ void main() {
     expect(find.byKey(const Key('home-quick-start')), findsNothing);
   });
 
-  testWidgets('after today'
-      's workout the plan can be opened again', (tester) async {
+  testWidgets('after today’s workout the plan can be opened again', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
     final controller = await pumpHome(tester, workouts: const [_workout]);
     final now = clock.now();
     await controller.addSession(
@@ -267,7 +269,14 @@ void main() {
 
     expect(find.byKey(const Key('home-done-today')), findsOneWidget);
     expect(find.byKey(const Key('home-quick-start')), findsNothing);
-    expect(find.bySemanticsLabel(RegExp('Train again')), findsOneWidget);
+    // One announcement naming what was done, not the title read twice.
+    expect(
+      find.bySemanticsLabel(
+        'Done today, Full Body Foundation • 3 sets • 1 min. Train again',
+      ),
+      findsOneWidget,
+    );
+    semantics.dispose();
   });
 
   testWidgets('Start is disabled for a plan without sets', (tester) async {

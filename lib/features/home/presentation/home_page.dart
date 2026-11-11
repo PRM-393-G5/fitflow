@@ -364,8 +364,12 @@ class _TrainingCard extends StatelessWidget {
                 ? text
                 : FTappable(
                     key: const Key('home-view-details'),
+                    // Read as one node: the plan (or what was done) and
+                    // what tapping does.
                     semanticsLabel:
-                        '$title. ${done == null ? 'View details' : 'Train again'}',
+                        '${[title, ?subtitle].join(', ')}. '
+                        '${done == null ? 'View details' : 'Train again'}',
+                    excludeSemantics: true,
                     onPress: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => WorkoutDetailPage(workout: workout),
