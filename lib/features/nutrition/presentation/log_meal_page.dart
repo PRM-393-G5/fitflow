@@ -22,6 +22,18 @@ class LogMealPage extends StatefulWidget {
   /// Recently logged dishes, newest first, offered for one-tap re-logging.
   final List<MealItem> recent;
 
+  /// Pushes the page for [type], offering [log]'s recent dishes; completes
+  /// with the meal to log, or null when dismissed.
+  static Future<Meal?> open(
+    BuildContext context, {
+    required String type,
+    required FoodLog log,
+  }) => Navigator.of(context).push<Meal>(
+    MaterialPageRoute(
+      builder: (_) => LogMealPage(type: type, recent: recentItems(log)),
+    ),
+  );
+
   /// Distinct dishes from [log], newest day first (at most [limit]).
   static List<MealItem> recentItems(FoodLog log, {int limit = 30}) {
     final keys = log.days.keys.toList()..sort((a, b) => b.compareTo(a));

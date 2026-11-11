@@ -18,6 +18,7 @@ import '../../workouts/presentation/active_workout_page.dart';
 import '../../workouts/presentation/schedule_page.dart';
 import '../../workouts/presentation/workout_detail_page.dart';
 import '../../../core/widgets/app_card.dart';
+import 'home_nutrition_section.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key, this.onOpenNutrition});
@@ -125,6 +126,8 @@ class HomePage extends StatelessWidget {
               ),
             ),
           ],
+          const SizedBox(height: AppSpacing.lg),
+          HomeNutritionSection(onOpenNutrition: onOpenNutrition),
           const SizedBox(height: AppSpacing.lg),
           Container(
             decoration: BoxDecoration(

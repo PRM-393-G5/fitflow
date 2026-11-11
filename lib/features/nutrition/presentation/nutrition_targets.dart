@@ -2,6 +2,7 @@ import 'package:forui/forui.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../app/app_controller.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../domain/body_metrics.dart';
 import '../../../domain/meal_plan.dart';
 
@@ -60,6 +61,78 @@ abstract final class MacroColors {
   static const protein = Color(0xFF2563EB);
   static const carbs = Color(0xFFF59E0B);
   static const fat = Color(0xFFEC4899);
+}
+
+/// Protein / carbs / fat eaten, each against its target when there is one.
+class MacroRow extends StatelessWidget {
+  const MacroRow({super.key, required this.eaten, this.targets});
+
+  final ({int kcal, double proteinG, double carbsG, double fatG}) eaten;
+  final DailyTargets? targets;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    spacing: AppSpacing.md,
+    children: [
+      _macro(
+        context,
+        'Protein',
+        eaten.proteinG,
+        MacroColors.protein,
+        targets?.proteinG,
+      ),
+      _macro(
+        context,
+        'Carbs',
+        eaten.carbsG,
+        MacroColors.carbs,
+        targets?.carbsG,
+      ),
+      _macro(context, 'Fat', eaten.fatG, MacroColors.fat, targets?.fatG),
+    ],
+  );
+
+  Widget _macro(
+    BuildContext context,
+    String label,
+    double grams,
+    Color color, [
+    int? target,
+  ]) {
+    final colors = context.theme.colors;
+    return Expanded(
+      child: Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+            child: const SizedBox(width: 4, height: 32),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelMedium
+                      ?.copyWith(color: colors.mutedForeground),
+                ),
+                Text(
+                  target == null
+                      ? '${grams.round()} g'
+                      : '${grams.round()} / $target g',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Kilocalories against a target, shared by the day summary, the

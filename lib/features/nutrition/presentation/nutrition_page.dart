@@ -371,14 +371,10 @@ class _NutritionPageState extends State<NutritionPage>
   }
 
   Future<void> _logManually({String? type}) async {
-    final recent = LogMealPage.recentItems(AppScope.of(context).foodLog);
-    final meal = await Navigator.of(context).push<Meal>(
-      MaterialPageRoute(
-        builder: (_) => LogMealPage(
-          type: type ?? defaultMealType(clock.now()),
-          recent: recent,
-        ),
-      ),
+    final meal = await LogMealPage.open(
+      context,
+      type: type ?? defaultMealType(clock.now()),
+      log: AppScope.of(context).foodLog,
     );
     if (meal != null && mounted) await _logMeal(meal);
   }
@@ -1539,26 +1535,10 @@ class _SummaryCard extends StatelessWidget {
               ),
           ],
           const SizedBox(height: AppSpacing.md),
-          Row(
+          MacroRow(
             key: const Key('nutrition-macros'),
-            spacing: AppSpacing.md,
-            children: [
-              _macro(
-                context,
-                'Protein',
-                eaten.proteinG,
-                MacroColors.protein,
-                target?.proteinG,
-              ),
-              _macro(
-                context,
-                'Carbs',
-                eaten.carbsG,
-                MacroColors.carbs,
-                target?.carbsG,
-              ),
-              _macro(context, 'Fat', eaten.fatG, MacroColors.fat, target?.fatG),
-            ],
+            eaten: eaten,
+            targets: target,
           ),
           if (missing != NoTargets.profile) ...[
             const SizedBox(height: AppSpacing.sm),
@@ -1609,48 +1589,6 @@ class _SummaryCard extends StatelessWidget {
               style: muted,
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _macro(
-    BuildContext context,
-    String label,
-    double grams,
-    Color color, [
-    int? target,
-  ]) {
-    final colors = context.theme.colors;
-    return Expanded(
-      child: Row(
-        children: [
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(2),
-            ),
-            child: const SizedBox(width: 4, height: 32),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelMedium
-                      ?.copyWith(color: colors.mutedForeground),
-                ),
-                Text(
-                  target == null
-                      ? '${grams.round()} g'
-                      : '${grams.round()} / $target g',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
