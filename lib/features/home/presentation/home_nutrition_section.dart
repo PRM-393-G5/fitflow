@@ -242,6 +242,8 @@ class _MealTile extends StatelessWidget {
     final done = kcal != null;
     return Semantics(
       button: true,
+      // excludeSemantics drops the tappable's own action, so give it here.
+      onTap: onTap,
       label: done ? '$type, $kcal kilocalories' : 'Log $type',
       excludeSemantics: true,
       child: FTappable(

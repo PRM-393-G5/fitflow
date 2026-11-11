@@ -19,7 +19,7 @@ import '../../workouts/presentation/workout_detail_page.dart';
 import '../../../core/widgets/app_card.dart';
 import 'home_nutrition_section.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key, this.onOpenNutrition});
 
   /// Switches the shell to the Nutrition tab; null outside the shell.
@@ -32,6 +32,30 @@ class HomePage extends StatelessWidget {
       : time.hour < 18
       ? 'Good afternoon'
       : 'Good evening';
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Home stays built in the shell's IndexedStack, so a resume past
+  /// midnight must rebuild it for "today" (meals, done, rest) to move on.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,7 +92,7 @@ class HomePage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            greeting(now),
+            HomePage.greeting(now),
             style: textTheme.titleMedium?.copyWith(
               color: colors.mutedForeground,
             ),
@@ -137,7 +161,7 @@ class HomePage extends StatelessWidget {
             ),
           ],
           const SizedBox(height: AppSpacing.lg),
-          HomeNutritionSection(onOpenNutrition: onOpenNutrition),
+          HomeNutritionSection(onOpenNutrition: widget.onOpenNutrition),
           const SizedBox(height: AppSpacing.lg),
           SectionHeader(
             title: 'Training',
@@ -340,12 +364,23 @@ class _TrainingCard extends StatelessWidget {
                 ? text
                 : FTappable(
                     key: const Key('home-view-details'),
+                    semanticsLabel:
+                        '$title. ${done == null ? 'View details' : 'Train again'}',
                     onPress: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => WorkoutDetailPage(workout: workout),
                       ),
                     ),
-                    child: text,
+                    child: Row(
+                      children: [
+                        Expanded(child: text),
+                        Icon(
+                          FLucideIcons.chevronRight,
+                          size: 16,
+                          color: colors.mutedForeground,
+                        ),
+                      ],
+                    ),
                   ),
           ),
           if (done == null && !restDay && workout != null) ...[

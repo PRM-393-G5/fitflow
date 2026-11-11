@@ -28,11 +28,14 @@ class LogMealPage extends StatefulWidget {
     BuildContext context, {
     required String type,
     required FoodLog log,
-  }) => Navigator.of(context).push<Meal>(
-    MaterialPageRoute(
-      builder: (_) => LogMealPage(type: type, recent: recentItems(log)),
-    ),
-  );
+  }) {
+    final recent = recentItems(log);
+    return Navigator.of(context).push<Meal>(
+      MaterialPageRoute(
+        builder: (_) => LogMealPage(type: type, recent: recent),
+      ),
+    );
+  }
 
   /// Distinct dishes from [log], newest day first (at most [limit]).
   static List<MealItem> recentItems(FoodLog log, {int limit = 30}) {
