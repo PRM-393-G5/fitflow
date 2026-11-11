@@ -8,7 +8,6 @@ import '../../../core/layout/responsive_content.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/section_header.dart';
-import '../../../core/widgets/stat_card.dart';
 import '../../../domain/workout_stats.dart';
 import '../../squat_form/presentation/squat_form_check_page.dart';
 import '../../../domain/models/active_workout_draft.dart';
@@ -26,6 +25,14 @@ class HomePage extends StatelessWidget {
   /// Switches the shell to the Nutrition tab; null outside the shell.
   final VoidCallback? onOpenNutrition;
 
+  /// "Good morning" before noon, "Good afternoon" until 6 pm, then
+  /// "Good evening".
+  static String greeting(DateTime time) => time.hour < 12
+      ? 'Good morning'
+      : time.hour < 18
+      ? 'Good afternoon'
+      : 'Good evening';
+
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
@@ -37,7 +44,7 @@ class HomePage extends StatelessWidget {
       controller.weeklyGoal,
       now: now,
     );
-    // The goal card and the minutes tile count the same sessions.
+    // The goal chip and the minutes chip count the same sessions.
     final week = WorkoutStats.thisWeek(controller.sessions, now: now);
     final weekMinutes = WorkoutStats.totalMinutes(week);
     final dayStart = DateTime(now.year, now.month, now.day);
@@ -52,18 +59,21 @@ class HomePage extends StatelessWidget {
     }
     final colors = context.theme.colors;
     final textTheme = Theme.of(context).textTheme;
+    final fromSchedule = controller.plannedDays > 0;
+    void openSchedule() => Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const SchedulePage()));
 
     return ResponsiveContent(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Welcome back',
+            greeting(now),
             style: textTheme.titleMedium?.copyWith(
               color: colors.mutedForeground,
             ),
           ),
-          Text('Ready to move?', style: textTheme.headlineMedium),
+          Text('Fuel your day', style: textTheme.headlineMedium),
           if (controller.activeDraft case final draft?) ...[
             const SizedBox(height: AppSpacing.md),
             AppCard(
@@ -129,93 +139,53 @@ class HomePage extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           HomeNutritionSection(onOpenNutrition: onOpenNutrition),
           const SizedBox(height: AppSpacing.lg),
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  colors.primary,
-                  Color.lerp(colors.primary, Colors.black, 0.2)!,
-                ],
+          SectionHeader(
+            title: 'Training',
+            action: FTappable(
+              onPress: openSchedule,
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.xs),
+                child: Icon(
+                  FLucideIcons.calendarDays,
+                  size: 20,
+                  color: colors.mutedForeground,
+                  semanticLabel: 'Edit weekly schedule',
+                ),
               ),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Today’s workout',
-                              style: textTheme.titleMedium?.copyWith(
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ),
-                          FTappable(
-                            onPress: () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const SchedulePage(),
-                              ),
-                            ),
-                            child: const Padding(
-                              padding: EdgeInsets.all(AppSpacing.xs),
-                              child: Icon(
-                                FLucideIcons.calendarDays,
-                                color: Colors.white,
-                                semanticLabel: 'Edit weekly schedule',
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      ..._heroContent(
-                        context,
-                        today: today,
-                        restDay: restDay,
-                        doneToday: doneToday,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: const BoxDecoration(
-                    color: Colors.white24,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    doneToday != null
-                        ? FLucideIcons.circleCheckBig
-                        : restDay
-                        ? FLucideIcons.moon
-                        : FLucideIcons.activity,
-                    size: 44,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          FTileGroup(
+          const SizedBox(height: AppSpacing.sm),
+          _TrainingCard(today: today, restDay: restDay, doneToday: doneToday),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
             children: [
-              FTile(
+              _Chip(
+                key: const Key('home-weekly-goal'),
+                icon: FLucideIcons.target,
+                label: '${week.length}/${controller.weeklyGoal} this week',
+                highlight: week.length >= controller.weeklyGoal,
+                // The goal is the schedule's training days when there is
+                // one, so the chip opens the schedule, not the picker.
+                onPress: fromSchedule
+                    ? openSchedule
+                    : () => _pickWeeklyGoal(context, controller),
+              ),
+              _Chip(
+                key: const Key('home-streak'),
+                icon: FLucideIcons.flame,
+                label: '${streak.current} wk streak',
+              ),
+              _Chip(
+                key: const Key('home-minutes'),
+                icon: FLucideIcons.timer,
+                label: '${weekMinutes}m active',
+              ),
+              _Chip(
                 key: const Key('open-squat-form-check-home'),
-                prefix: const Icon(FLucideIcons.accessibility),
-                title: const Text('AI Form Check'),
-                subtitle: const Text(
-                  'Squat · Push-up · Press · Curl · Dip — real-time',
-                ),
-                suffix: const Icon(FLucideIcons.chevronRight),
+                icon: FLucideIcons.accessibility,
+                label: 'AI Form Check',
                 onPress: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => SquatFormCheckPage(controller: controller),
@@ -224,132 +194,9 @@ class HomePage extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
-          const SectionHeader(title: 'This week'),
-          const SizedBox(height: AppSpacing.sm),
-          _WeeklyGoalCard(
-            done: week.length,
-            goal: controller.weeklyGoal,
-            fromSchedule: controller.plannedDays > 0,
-            onTap: controller.plannedDays > 0
-                ? () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SchedulePage(),
-                    ),
-                  )
-                : () => _pickWeeklyGoal(context, controller),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          LayoutBuilder(
-            builder: (context, constraints) => GridView.count(
-              crossAxisCount: constraints.maxWidth < 500 ? 2 : 3,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: 1.1,
-              mainAxisSpacing: AppSpacing.md,
-              crossAxisSpacing: AppSpacing.md,
-              children: [
-                StatCard(
-                  icon: FLucideIcons.flame,
-                  value: '${streak.current}',
-                  label: 'week streak',
-                ),
-                StatCard(
-                  icon: FLucideIcons.timer,
-                  value: '${weekMinutes}m',
-                  label: 'active this week',
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
-  }
-
-  List<Widget> _heroContent(
-    BuildContext context, {
-    required Workout? today,
-    required bool restDay,
-    required WorkoutSession? doneToday,
-  }) {
-    final textTheme = Theme.of(context).textTheme;
-    final title = textTheme.titleLarge?.copyWith(color: Colors.white);
-    const subtitle = TextStyle(color: Colors.white70);
-    Widget details(Workout workout, String label) => FTappable(
-      key: const Key('home-view-details'),
-      onPress: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => WorkoutDetailPage(workout: workout),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-
-    if (doneToday != null) {
-      return [
-        Text('Done today', key: const Key('home-done-today'), style: title),
-        Text(
-          '${doneToday.workoutName} • ${doneToday.completedSets} sets • '
-          '${doneToday.durationMinutes} min',
-          style: subtitle,
-        ),
-        if (today != null) ...[
-          const SizedBox(height: AppSpacing.sm),
-          details(today, 'Train again'),
-        ],
-      ];
-    }
-    if (restDay) {
-      return [
-        Text('Rest day', key: const Key('home-rest-day'), style: title),
-        const Text(
-          'Recovery is part of the plan. Feel like moving? Pick any plan in '
-          'Workouts.',
-          style: subtitle,
-        ),
-      ];
-    }
-    if (today == null) return [Text('No plan available', style: title)];
-    return [
-      Text(today.name, style: title),
-      Text('${today.duration.inMinutes} min • ${today.level}', style: subtitle),
-      const SizedBox(height: AppSpacing.md),
-      Wrap(
-        spacing: AppSpacing.sm,
-        runSpacing: AppSpacing.sm,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          FButton(
-            key: const Key('home-quick-start'),
-            variant: .secondary,
-            onPress: today.totalSets == 0
-                ? null
-                : () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => ActiveWorkoutPage(
-                        workout: today,
-                        controller: AppScope.of(context),
-                      ),
-                    ),
-                  ),
-            prefix: const Icon(FLucideIcons.play),
-            mainAxisSize: MainAxisSize.min,
-            child: const Text('Quick start'),
-          ),
-          details(today, 'View details'),
-        ],
-      ),
-    ];
   }
 
   Future<void> _confirmDiscardDraft(
@@ -408,75 +255,178 @@ class HomePage extends StatelessWidget {
   }
 }
 
-class _WeeklyGoalCard extends StatelessWidget {
-  const _WeeklyGoalCard({
-    required this.done,
-    required this.goal,
-    required this.fromSchedule,
-    required this.onTap,
+/// Today's training in one row: what is planned (or done, or rest) and
+/// a Start button. Tapping the text opens the plan's details.
+class _TrainingCard extends StatelessWidget {
+  const _TrainingCard({
+    required this.today,
+    required this.restDay,
+    required this.doneToday,
   });
 
-  final int done;
-  final int goal;
-
-  /// The goal is the weekly schedule's training days, so tapping opens
-  /// the schedule rather than the goal picker.
-  final bool fromSchedule;
-  final VoidCallback onTap;
+  final Workout? today;
+  final bool restDay;
+  final WorkoutSession? doneToday;
 
   @override
   Widget build(BuildContext context) {
-    final progress = (done / goal).clamp(0.0, 1.0);
     final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
+    final muted = textTheme.bodySmall?.copyWith(color: colors.mutedForeground);
+    final workout = today;
+    final done = doneToday;
+
+    final (icon, title, subtitle, titleKey) = done != null
+        ? (
+            FLucideIcons.circleCheckBig,
+            'Done today',
+            '${done.workoutName} • ${done.completedSets} sets • '
+                '${done.durationMinutes} min',
+            const Key('home-done-today'),
+          )
+        : restDay
+        ? (
+            FLucideIcons.moon,
+            'Rest day',
+            'Recovery is part of the plan.',
+            const Key('home-rest-day'),
+          )
+        : workout == null
+        ? (FLucideIcons.activity, 'No plan available', null, null)
+        : (
+            FLucideIcons.activity,
+            workout.name,
+            '${workout.duration.inMinutes} min • ${workout.level}',
+            null,
+          );
+
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          key: titleKey,
+          style: textTheme.titleMedium,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (subtitle != null)
+          Text(
+            subtitle,
+            style: muted,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+      ],
+    );
+
     return AppCard(
-      clipBehavior: Clip.antiAlias,
-      child: FTappable(
-        onPress: onTap,
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Weekly goal',
-                          style: Theme.of(context).textTheme.titleMedium,
+      key: const Key('home-training'),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            decoration: BoxDecoration(
+              color: colors.secondary,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 20, color: colors.primary),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            // Rest days link nowhere; otherwise the plan's details — after
+            // today's workout, to train it again.
+            child: workout == null || (restDay && done == null)
+                ? text
+                : FTappable(
+                    key: const Key('home-view-details'),
+                    onPress: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => WorkoutDetailPage(workout: workout),
+                      ),
+                    ),
+                    child: text,
+                  ),
+          ),
+          if (done == null && !restDay && workout != null) ...[
+            const SizedBox(width: AppSpacing.sm),
+            FButton(
+              key: const Key('home-quick-start'),
+              size: .sm,
+              mainAxisSize: .min,
+              onPress: workout.totalSets == 0
+                  ? null
+                  : () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ActiveWorkoutPage(
+                          workout: workout,
+                          controller: AppScope.of(context),
                         ),
                       ),
-                      Text(
-                        '$done/$goal',
-                        style: Theme.of(context).textTheme.labelLarge
-                            ?.copyWith(color: colors.primary),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  FDeterminateProgress(value: progress),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    done >= goal
-                        ? 'Goal reached — nice work.'
-                        : fromSchedule
-                        ? '$done of $goal planned workouts done. Tap to edit '
-                              'your schedule.'
-                        : '$done of $goal workouts done. Tap to change your goal.',
-                    style: Theme.of(context).textTheme.bodyMedium
-                        ?.copyWith(color: colors.mutedForeground),
-                  ),
-                ],
+                    ),
+              prefix: const Icon(FLucideIcons.play, size: 16),
+              child: const Text('Start'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A small rounded pill for a weekly number or a shortcut.
+class _Chip extends StatelessWidget {
+  const _Chip({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.highlight = false,
+    this.onPress,
+  });
+
+  final IconData icon;
+  final String label;
+
+  /// Drawn in the primary color, e.g. once the weekly goal is reached.
+  final bool highlight;
+  final VoidCallback? onPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.theme.colors;
+    final color = highlight ? colors.primary : colors.foreground;
+    final chip = DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.secondary,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md - AppSpacing.xs,
+          vertical: AppSpacing.xs + 2,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: highlight ? colors.primary : null),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium
+                  ?.copyWith(color: color),
+            ),
+            if (onPress != null) ...[
+              const SizedBox(width: 2),
+              Icon(
+                FLucideIcons.chevronRight,
+                size: 14,
+                color: colors.mutedForeground,
               ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Icon(
-              fromSchedule ? FLucideIcons.calendarDays : FLucideIcons.pencil,
-              color: colors.mutedForeground,
-            ),
+            ],
           ],
         ),
       ),
     );
+    return onPress == null ? chip : FTappable(onPress: onPress, child: chip);
   }
 }
