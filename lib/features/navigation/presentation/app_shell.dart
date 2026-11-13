@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../app/app_scope.dart';
 import '../../home/presentation/home_page.dart';
+import '../../nutrition/presentation/add_meal_choice.dart';
 import '../../nutrition/presentation/nutrition_page.dart';
 import '../../onboarding/presentation/onboarding_page.dart';
 import '../../profile/presentation/profile_page.dart';
@@ -17,6 +18,16 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _index = 0;
+
+  /// Photos Home asks for, taken on the Nutrition tab.
+  final _photoRequests = ValueNotifier<MealPhotoRequest?>(null);
+
+  @override
+  void dispose() {
+    _photoRequests.dispose();
+    super.dispose();
+  }
+
   bool _onboardingShown = false;
 
   /// Shows onboarding once local data has loaded and any cloud merge has
@@ -41,13 +52,7 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
-  static const _pages = [
-    HomePage(),
-    WorkoutsPage(),
-    NutritionPage(),
-    ProgressPage(),
-    ProfilePage(),
-  ];
+  static const _nutritionTab = 2;
   static const _destinations = [
     (icon: FLucideIcons.house, label: 'Home'),
     (icon: FLucideIcons.dumbbell, label: 'Workouts'),
@@ -59,7 +64,22 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 840;
-    final body = IndexedStack(index: _index, children: _pages);
+    final body = IndexedStack(
+      index: _index,
+      children: [
+        HomePage(
+          onOpenNutrition: () => setState(() => _index = _nutritionTab),
+          onMealPhoto: (request) {
+            setState(() => _index = _nutritionTab);
+            _photoRequests.value = request;
+          },
+        ),
+        const WorkoutsPage(),
+        NutritionPage(photoRequests: _photoRequests),
+        const ProgressPage(),
+        const ProfilePage(),
+      ],
+    );
     return FScaffold(
       childPad: false,
       sidebar: wide

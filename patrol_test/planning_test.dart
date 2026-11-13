@@ -122,6 +122,8 @@ void main() {
 
     // Today becomes a rest day, from Home's schedule shortcut.
     await openTab($, 'Home');
+    // Below the nutrition card on a phone: scroll to it first.
+    await reveal($, $(find.bySemanticsLabel('Edit weekly schedule')));
     await $(find.bySemanticsLabel('Edit weekly schedule')).tap();
     await $(SchedulePage).waitUntilVisible();
     await _setDay($, today, const Key('schedule-rest'));
@@ -169,8 +171,8 @@ Future<void> _setDay(PatrolIntegrationTester $, int weekday, Key choice) async {
 PatrolFinder _day(PatrolIntegrationTester $, String label) =>
     $(find.bySemanticsLabel(label));
 
-/// Opens the plan featured on Home ("View details", or "Train again"
-/// after today's workout) and returns it.
+/// Opens the plan featured on Home (its training card — read out as
+/// "View details", or "Train again" after today's workout) and returns it.
 Future<Workout> _openHomePlan(PatrolIntegrationTester $) async {
   await reveal($, $(const Key('home-view-details')));
   await $(const Key('home-view-details')).tap();

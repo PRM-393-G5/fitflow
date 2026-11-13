@@ -59,7 +59,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Ready to move?'), findsOneWidget);
+    expect(find.text('Fuel your day'), findsOneWidget);
 
     await tester.tap(find.text('Workouts'));
     await tester.pumpAndSettle();

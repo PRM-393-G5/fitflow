@@ -19,16 +19,26 @@ import '../../../domain/training_options.dart';
 import '../../metrics/presentation/body_metrics_page.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/section_header.dart';
+import 'add_meal_choice.dart';
 import 'log_meal_page.dart';
 import 'meal_type_picker.dart';
+import 'nutrition_targets.dart';
 
 /// Suggestion-only nutrition: a daily calorie target from the user's
 /// profile and goal, an AI-generated meal plan cached per day, and the
 /// food log ([AppController.foodLog], synced to the backend).
 class NutritionPage extends StatefulWidget {
-  const NutritionPage({super.key});
+  const NutritionPage({super.key, this.photoRequests});
+
+  /// Photos asked for elsewhere (Home's meal tiles): each request is taken
+  /// here for today and consumed (reset to null).
+  final ValueNotifier<MealPhotoRequest?>? photoRequests;
 
   static const _cacheKey = 'meal_plan_v1';
+
+  /// Replaces the image picker in tests.
+  @visibleForTesting
+  static Future<XFile?> Function(ImageSource source)? debugPickImage;
 
   @override
   State<NutritionPage> createState() => _NutritionPageState();
@@ -68,6 +78,36 @@ class _NutritionPageState extends State<NutritionPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.photoRequests?.addListener(_takeRequestedPhoto);
+  }
+
+  @override
+  void didUpdateWidget(NutritionPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.photoRequests == widget.photoRequests) return;
+    oldWidget.photoRequests?.removeListener(_takeRequestedPhoto);
+    widget.photoRequests?.addListener(_takeRequestedPhoto);
+  }
+
+  /// Takes a photo asked for outside this page, logged to today — the day
+  /// the asker (Home) shows.
+  void _takeRequestedPhoto() {
+    final requests = widget.photoRequests!;
+    final request = requests.value;
+    if (request == null) return;
+    requests.value = null;
+    // The page's own photo options are off while analyzing; the asker
+    // can't know, so say why nothing happens.
+    if (_analyzing) {
+      _showSnack('Still analyzing the previous photo. Try again shortly.');
+      return;
+    }
+    _rollOver();
+    _pickPhoto(
+      request.via == AddMealChoice.camera ? .camera : .gallery,
+      type: request.type,
+      day: _today,
+    ).ignore();
   }
 
   @override
@@ -114,41 +154,9 @@ class _NutritionPageState extends State<NutritionPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.photoRequests?.removeListener(_takeRequestedPhoto);
     _prefsCtrl.dispose();
     super.dispose();
-  }
-
-  /// TDEE and today's targets from the body profile and latest weight —
-  /// or, when there are none, why ([_NoTargets]). The one place that
-  /// decides it; everything on the page reads [missing].
-  _Targets _targets(AppController controller) {
-    final height = controller.heightCm;
-    final age = controller.age;
-    final weight = controller.weightEntries.isEmpty
-        ? null
-        : controller.weightEntries.last.weightKg;
-    const minor = (tdee: null, targets: null, missing: _NoTargets.minor);
-    // A known under-18 age needs no profile check: there are no targets.
-    if (!BodyMetrics.adultFormulasApply(age)) return minor;
-    if (height == null || age == null || weight == null) {
-      return (tdee: null, targets: null, missing: _NoTargets.profile);
-    }
-    final tdee = BodyMetrics.tdee(
-      weightKg: weight,
-      heightCm: height,
-      age: age,
-      isMale: controller.isMale,
-      activityLevel: controller.activityLevel,
-    );
-    final targets = NutritionTargets.daily(
-      tdee: tdee,
-      goal: controller.goal,
-      weightKg: weight,
-      heightCm: height,
-      age: age,
-      isMale: controller.isMale,
-    );
-    return (tdee: tdee, targets: targets, missing: null);
   }
 
   Future<MealPlan> _generatePlan(DailyTargets targets, String? goal) async {
@@ -201,7 +209,7 @@ class _NutritionPageState extends State<NutritionPage>
     final controller = AppScope.of(context);
     // Read after the dialog, together, so a sync while it was open can't
     // pair stale targets with a new goal (or save an outdated menu).
-    final targets = _targets(controller).targets;
+    final targets = todayTargets(controller).targets;
     final goal = controller.goal;
     if (targets == null) {
       _showSnack('Your profile changed — check it and try again.');
@@ -245,7 +253,15 @@ class _NutritionPageState extends State<NutritionPage>
 
   /// Picks a dish photo for AI analysis; [type] presets the meal slot it
   /// will be logged to (default: by time of day).
-  Future<void> _pickPhoto(ImageSource source, {String? type}) async {
+  /// Picks a photo and analyzes it for [type]. With [day] the page moves
+  /// to that day once a photo is picked — not before, so a pending photo
+  /// is still logged to the day it was taken for, and cancelling keeps
+  /// the day being viewed.
+  Future<void> _pickPhoto(
+    ImageSource source, {
+    String? type,
+    DateTime? day,
+  }) async {
     if (_analyzing) return;
     // Don't silently drop an analyzed result that was never logged.
     final pending = _photoMeal;
@@ -278,14 +294,18 @@ class _NutritionPageState extends State<NutritionPage>
       if (!mounted) return;
       _clearPhoto();
     }
-    final photo = await ImagePicker().pickImage(
-      source: source,
-      maxWidth: 1024,
-      imageQuality: 85,
-    );
+    final pick = NutritionPage.debugPickImage;
+    final photo = pick != null
+        ? await pick(source)
+        : await ImagePicker().pickImage(
+            source: source,
+            maxWidth: 1024,
+            imageQuality: 85,
+          );
     if (photo == null || !mounted) return;
     final bytes = await photo.readAsBytes();
     if (!mounted) return;
+    if (day != null) setState(() => _viewDay = day);
     _photoType = type ?? defaultMealType(clock.now());
     await _analyze(bytes);
   }
@@ -358,72 +378,39 @@ class _NutritionPageState extends State<NutritionPage>
   /// fallback when the photo path isn't available.
   /// The slot's "+": photo, gallery or manual entry, logged into [type].
   Future<void> _addToSlot(String type) async {
-    final ai = OpenAiService.configured && !_analyzing;
-    final choice = await showAppDialog<String>(
-      context: context,
-      title: 'Add to $type',
-      actions: [
-        FButton(
-          key: const Key('slot-add-photo'),
-          variant: .outline,
-          prefix: const Icon(FLucideIcons.camera),
-          onPress: ai ? () => Navigator.pop(context, 'camera') : null,
-          child: const Text('Take a photo'),
-        ),
-        FButton(
-          key: const Key('slot-add-gallery'),
-          variant: .outline,
-          prefix: const Icon(FLucideIcons.images),
-          onPress: ai ? () => Navigator.pop(context, 'gallery') : null,
-          child: const Text('Choose from gallery'),
-        ),
-        FButton(
-          key: const Key('slot-add-manual'),
-          variant: .outline,
-          prefix: const Icon(FLucideIcons.pencil),
-          onPress: () => Navigator.pop(context, 'manual'),
-          child: const Text('Enter manually'),
-        ),
-        FButton(
-          variant: .ghost,
-          onPress: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-      ],
+    final choice = await showAddMealChoice(
+      context,
+      type: type,
+      photosEnabled: OpenAiService.configured && !_analyzing,
     );
     if (!mounted) return;
     switch (choice) {
-      case 'camera':
+      case AddMealChoice.camera:
         await _pickPhoto(.camera, type: type);
-      case 'gallery':
+      case AddMealChoice.gallery:
         await _pickPhoto(.gallery, type: type);
-      case 'manual':
+      case AddMealChoice.manual:
         await _logManually(type: type);
+      case null:
+        break;
     }
   }
 
   Future<void> _logManually({String? type}) async {
-    final recent = LogMealPage.recentItems(AppScope.of(context).foodLog);
-    final meal = await Navigator.of(context).push<Meal>(
-      MaterialPageRoute(
-        builder: (_) => LogMealPage(
-          type: type ?? defaultMealType(clock.now()),
-          recent: recent,
-        ),
-      ),
+    final meal = await LogMealPage.open(
+      context,
+      type: type ?? defaultMealType(clock.now()),
+      log: AppScope.of(context).foodLog,
     );
     if (meal != null && mounted) await _logMeal(meal);
   }
 
-  Future<void> _changeGoal(
-    AppController controller,
-    _NoTargets? missing,
-  ) async {
+  Future<void> _changeGoal(AppController controller, NoTargets? missing) async {
     final picked = await showAppDialog<String>(
       context: context,
       title: 'Your goal',
       body: Text(
-        missing == _NoTargets.minor
+        missing == NoTargets.minor
             ? 'Your goal picks your suggested workouts. Calorie targets are '
                   'for adults.'
             : 'Your calorie and protein targets follow your goal.',
@@ -505,13 +492,13 @@ class _NutritionPageState extends State<NutritionPage>
   Widget build(BuildContext context) {
     _rollOver();
     final controller = AppScope.of(context);
-    final day = _targets(controller);
+    final day = todayTargets(controller);
     final (:tdee, :targets, :missing) = day;
     final goal = controller.goal;
     final targetKcal = targets?.kcal;
     // No menus under 18 — not even one cached before the age changed.
     final plan =
-        missing != _NoTargets.minor &&
+        missing != NoTargets.minor &&
             _cache.plan != null &&
             _cache.plan!.isOn(_today)
         ? _cache.plan
@@ -915,35 +902,22 @@ class _NutritionPageState extends State<NutritionPage>
   }
 }
 
-/// Today's TDEE and targets — or, when there are none, why.
-typedef _Targets = ({double? tdee, DailyTargets? targets, _NoTargets? missing});
-
-/// Why the page shows no calorie targets.
-enum _NoTargets {
-  /// Height, age or a logged weight is missing.
-  profile,
-
-  /// Under 18: FitFlow sets no calorie targets
-  /// ([BodyMetrics.adultFormulasApply]).
-  minor,
-}
-
 /// In place of targets: why there are none, and a way to fix the profile.
 class _NoTargetsCard extends StatelessWidget {
   const _NoTargetsCard(this.reason);
 
-  final _NoTargets reason;
+  final NoTargets reason;
 
   @override
   Widget build(BuildContext context) {
     final (key, text, action) = switch (reason) {
-      _NoTargets.profile => (
+      NoTargets.profile => (
         const Key('nutrition-profile-needed'),
         'Set up your body profile and log a weight first — your calorie '
             'target comes from TDEE.',
         'Open body metrics',
       ),
-      _NoTargets.minor => (
+      NoTargets.minor => (
         const Key('nutrition-minor'),
         'Calorie targets are for adults. Under 18, energy needs change as '
             'you grow — ask a doctor or school nurse what is right for you. '
@@ -973,21 +947,6 @@ class _NoTargetsCard extends StatelessWidget {
   }
 }
 
-/// Kilocalories against a target, shared by the day summary and the
-/// suggested menu.
-class _KcalProgress extends StatelessWidget {
-  const _KcalProgress({required this.eaten, required this.target});
-
-  final int eaten;
-  final int target;
-
-  // 0 / 0 is NaN, which clamp passes through.
-  @override
-  Widget build(BuildContext context) => FDeterminateProgress(
-    value: target <= 0 ? 0 : (eaten / target).clamp(0.0, 1.0),
-  );
-}
-
 class _PlanView extends StatelessWidget {
   const _PlanView({required this.plan, required this.onLog});
 
@@ -1002,7 +961,7 @@ class _PlanView extends StatelessWidget {
     children: [
       Semantics(
         label: '${plan.totalKcal} of ${plan.targetKcal} kilocalories',
-        child: _KcalProgress(eaten: plan.totalKcal, target: plan.targetKcal),
+        child: KcalProgress(eaten: plan.totalKcal, target: plan.targetKcal),
       ),
       const SizedBox(height: AppSpacing.sm),
       Text('${plan.totalKcal} / ${plan.targetKcal} kcal suggested'),
@@ -1514,10 +1473,6 @@ class _SummaryCard extends StatelessWidget {
     required this.onChangeGoal,
   });
 
-  static const _proteinColor = Color(0xFF2563EB);
-  static const _carbsColor = Color(0xFFF59E0B);
-  static const _fatColor = Color(0xFFEC4899);
-
   final ({int kcal, double proteinG, double carbsG, double fatG}) eaten;
   final String dayText;
   final double? tdee;
@@ -1525,7 +1480,7 @@ class _SummaryCard extends StatelessWidget {
 
   /// Why there are no targets, if there aren't; minors still get the
   /// goal row (the goal drives workout picks).
-  final _NoTargets? missing;
+  final NoTargets? missing;
   final String? goal;
   final VoidCallback onChangeGoal;
 
@@ -1588,7 +1543,7 @@ class _SummaryCard extends StatelessWidget {
           ),
           if (target != null) ...[
             const SizedBox(height: AppSpacing.sm),
-            _KcalProgress(eaten: eaten.kcal, target: target.kcal),
+            KcalProgress(eaten: eaten.kcal, target: target.kcal),
             const SizedBox(height: AppSpacing.xs),
             if (eaten.kcal <= target.kcal)
               Text(
@@ -1606,28 +1561,12 @@ class _SummaryCard extends StatelessWidget {
               ),
           ],
           const SizedBox(height: AppSpacing.md),
-          Row(
+          MacroRow(
             key: const Key('nutrition-macros'),
-            spacing: AppSpacing.md,
-            children: [
-              _macro(
-                context,
-                'Protein',
-                eaten.proteinG,
-                _proteinColor,
-                target?.proteinG,
-              ),
-              _macro(
-                context,
-                'Carbs',
-                eaten.carbsG,
-                _carbsColor,
-                target?.carbsG,
-              ),
-              _macro(context, 'Fat', eaten.fatG, _fatColor, target?.fatG),
-            ],
+            eaten: eaten,
+            targets: target,
           ),
-          if (missing != _NoTargets.profile) ...[
+          if (missing != NoTargets.profile) ...[
             const SizedBox(height: AppSpacing.sm),
             Row(
               children: [
@@ -1676,48 +1615,6 @@ class _SummaryCard extends StatelessWidget {
               style: muted,
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _macro(
-    BuildContext context,
-    String label,
-    double grams,
-    Color color, [
-    int? target,
-  ]) {
-    final colors = context.theme.colors;
-    return Expanded(
-      child: Row(
-        children: [
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(2),
-            ),
-            child: const SizedBox(width: 4, height: 32),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelMedium
-                      ?.copyWith(color: colors.mutedForeground),
-                ),
-                Text(
-                  target == null
-                      ? '${grams.round()} g'
-                      : '${grams.round()} / $target g',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -1937,7 +1834,7 @@ class _AiPlanCard extends StatelessWidget {
 
   /// Today's targets, or why there are none; minors get no menu
   /// settings either.
-  final _Targets day;
+  final TodayTargets day;
   final bool hasPlan;
   final bool generating;
   final bool showOptions;
@@ -1954,7 +1851,7 @@ class _AiPlanCard extends StatelessWidget {
     final targets = day.targets;
     final subtitle = targets != null
         ? 'A full day menu for your ${thousands(targets.kcal)} kcal target.'
-        : day.missing == _NoTargets.minor
+        : day.missing == NoTargets.minor
         ? 'Menu suggestions are for adults only.'
         : 'Set up your body profile to get a menu for your target.';
     return AppCard(
@@ -1983,7 +1880,7 @@ class _AiPlanCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(subtitle, style: muted),
-          if (day.missing != _NoTargets.minor) ...[
+          if (day.missing != NoTargets.minor) ...[
             const SizedBox(height: AppSpacing.sm),
             FButton(
               key: const Key('nutrition-plan-options'),
