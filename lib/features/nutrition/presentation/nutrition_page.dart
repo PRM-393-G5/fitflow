@@ -19,6 +19,7 @@ import '../../../domain/training_options.dart';
 import '../../metrics/presentation/body_metrics_page.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/section_header.dart';
+import 'add_meal_choice.dart';
 import 'log_meal_page.dart';
 import 'meal_type_picker.dart';
 import 'nutrition_targets.dart';
@@ -326,47 +327,21 @@ class _NutritionPageState extends State<NutritionPage>
   /// fallback when the photo path isn't available.
   /// The slot's "+": photo, gallery or manual entry, logged into [type].
   Future<void> _addToSlot(String type) async {
-    final ai = OpenAiService.configured && !_analyzing;
-    final choice = await showAppDialog<String>(
-      context: context,
-      title: 'Add to $type',
-      actions: [
-        FButton(
-          key: const Key('slot-add-photo'),
-          variant: .outline,
-          prefix: const Icon(FLucideIcons.camera),
-          onPress: ai ? () => Navigator.pop(context, 'camera') : null,
-          child: const Text('Take a photo'),
-        ),
-        FButton(
-          key: const Key('slot-add-gallery'),
-          variant: .outline,
-          prefix: const Icon(FLucideIcons.images),
-          onPress: ai ? () => Navigator.pop(context, 'gallery') : null,
-          child: const Text('Choose from gallery'),
-        ),
-        FButton(
-          key: const Key('slot-add-manual'),
-          variant: .outline,
-          prefix: const Icon(FLucideIcons.pencil),
-          onPress: () => Navigator.pop(context, 'manual'),
-          child: const Text('Enter manually'),
-        ),
-        FButton(
-          variant: .ghost,
-          onPress: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-      ],
+    final choice = await showAddMealChoice(
+      context,
+      type: type,
+      photosEnabled: OpenAiService.configured && !_analyzing,
     );
     if (!mounted) return;
     switch (choice) {
-      case 'camera':
+      case AddMealChoice.camera:
         await _pickPhoto(.camera, type: type);
-      case 'gallery':
+      case AddMealChoice.gallery:
         await _pickPhoto(.gallery, type: type);
-      case 'manual':
+      case AddMealChoice.manual:
         await _logManually(type: type);
+      case null:
+        break;
     }
   }
 
