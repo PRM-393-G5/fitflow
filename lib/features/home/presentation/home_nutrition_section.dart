@@ -58,34 +58,35 @@ class HomeNutritionSection extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  _KcalRing(eaten: eaten.kcal, target: targets?.kcal),
+                  const SizedBox(width: AppSpacing.lg),
                   Expanded(
-                    child: Semantics(
-                      label: targets == null
-                          ? '${eaten.kcal} kilocalories eaten today'
-                          : '${eaten.kcal} of ${targets.kcal} kilocalories '
-                                'eaten today',
-                      excludeSemantics: true,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          Text(
-                            thousands(eaten.kcal),
-                            style: textTheme.headlineMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.xs),
-                          Flexible(
-                            child: Text(
-                              targets == null
-                                  ? 'kcal eaten'
-                                  : '/ ${thousands(targets.kcal)} kcal',
-                              style: muted,
-                            ),
-                          ),
-                        ],
-                      ),
+                    child: _MacroBars(eaten: eaten, targets: targets),
+                  ),
+                ],
+              ),
+              if (missing == NoTargets.profile) ...[
+                const SizedBox(height: AppSpacing.md),
+                _ProfilePrompt(
+                  onPress: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const BodyMetricsPage(),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      targets == null
+                          ? '${entries.length} ${entries.length == 1 ? 'meal' : 'meals'} logged'
+                          : eaten.kcal <= targets.kcal
+                          ? '${thousands(targets.kcal - eaten.kcal)} kcal to go'
+                          : '${thousands(eaten.kcal - targets.kcal)} kcal above '
+                                'target',
+                      style: muted,
                     ),
                   ),
                   FButton(
@@ -99,52 +100,6 @@ class HomeNutritionSection extends StatelessWidget {
                   ),
                 ],
               ),
-              if (targets != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                KcalProgress(eaten: eaten.kcal, target: targets.kcal),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  eaten.kcal <= targets.kcal
-                      ? '${thousands(targets.kcal - eaten.kcal)} kcal to go'
-                      : '${thousands(eaten.kcal - targets.kcal)} kcal above '
-                            'target',
-                  style: muted,
-                ),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              MacroRow(eaten: eaten, targets: targets),
-              if (missing == NoTargets.profile) ...[
-                const SizedBox(height: AppSpacing.sm),
-                FTappable(
-                  key: const Key('home-nutrition-profile-needed'),
-                  onPress: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const BodyMetricsPage(),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        FLucideIcons.target,
-                        size: 16,
-                        color: colors.primary,
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Text(
-                          'Set up your body profile to get a calorie target',
-                          style: textTheme.bodySmall,
-                        ),
-                      ),
-                      Icon(
-                        FLucideIcons.chevronRight,
-                        size: 16,
-                        color: colors.mutedForeground,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
               const SizedBox(height: AppSpacing.md),
               _MealTiles(
                 kcalOf: {
@@ -252,41 +207,236 @@ class _MealTile extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: done ? colors.secondary : null,
-            border: Border.all(color: colors.border),
+            border: Border.all(color: done ? colors.secondary : colors.border),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.sm),
             child: Row(
               children: [
-                Icon(
-                  mealIcon(type),
-                  size: 18,
-                  color: done ? colors.primary : colors.mutedForeground,
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: done ? colors.primary : colors.secondary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Icon(
+                      mealIcon(type),
+                      size: 16,
+                      color: done
+                          ? colors.primaryForeground
+                          : colors.mutedForeground,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(type, style: textTheme.labelMedium),
+                      Text(
+                        type,
+                        style: textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       Text(
                         done ? '${thousands(kcal!)} kcal' : 'Add',
                         style: textTheme.bodySmall?.copyWith(
-                          color: done ? null : colors.mutedForeground,
+                          color: done
+                              ? colors.foreground
+                              : colors.mutedForeground,
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (!done)
-                  Icon(
-                    FLucideIcons.plus,
-                    size: 16,
-                    color: colors.mutedForeground,
-                  ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Kilocalories eaten in the middle of a ring that fills toward today's
+/// target; without a target the ring stays empty.
+class _KcalRing extends StatelessWidget {
+  const _KcalRing({required this.eaten, required this.target});
+
+  final int eaten;
+  final int? target;
+
+  static const _size = 104.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
+    final goal = target;
+    // 0 / 0 is NaN, which clamp passes through.
+    final progress = goal == null || goal <= 0
+        ? 0.0
+        : (eaten / goal).clamp(0.0, 1.0);
+    return Semantics(
+      label: goal == null
+          ? '$eaten kilocalories eaten today'
+          : '$eaten of $goal kilocalories eaten today',
+      excludeSemantics: true,
+      child: SizedBox.square(
+        key: const Key('home-kcal-ring'),
+        dimension: _size,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CircularProgressIndicator(
+              value: progress,
+              strokeWidth: 9,
+              strokeCap: StrokeCap.round,
+              backgroundColor: colors.secondary,
+              color: colors.primary,
+            ),
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    thousands(eaten),
+                    style: textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      height: 1.1,
+                    ),
+                  ),
+                  Text(
+                    goal == null ? 'kcal eaten' : 'of ${thousands(goal)}',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.mutedForeground,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Protein / carbs / fat as label, grams and a thin bar each; the bar
+/// fills toward the target when there is one.
+class _MacroBars extends StatelessWidget {
+  const _MacroBars({required this.eaten, required this.targets});
+
+  final ({int kcal, double proteinG, double carbsG, double fatG}) eaten;
+  final DailyTargets? targets;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    spacing: AppSpacing.sm,
+    children: [
+      _bar(
+        context,
+        'Protein',
+        eaten.proteinG,
+        targets?.proteinG,
+        MacroColors.protein,
+      ),
+      _bar(context, 'Carbs', eaten.carbsG, targets?.carbsG, MacroColors.carbs),
+      _bar(context, 'Fat', eaten.fatG, targets?.fatG, MacroColors.fat),
+    ],
+  );
+
+  Widget _bar(
+    BuildContext context,
+    String label,
+    double grams,
+    int? target,
+    Color color,
+  ) {
+    final colors = context.theme.colors;
+    final textTheme = Theme.of(context).textTheme;
+    final progress = target == null || target <= 0
+        ? 0.0
+        : (grams / target).clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: textTheme.labelMedium?.copyWith(
+                  color: colors.mutedForeground,
+                ),
+              ),
+            ),
+            Text(
+              target == null
+                  ? '${grams.round()} g'
+                  : '${grams.round()} / $target g',
+              style: textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 5,
+            backgroundColor: colors.secondary,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Tinted call to set up the body profile, the one thing missing for a
+/// calorie target.
+class _ProfilePrompt extends StatelessWidget {
+  const _ProfilePrompt({required this.onPress});
+
+  final VoidCallback onPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.theme.colors;
+    return FTappable(
+      key: const Key('home-nutrition-profile-needed'),
+      onPress: onPress,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md - AppSpacing.xs,
+            vertical: AppSpacing.sm + 2,
+          ),
+          child: Row(
+            children: [
+              Icon(FLucideIcons.target, size: 18, color: colors.primary),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Set up your body profile to get a calorie target',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.foreground,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Icon(FLucideIcons.chevronRight, size: 16, color: colors.primary),
+            ],
           ),
         ),
       ),

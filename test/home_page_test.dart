@@ -16,6 +16,7 @@ import 'package:prm/domain/models/workout_session.dart';
 import 'package:prm/features/metrics/presentation/body_metrics_page.dart';
 import 'package:prm/features/navigation/presentation/app_shell.dart';
 import 'package:prm/features/nutrition/presentation/log_meal_page.dart';
+import 'package:prm/features/nutrition/presentation/nutrition_targets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Meal meal(String type, String name, int kcal) => Meal(
@@ -68,6 +69,16 @@ Future<AppController> pumpHome(
   return controller;
 }
 
+/// The calorie ring's fill, 0 to 1.
+double? _ringValue(WidgetTester tester) => tester
+    .widget<CircularProgressIndicator>(
+      find.descendant(
+        of: find.byKey(const Key('home-kcal-ring')),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+    )
+    .value;
+
 Finder inNutrition(Finder finder) => find.descendant(
   of: find.byKey(const Key('home-nutrition')),
   matching: finder,
@@ -107,17 +118,21 @@ void main() {
       findsOneWidget,
     );
     expect(inNutrition(find.textContaining('kcal to go')), findsNothing);
+    // Without a target the ring stays empty instead of spinning.
+    expect(_ringValue(tester), 0);
   });
 
   testWidgets('measures today against the calorie target', (tester) async {
     final log = FoodLog()..add(clock.now(), meal('Lunch', 'Rice', 500));
-    await pumpHome(tester, log: log, profile: true);
+    final controller = await pumpHome(tester, log: log, profile: true);
 
     expect(
       find.byKey(const Key('home-nutrition-profile-needed')),
       findsNothing,
     );
     expect(inNutrition(find.textContaining('kcal to go')), findsOneWidget);
+    final target = todayTargets(controller).targets!.kcal;
+    expect(_ringValue(tester), closeTo(500 / target, 0.001));
   });
 
   testWidgets('a meal tile opens the log page for that meal', (tester) async {
