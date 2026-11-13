@@ -360,17 +360,22 @@ class _TrainingCard extends StatelessWidget {
     );
 
     final canStart = done == null && !restDay && workout != null;
+    // The icon is decoration: with large text it gives its room to the
+    // plan's name and Start.
+    final showIcon = MediaQuery.textScalerOf(context).scale(1) <= 1.5;
     final todayRow = Row(
       children: [
-        Container(
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: colors.secondary,
-            borderRadius: BorderRadius.circular(10),
+        if (showIcon) ...[
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            decoration: BoxDecoration(
+              color: colors.secondary,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 20, color: colors.primary),
           ),
-          child: Icon(icon, size: 20, color: colors.primary),
-        ),
-        const SizedBox(width: AppSpacing.md),
+          const SizedBox(width: AppSpacing.md),
+        ],
         Expanded(
           // Rest days link nowhere; otherwise the plan's details — after
           // today's workout, to train it again.
@@ -504,7 +509,16 @@ class _Stat extends StatelessWidget {
       excludeSemantics: true,
       button: onPress != null,
       onTap: onPress,
-      child: onPress == null ? stat : FTappable(onPress: onPress, child: stat),
+      child: onPress == null
+          ? stat
+          : FTappable(
+              onPress: onPress,
+              // A 48dp touch target, taller than the two lines of text.
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Align(alignment: Alignment.centerLeft, child: stat),
+              ),
+            ),
     );
   }
 }

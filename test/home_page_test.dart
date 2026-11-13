@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:clock/clock.dart';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
 import 'package:material_ui/material_ui.dart';
@@ -69,6 +70,17 @@ Future<AppController> pumpHome(
   return controller;
 }
 
+/// Loads the app font under the family names the theme may use, so text
+/// is measured as on a device.
+Future<void> _loadInter() async {
+  for (final family in ['Inter', 'packages/forui/Inter', 'Roboto']) {
+    await (FontLoader(family)..addFont(
+          rootBundle.load('packages/forui/assets/fonts/inter/Inter.ttf'),
+        ))
+        .load();
+  }
+}
+
 /// The calorie ring's fill, 0 to 1.
 double? _ringValue(WidgetTester tester) => tester
     .widget<CircularProgressIndicator>(
@@ -133,6 +145,35 @@ void main() {
     expect(inNutrition(find.textContaining('kcal to go')), findsOneWidget);
     final target = todayTargets(controller).targets!.kcal;
     expect(_ringValue(tester), closeTo(500 / target, 0.001));
+  });
+
+  testWidgets('a full ring past the target, and says by how much', (
+    tester,
+  ) async {
+    final log = FoodLog()..add(clock.now(), meal('Dinner', 'Feast', 5000));
+    await pumpHome(tester, log: log, profile: true);
+
+    expect(_ringValue(tester), 1);
+    expect(inNutrition(find.textContaining('above target')), findsOneWidget);
+  });
+
+  testWidgets('fits a 320dp screen with text at twice the size', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(960, 2400)
+      ..devicePixelRatio = 3;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    // The default test font is far wider than Inter; measure with the real one.
+    await _loadInter();
+    final log = FoodLog()..add(clock.now(), meal('Lunch', 'Rice', 2500));
+
+    // A RenderFlex overflow would fail the test with an exception.
+    await pumpHome(tester, log: log, profile: true, workouts: const [_workout]);
+
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a meal tile opens the log page for that meal', (tester) async {
@@ -246,6 +287,7 @@ void main() {
 
     expect(inNutrition(find.text('500')), findsOneWidget);
     expect(inNutrition(find.text('kcal eaten')), findsOneWidget);
+    expect(_ringValue(tester), 0);
     expect(inNutrition(find.textContaining('kcal to go')), findsNothing);
     expect(
       find.byKey(const Key('home-nutrition-profile-needed')),

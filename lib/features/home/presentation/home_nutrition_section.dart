@@ -76,18 +76,21 @@ class HomeNutritionSection extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: AppSpacing.md),
-              Row(
+              // Side by side; with large text the button wraps below.
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
                 children: [
-                  Expanded(
-                    child: Text(
-                      targets == null
-                          ? '${entries.length} ${entries.length == 1 ? 'meal' : 'meals'} logged'
-                          : eaten.kcal <= targets.kcal
-                          ? '${thousands(targets.kcal - eaten.kcal)} kcal to go'
-                          : '${thousands(eaten.kcal - targets.kcal)} kcal above '
-                                'target',
-                      style: muted,
-                    ),
+                  Text(
+                    targets == null
+                        ? '${entries.length} ${entries.length == 1 ? 'meal' : 'meals'} logged'
+                        : eaten.kcal <= targets.kcal
+                        ? '${thousands(targets.kcal - eaten.kcal)} kcal to go'
+                        : '${thousands(eaten.kcal - targets.kcal)} kcal above '
+                              'target',
+                    style: muted,
                   ),
                   FButton(
                     key: const Key('home-log-meal'),
@@ -298,24 +301,29 @@ class _KcalRing extends StatelessWidget {
               backgroundColor: colors.secondary,
               color: colors.primary,
             ),
-            Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    thousands(eaten),
-                    style: textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      height: 1.1,
+            // Large text scales shrink to fit inside the ring.
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      thousands(eaten),
+                      style: textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        height: 1.1,
+                      ),
                     ),
-                  ),
-                  Text(
-                    goal == null ? 'kcal eaten' : 'of ${thousands(goal)}',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: colors.mutedForeground,
+                    Text(
+                      goal == null ? 'kcal eaten' : 'of ${thousands(goal)}',
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colors.mutedForeground,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -361,40 +369,59 @@ class _MacroBars extends StatelessWidget {
     final progress = target == null || target <= 0
         ? 0.0
         : (grams / target).clamp(0.0, 1.0);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: textTheme.labelMedium?.copyWith(
-                  color: colors.mutedForeground,
+    // One announcement per macro instead of a label, a number and an
+    // unnamed progress bar read separately.
+    return Semantics(
+      label:
+          '$label ${grams.round()}'
+          '${target == null ? '' : ' of $target'} grams',
+      excludeSemantics: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.labelMedium?.copyWith(
+                    color: colors.mutedForeground,
+                  ),
                 ),
               ),
-            ),
-            Text(
-              target == null
-                  ? '${grams.round()} g'
-                  : '${grams.round()} / $target g',
-              style: textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+              // Narrow screens and large text: the grams shrink rather than
+              // overflow the row.
+              Flexible(
+                flex: 2,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    target == null
+                        ? '${grams.round()} g'
+                        : '${grams.round()} / $target g',
+                    style: textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: LinearProgressIndicator(
-            value: progress,
-            minHeight: 5,
-            backgroundColor: colors.secondary,
-            color: color,
+            ],
           ),
-        ),
-      ],
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 5,
+              backgroundColor: colors.secondary,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
