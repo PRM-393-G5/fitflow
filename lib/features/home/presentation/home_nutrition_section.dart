@@ -10,6 +10,8 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../domain/meal_plan.dart';
 import '../../metrics/presentation/body_metrics_page.dart';
+import '../../../data/openai_service.dart';
+import '../../nutrition/presentation/add_meal_choice.dart';
 import '../../nutrition/presentation/log_meal_page.dart';
 import '../../nutrition/presentation/meal_type_picker.dart';
 import '../../nutrition/presentation/nutrition_targets.dart';
@@ -17,10 +19,17 @@ import '../../nutrition/presentation/nutrition_targets.dart';
 /// Home's lead section: today's calories and macros against the target,
 /// and one tile per meal to log it in a tap.
 class HomeNutritionSection extends StatelessWidget {
-  const HomeNutritionSection({super.key, this.onOpenNutrition});
+  const HomeNutritionSection({
+    super.key,
+    this.onOpenNutrition,
+    this.onMealPhoto,
+  });
 
   /// Opens the full Nutrition tab; the "See all" link is hidden when null.
   final VoidCallback? onOpenNutrition;
+
+  /// Hands a meal photo to the Nutrition tab; see [HomePage.onMealPhoto].
+  final ValueChanged<MealPhotoRequest>? onMealPhoto;
 
   @override
   Widget build(BuildContext context) {
@@ -114,13 +123,38 @@ class HomeNutritionSection extends StatelessWidget {
                     ).kcal,
                 },
                 logged: {for (final entry in entries) mealTypeOf(entry.meal)},
-                onTap: (type) => _logTo(context, controller, type),
+                onTap: (type) => _addTo(context, controller, type),
               ),
             ],
           ),
         ),
       ],
     );
+  }
+
+  /// Asks how to add a meal to [type], as the Nutrition tab does: a photo
+  /// goes to that tab (where its analysis is shown), manual entry opens
+  /// the log page here.
+  Future<void> _addTo(
+    BuildContext context,
+    AppController controller,
+    String type,
+  ) async {
+    final photo = onMealPhoto;
+    final choice = await showAddMealChoice(
+      context,
+      type: type,
+      photosEnabled: OpenAiService.configured && photo != null,
+    );
+    if (!context.mounted) return;
+    switch (choice) {
+      case AddMealChoice.camera || AddMealChoice.gallery:
+        photo!((type: type, via: choice!));
+      case AddMealChoice.manual:
+        await _logTo(context, controller, type);
+      case null:
+        break;
+    }
   }
 
   /// Opens the log page for [type] and adds the result to today.

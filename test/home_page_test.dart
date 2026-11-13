@@ -16,7 +16,10 @@ import 'package:prm/domain/models/workout.dart';
 import 'package:prm/domain/models/workout_session.dart';
 import 'package:prm/features/metrics/presentation/body_metrics_page.dart';
 import 'package:prm/features/navigation/presentation/app_shell.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:prm/data/openai_service.dart';
 import 'package:prm/features/nutrition/presentation/log_meal_page.dart';
+import 'package:prm/features/nutrition/presentation/nutrition_page.dart';
 import 'package:prm/features/nutrition/presentation/nutrition_targets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -79,6 +82,14 @@ Future<void> _loadInter() async {
         ))
         .load();
   }
+}
+
+/// Scrolls to the [type] meal tile on Home and taps it.
+Future<void> openTile(WidgetTester tester, String type) async {
+  final tile = find.byKey(Key('home-meal-$type'));
+  await tester.ensureVisible(tile);
+  await tester.tap(tile);
+  await tester.pumpAndSettle();
 }
 
 /// The calorie ring's fill, 0 to 1.
@@ -176,12 +187,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a meal tile opens the log page for that meal', (tester) async {
+  testWidgets('a meal tile asks how to add it, like the Nutrition tab', (
+    tester,
+  ) async {
     await pumpHome(tester);
 
-    final tile = find.byKey(const Key('home-meal-Dinner'));
-    await tester.ensureVisible(tile);
-    await tester.tap(tile);
+    await openTile(tester, 'Dinner');
+    expect(find.text('Add to Dinner'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('slot-add-manual')));
     await tester.pumpAndSettle();
 
     final page = tester.widget<LogMealPage>(find.byType(LogMealPage));
@@ -246,8 +259,8 @@ void main() {
     final controller = await pumpHome(tester);
 
     final tile = find.byKey(const Key('home-meal-Dinner'));
-    await tester.ensureVisible(tile);
-    await tester.tap(tile);
+    await openTile(tester, 'Dinner');
+    await tester.tap(find.byKey(const Key('slot-add-manual')));
     await tester.pumpAndSettle();
     Navigator.of(tester.element(find.byType(LogMealPage)))
         .pop(meal('Dinner', 'Pho', 550));
@@ -268,8 +281,30 @@ void main() {
     tester.semantics.tap(find.semantics.byLabel('Log Dinner'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(LogMealPage), findsOneWidget);
+    expect(find.text('Add to Dinner'), findsOneWidget);
     semantics.dispose();
+  });
+
+  testWidgets('a photo from a tile is taken on the Nutrition tab', (
+    tester,
+  ) async {
+    OpenAiService.debugConfiguredOverride = true;
+    addTearDown(() => OpenAiService.debugConfiguredOverride = null);
+    final sources = <ImageSource>[];
+    NutritionPage.debugPickImage = (source) async {
+      sources.add(source);
+      return null; // Cancelled in the picker.
+    };
+    addTearDown(() => NutritionPage.debugPickImage = null);
+    await pumpHome(tester);
+
+    await openTile(tester, 'Lunch');
+    await tester.tap(find.byKey(const Key('slot-add-gallery')));
+    await tester.pumpAndSettle();
+
+    expect(sources, [ImageSource.gallery]);
+    // The Nutrition tab, where the photo's analysis is shown.
+    expect(find.byKey(const Key('nutrition-eaten')).hitTestable(), findsOne);
   });
 
   testWidgets('the profile prompt opens body metrics', (tester) async {

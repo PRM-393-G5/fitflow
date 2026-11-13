@@ -28,9 +28,17 @@ import 'nutrition_targets.dart';
 /// profile and goal, an AI-generated meal plan cached per day, and the
 /// food log ([AppController.foodLog], synced to the backend).
 class NutritionPage extends StatefulWidget {
-  const NutritionPage({super.key});
+  const NutritionPage({super.key, this.photoRequests});
+
+  /// Photos asked for elsewhere (Home's meal tiles): each request is taken
+  /// here for today and consumed (reset to null).
+  final ValueNotifier<MealPhotoRequest?>? photoRequests;
 
   static const _cacheKey = 'meal_plan_v1';
+
+  /// Replaces the image picker in tests.
+  @visibleForTesting
+  static Future<XFile?> Function(ImageSource source)? debugPickImage;
 
   @override
   State<NutritionPage> createState() => _NutritionPageState();
@@ -70,6 +78,30 @@ class _NutritionPageState extends State<NutritionPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.photoRequests?.addListener(_takeRequestedPhoto);
+  }
+
+  @override
+  void didUpdateWidget(NutritionPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.photoRequests == widget.photoRequests) return;
+    oldWidget.photoRequests?.removeListener(_takeRequestedPhoto);
+    widget.photoRequests?.addListener(_takeRequestedPhoto);
+  }
+
+  /// Takes a photo asked for outside this page, logged to today — the day
+  /// the asker (Home) shows.
+  void _takeRequestedPhoto() {
+    final requests = widget.photoRequests!;
+    final request = requests.value;
+    if (request == null) return;
+    requests.value = null;
+    _rollOver();
+    setState(() => _viewDay = _today);
+    _pickPhoto(
+      request.via == AddMealChoice.camera ? .camera : .gallery,
+      type: request.type,
+    );
   }
 
   @override
@@ -116,6 +148,7 @@ class _NutritionPageState extends State<NutritionPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.photoRequests?.removeListener(_takeRequestedPhoto);
     _prefsCtrl.dispose();
     super.dispose();
   }
@@ -247,11 +280,14 @@ class _NutritionPageState extends State<NutritionPage>
       if (!mounted) return;
       _clearPhoto();
     }
-    final photo = await ImagePicker().pickImage(
-      source: source,
-      maxWidth: 1024,
-      imageQuality: 85,
-    );
+    final pick = NutritionPage.debugPickImage;
+    final photo = pick != null
+        ? await pick(source)
+        : await ImagePicker().pickImage(
+            source: source,
+            maxWidth: 1024,
+            imageQuality: 85,
+          );
     if (photo == null || !mounted) return;
     final bytes = await photo.readAsBytes();
     if (!mounted) return;

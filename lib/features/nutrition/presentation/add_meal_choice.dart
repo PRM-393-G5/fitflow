@@ -49,3 +49,8 @@ Future<AddMealChoice?> showAddMealChoice(
     ),
   ],
 );
+
+/// A photo to take (or pick) for a meal slot, asked for outside the
+/// Nutrition page — by Home's meal tiles — and handled on it, where the
+/// analysis is shown. [via] is [AddMealChoice.camera] or `gallery`.
+typedef MealPhotoRequest = ({String type, AddMealChoice via});

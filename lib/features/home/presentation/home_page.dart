@@ -17,13 +17,18 @@ import '../../workouts/presentation/active_workout_page.dart';
 import '../../workouts/presentation/schedule_page.dart';
 import '../../workouts/presentation/workout_detail_page.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../nutrition/presentation/add_meal_choice.dart';
 import 'home_nutrition_section.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, this.onOpenNutrition});
+  const HomePage({super.key, this.onOpenNutrition, this.onMealPhoto});
 
   /// Switches the shell to the Nutrition tab; null outside the shell.
   final VoidCallback? onOpenNutrition;
+
+  /// Hands a meal photo to the Nutrition tab, which analyzes it; without
+  /// it (outside the shell) the meal tiles offer manual entry only.
+  final ValueChanged<MealPhotoRequest>? onMealPhoto;
 
   /// "Good morning" before noon, "Good afternoon" until 6 pm, then
   /// "Good evening".
@@ -166,7 +171,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
           ],
           const SizedBox(height: AppSpacing.lg),
-          HomeNutritionSection(onOpenNutrition: widget.onOpenNutrition),
+          HomeNutritionSection(
+            onOpenNutrition: widget.onOpenNutrition,
+            onMealPhoto: widget.onMealPhoto,
+          ),
           const SizedBox(height: AppSpacing.lg),
           SectionHeader(
             title: 'Training',
