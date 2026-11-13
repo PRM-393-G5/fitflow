@@ -97,7 +97,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               color: colors.mutedForeground,
             ),
           ),
-          Text('Fuel your day', style: textTheme.headlineMedium),
+          Text(
+            'Fuel your day',
+            style: textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           if (controller.activeDraft case final draft?) ...[
             const SizedBox(height: AppSpacing.md),
             AppCard(
@@ -179,37 +184,43 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          _TrainingCard(today: today, restDay: restDay, doneToday: doneToday),
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: [
-              _Chip(
+          _TrainingCard(
+            today: today,
+            restDay: restDay,
+            doneToday: doneToday,
+            stats: [
+              _Stat(
                 key: const Key('home-weekly-goal'),
-                icon: FLucideIcons.target,
-                label: '${week.length}/${controller.weeklyGoal} this week',
+                value: '${week.length}/${controller.weeklyGoal}',
+                label: 'this week',
                 highlight: week.length >= controller.weeklyGoal,
                 // The goal is the schedule's training days when there is
-                // one, so the chip opens the schedule, not the picker.
+                // one, so the stat opens the schedule, not the picker.
                 onPress: fromSchedule
                     ? openSchedule
                     : () => _pickWeeklyGoal(context, controller),
               ),
-              _Chip(
+              _Stat(
                 key: const Key('home-streak'),
-                icon: FLucideIcons.flame,
-                label: '${streak.current} wk streak',
+                value: '${streak.current}',
+                label: 'week streak',
               ),
-              _Chip(
+              _Stat(
                 key: const Key('home-minutes'),
-                icon: FLucideIcons.timer,
-                label: '${weekMinutes}m active',
+                value: '${weekMinutes}m',
+                label: 'active',
               ),
-              _Chip(
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          FTileGroup(
+            children: [
+              FTile(
                 key: const Key('open-squat-form-check-home'),
-                icon: FLucideIcons.accessibility,
-                label: 'AI Form Check',
+                prefix: Icon(FLucideIcons.accessibility, color: colors.primary),
+                title: const Text('AI Form Check'),
+                subtitle: const Text('Live feedback on your form'),
+                suffix: const Icon(FLucideIcons.chevronRight),
                 onPress: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => SquatFormCheckPage(controller: controller),
@@ -286,11 +297,15 @@ class _TrainingCard extends StatelessWidget {
     required this.today,
     required this.restDay,
     required this.doneToday,
+    required this.stats,
   });
 
   final Workout? today;
   final bool restDay;
   final WorkoutSession? doneToday;
+
+  /// The week's numbers, shown in one row under today's plan.
+  final List<Widget> stats;
 
   @override
   Widget build(BuildContext context) {
@@ -344,86 +359,105 @@ class _TrainingCard extends StatelessWidget {
       ],
     );
 
-    return AppCard(
-      key: const Key('home-training'),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            decoration: BoxDecoration(
-              color: colors.secondary,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, size: 20, color: colors.primary),
+    final canStart = done == null && !restDay && workout != null;
+    final todayRow = Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: colors.secondary,
+            borderRadius: BorderRadius.circular(10),
           ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            // Rest days link nowhere; otherwise the plan's details — after
-            // today's workout, to train it again.
-            child: workout == null || (restDay && done == null)
-                ? text
-                : FTappable(
-                    key: const Key('home-view-details'),
-                    // Read as one node: the plan (or what was done) and
-                    // what tapping does.
-                    semanticsLabel:
-                        '${[title, ?subtitle].join(', ')}. '
-                        '${done == null ? 'View details' : 'Train again'}',
-                    excludeSemantics: true,
-                    onPress: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => WorkoutDetailPage(workout: workout),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(child: text),
-                        Icon(
-                          FLucideIcons.chevronRight,
-                          size: 16,
-                          color: colors.mutedForeground,
-                        ),
-                      ],
+          child: Icon(icon, size: 20, color: colors.primary),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          // Rest days link nowhere; otherwise the plan's details — after
+          // today's workout, to train it again.
+          child: workout == null || (restDay && done == null)
+              ? text
+              : FTappable(
+                  key: const Key('home-view-details'),
+                  // Read as one node: the plan (or what was done) and
+                  // what tapping does.
+                  semanticsLabel:
+                      '${[title, ?subtitle].join(', ')}. '
+                      '${done == null ? 'View details' : 'Train again'}',
+                  excludeSemantics: true,
+                  onPress: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => WorkoutDetailPage(workout: workout),
                     ),
                   ),
-          ),
-          if (done == null && !restDay && workout != null) ...[
-            const SizedBox(width: AppSpacing.sm),
-            FButton(
-              key: const Key('home-quick-start'),
-              size: .sm,
-              mainAxisSize: .min,
-              onPress: workout.totalSets == 0
-                  ? null
-                  : () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ActiveWorkoutPage(
-                          workout: workout,
-                          controller: AppScope.of(context),
+                  // Start already reads as the action; the chevron only
+                  // marks the text as tappable when Start is absent.
+                  child: canStart
+                      ? text
+                      : Row(
+                          children: [
+                            Expanded(child: text),
+                            Icon(
+                              FLucideIcons.chevronRight,
+                              size: 16,
+                              color: colors.mutedForeground,
+                            ),
+                          ],
                         ),
+                ),
+        ),
+        if (canStart) ...[
+          const SizedBox(width: AppSpacing.sm),
+          FButton(
+            key: const Key('home-quick-start'),
+            // Secondary: Log meal is Home's one primary action.
+            variant: .secondary,
+            size: .sm,
+            mainAxisSize: .min,
+            onPress: workout.totalSets == 0
+                ? null
+                : () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ActiveWorkoutPage(
+                        workout: workout,
+                        controller: AppScope.of(context),
                       ),
                     ),
-              prefix: const Icon(FLucideIcons.play, size: 16),
-              child: const Text('Start'),
-            ),
-          ],
+                  ),
+            prefix: const Icon(FLucideIcons.play, size: 16),
+            child: const Text('Start'),
+          ),
+        ],
+      ],
+    );
+
+    return AppCard(
+      key: const Key('home-training'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          todayRow,
+          const SizedBox(height: AppSpacing.md),
+          Divider(height: 1, thickness: 1, color: colors.border),
+          const SizedBox(height: AppSpacing.md),
+          Row(children: [for (final stat in stats) Expanded(child: stat)]),
         ],
       ),
     );
   }
 }
 
-/// A small rounded pill for a weekly number or a shortcut.
-class _Chip extends StatelessWidget {
-  const _Chip({
+/// One of the week's numbers: the value over a short label. Tappable
+/// when [onPress] is set, which a chevron after the label shows.
+class _Stat extends StatelessWidget {
+  const _Stat({
     super.key,
-    required this.icon,
+    required this.value,
     required this.label,
     this.highlight = false,
     this.onPress,
   });
 
-  final IconData icon;
+  final String value;
   final String label;
 
   /// Drawn in the primary color, e.g. once the weekly goal is reached.
@@ -433,39 +467,44 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.theme.colors;
-    final color = highlight ? colors.primary : colors.foreground;
-    final chip = DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.secondary,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md - AppSpacing.xs,
-          vertical: AppSpacing.xs + 2,
+    final textTheme = Theme.of(context).textTheme;
+    final stat = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: highlight ? colors.primary : null,
+          ),
         ),
-        child: Row(
+        Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: highlight ? colors.primary : null),
-            const SizedBox(width: AppSpacing.xs),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelMedium
-                  ?.copyWith(color: color),
+            Flexible(
+              child: Text(
+                label,
+                style: textTheme.labelSmall?.copyWith(
+                  color: colors.mutedForeground,
+                ),
+              ),
             ),
-            if (onPress != null) ...[
-              const SizedBox(width: 2),
+            if (onPress != null)
               Icon(
                 FLucideIcons.chevronRight,
-                size: 14,
+                size: 12,
                 color: colors.mutedForeground,
               ),
-            ],
           ],
         ),
-      ),
+      ],
     );
-    return onPress == null ? chip : FTappable(onPress: onPress, child: chip);
+    return Semantics(
+      label: '$value $label',
+      excludeSemantics: true,
+      button: onPress != null,
+      onTap: onPress,
+      child: onPress == null ? stat : FTappable(onPress: onPress, child: stat),
+    );
   }
 }
