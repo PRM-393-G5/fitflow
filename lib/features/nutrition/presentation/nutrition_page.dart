@@ -96,12 +96,18 @@ class _NutritionPageState extends State<NutritionPage>
     final request = requests.value;
     if (request == null) return;
     requests.value = null;
+    // The page's own photo options are off while analyzing; the asker
+    // can't know, so say why nothing happens.
+    if (_analyzing) {
+      _showSnack('Still analyzing the previous photo. Try again shortly.');
+      return;
+    }
     _rollOver();
-    setState(() => _viewDay = _today);
     _pickPhoto(
       request.via == AddMealChoice.camera ? .camera : .gallery,
       type: request.type,
-    );
+      day: _today,
+    ).ignore();
   }
 
   @override
@@ -247,7 +253,15 @@ class _NutritionPageState extends State<NutritionPage>
 
   /// Picks a dish photo for AI analysis; [type] presets the meal slot it
   /// will be logged to (default: by time of day).
-  Future<void> _pickPhoto(ImageSource source, {String? type}) async {
+  /// Picks a photo and analyzes it for [type]. With [day] the page moves
+  /// to that day once a photo is picked — not before, so a pending photo
+  /// is still logged to the day it was taken for, and cancelling keeps
+  /// the day being viewed.
+  Future<void> _pickPhoto(
+    ImageSource source, {
+    String? type,
+    DateTime? day,
+  }) async {
     if (_analyzing) return;
     // Don't silently drop an analyzed result that was never logged.
     final pending = _photoMeal;
@@ -291,6 +305,7 @@ class _NutritionPageState extends State<NutritionPage>
     if (photo == null || !mounted) return;
     final bytes = await photo.readAsBytes();
     if (!mounted) return;
+    if (day != null) setState(() => _viewDay = day);
     _photoType = type ?? defaultMealType(clock.now());
     await _analyze(bytes);
   }

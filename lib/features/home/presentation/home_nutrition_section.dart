@@ -148,11 +148,12 @@ class HomeNutritionSection extends StatelessWidget {
     );
     if (!context.mounted) return;
     switch (choice) {
-      case AddMealChoice.camera || AddMealChoice.gallery:
-        photo!((type: type, via: choice!));
       case AddMealChoice.manual:
         await _logTo(context, controller, type);
-      case null:
+      // Camera or gallery; only offered when there is somewhere to send it.
+      case final AddMealChoice via when photo != null:
+        photo((type: type, via: via));
+      default:
         break;
     }
   }
@@ -236,7 +237,7 @@ class _MealTile extends StatelessWidget {
       button: true,
       // excludeSemantics drops the tappable's own action, so give it here.
       onTap: onTap,
-      label: done ? '$type, $kcal kilocalories' : 'Log $type',
+      label: done ? '$type, $kcal kilocalories' : 'Add $type',
       excludeSemantics: true,
       child: FTappable(
         key: Key('home-meal-$type'),

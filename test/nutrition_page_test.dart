@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
@@ -8,7 +9,15 @@ import 'package:prm/app/app_scope.dart';
 import 'package:prm/core/theme/app_theme.dart';
 import 'package:prm/data/local_workout_repository.dart';
 import 'package:prm/domain/meal_plan.dart';
+import 'package:prm/features/nutrition/presentation/add_meal_choice.dart';
+import 'package:prm/features/nutrition/presentation/meal_type_picker.dart';
 import 'package:prm/features/nutrition/presentation/nutrition_page.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:prm/data/openai_service.dart';
+import 'package:prm/data/api/api_client.dart';
+import 'package:prm/data/api/token_store.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Meal meal(String name, int kcal) => Meal(
@@ -18,8 +27,9 @@ Meal meal(String name, int kcal) => Meal(
 
 Future<AppController> pumpNutrition(
   WidgetTester tester,
-  Map<String, Object> values,
-) async {
+  Map<String, Object> values, {
+  ValueNotifier<MealPhotoRequest?>? photoRequests,
+}) async {
   SharedPreferences.setMockInitialValues({
     'onboarding_v1': '{"done":true,"goal":"Strength"}',
     ...values,
@@ -39,7 +49,7 @@ Future<AppController> pumpNutrition(
           data: AppTheme.light,
           child: FToaster(child: child!),
         ),
-        home: const FScaffold(child: NutritionPage()),
+        home: FScaffold(child: NutritionPage(photoRequests: photoRequests)),
       ),
     ),
   );
@@ -47,7 +57,87 @@ Future<AppController> pumpNutrition(
   return controller;
 }
 
+/// A 1x1 transparent PNG, enough for the photo preview to decode.
+final _png = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+);
+
+/// Pumps the page viewing yesterday, with [pick] as the image picker.
+Future<ValueNotifier<MealPhotoRequest?>> pumpViewingYesterday(
+  WidgetTester tester,
+  Future<XFile?> Function(ImageSource) pick,
+) async {
+  OpenAiService.debugConfiguredOverride = true;
+  addTearDown(() => OpenAiService.debugConfiguredOverride = null);
+  NutritionPage.debugPickImage = pick;
+  addTearDown(() => NutritionPage.debugPickImage = null);
+  final requests = ValueNotifier<MealPhotoRequest?>(null);
+  addTearDown(requests.dispose);
+  final now = DateTime.now();
+  final yesterday = DateTime(now.year, now.month, now.day - 1);
+  await pumpNutrition(tester, {}, photoRequests: requests);
+  await tester.tap(
+    find.byKey(Key('nutrition-day-${FoodLog.dayKey(yesterday)}')),
+  );
+  await tester.pumpAndSettle();
+  expect(find.textContaining('eaten on yesterday'), findsOneWidget);
+  return requests;
+}
+
 void main() {
+  testWidgets('a photo asked for from Home is for today and its meal', (
+    tester,
+  ) async {
+    // The backend's analysis of the photo.
+    final previousApi = OpenAiService.defaultApi;
+    OpenAiService.defaultApi = ApiClient(
+      baseUrl: Uri.parse('http://fitflow.test/api/'),
+      tokens: MemoryTokenStore(
+        const ApiTokens(accessToken: 'a', refreshToken: 'r'),
+      ),
+      httpClient: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'dishes': [
+              {'name': 'Pho', 'kcal': 450},
+            ],
+            'note': '',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        ),
+      ),
+    );
+    addTearDown(() => OpenAiService.defaultApi = previousApi);
+    final sources = <ImageSource>[];
+    final requests = await pumpViewingYesterday(tester, (source) async {
+      sources.add(source);
+      return XFile.fromData(Uint8List.fromList(_png), name: 'meal.png');
+    });
+
+    requests.value = (type: 'Lunch', via: AddMealChoice.camera);
+    await tester.pumpAndSettle();
+
+    expect(requests.value, isNull, reason: 'consumed once');
+    expect(sources, [ImageSource.camera]);
+    expect(find.textContaining('eaten today'), findsOneWidget);
+    expect(
+      tester.widget<MealTypePicker>(find.byType(MealTypePicker)).selected,
+      'Lunch',
+    );
+  });
+
+  testWidgets('cancelling that photo keeps the day being viewed', (
+    tester,
+  ) async {
+    final requests = await pumpViewingYesterday(tester, (_) async => null);
+
+    requests.value = (type: 'Lunch', via: AddMealChoice.gallery);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('eaten on yesterday'), findsOneWidget);
+  });
+
   testWidgets('shows earlier days and reloads when the user data changes', (
     tester,
   ) async {

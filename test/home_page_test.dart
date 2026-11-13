@@ -278,7 +278,7 @@ void main() {
     await pumpHome(tester);
 
     await tester.ensureVisible(find.byKey(const Key('home-meal-Dinner')));
-    tester.semantics.tap(find.semantics.byLabel('Log Dinner'));
+    tester.semantics.tap(find.semantics.byLabel('Add Dinner'));
     await tester.pumpAndSettle();
 
     expect(find.text('Add to Dinner'), findsOneWidget);
